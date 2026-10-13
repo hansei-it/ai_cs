@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>비트 탐색기</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-fg: #ffffff;
+    --sign: #c92a2a;
+    --exp: #1864ab;
+    --frac: #087f5b;
+    --warn: #a14a00;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-fg: #11131a;
+    --sign: #ff8787;
+    --exp: #74c0fc;
+    --frac: #63e6be;
+    --warn: #ffb057;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono, .bit, code, input.mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; }
+  .tab {
+    border: 0; background: none; color: var(--muted); font: inherit; padding: 8px 12px;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer;
+  }
+  .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+  .tab:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 12px; }
+  label { color: var(--muted); font-size: 14px; }
+  input[type="text"] {
+    font: inherit; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 9px; width: 11em; max-width: 100%;
+  }
+  .btn {
+    font: inherit; font-size: 14px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.small { font-size: 13px; padding: 2px 8px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: var(--soft); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+
+  .bits { display: flex; flex-wrap: wrap; gap: 10px 4px; margin: 4px 0 14px; }
+  .group { display: flex; flex-direction: column; gap: 4px; }
+  .group-bits { display: flex; flex-wrap: wrap; gap: 4px; }
+  .group-label { font-size: 12px; color: var(--muted); }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .cell.gap { margin-left: 8px; }
+  .bit {
+    width: 32px; height: 36px; font-size: 17px; font-weight: 700;
+    border: 1.5px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--muted); cursor: pointer;
+  }
+  .bit.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .weight { font-size: 11px; color: var(--muted); line-height: 1.2; text-align: center; min-height: 2.4em; }
+  .weight .neg { color: var(--sign); }
+  .float .bit { width: 24px; height: 32px; font-size: 14px; }
+  .float .g-sign .bit.on { background: var(--sign); border-color: var(--sign); }
+  .float .g-exp .bit.on { background: var(--exp); border-color: var(--exp); }
+  .float .g-frac .bit.on { background: var(--frac); border-color: var(--frac); }
+  .float .g-sign .group-label { color: var(--sign); }
+  .float .g-exp .group-label { color: var(--exp); }
+  .float .g-frac .group-label { color: var(--frac); }
+
+  dl.out { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 12px; }
+  dl.out dt { color: var(--muted); font-size: 14px; }
+  dl.out dd { margin: 0; overflow-wrap: anywhere; }
+  .big { font-size: 18px; font-weight: 700; }
+  .note { margin: 8px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 1.6em; }
+  .note.warn { border-left-color: var(--warn); }
+  .note:empty { display: none; }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td.ch { font-size: 20px; }
+  .pre { color: var(--exp); font-weight: 700; }
+  .byte { display: inline-block; margin-right: 6px; }
+
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .bit { width: 28px; height: 32px; font-size: 15px; }
+    .float .bit { width: 20px; height: 28px; font-size: 12px; }
+    dl.out { grid-template-columns: 1fr; gap: 0 0; }
+    dl.out dd { margin-bottom: 6px; }
+  }
+</style>
+</head>
+<body>
+<h1>비트 탐색기</h1>
+
+<div class="tabs" role="tablist" aria-label="보기 선택">
+  <button class="tab" role="tab" id="t-int" aria-controls="p-int" aria-selected="true">정수 (2의 보수)</button>
+  <button class="tab" role="tab" id="t-float" aria-controls="p-float" aria-selected="false">실수 (IEEE 754)</button>
+  <button class="tab" role="tab" id="t-text" aria-controls="p-text" aria-selected="false">문자 (UTF-8)</button>
+</div>
+
+<!-- 정수 -->
+<section id="p-int" role="tabpanel" aria-labelledby="t-int">
+  <div class="row">
+    <span class="seg" role="group" aria-label="비트 수">
+      <button class="btn" data-width="8" aria-pressed="true">8비트</button>
+      <button class="btn" data-width="16" aria-pressed="false">16비트</button>
+    </span>
+    <label for="int-in">값 입력</label>
+    <input id="int-in" type="text" class="mono" placeholder="-5, 0xC8, 0b1010" autocomplete="off">
+    <button class="btn" id="int-apply">적용</button>
+  </div>
+  <div class="bits" id="int-bits"></div>
+  <dl class="out">
+    <dt>2진수</dt><dd class="mono big" id="int-bin"></dd>
+    <dt>부호 없는 값</dt><dd class="mono" id="int-u"></dd>
+    <dt>부호 있는 값 (2의 보수)</dt><dd class="mono" id="int-s"></dd>
+    <dt>16진수</dt><dd class="mono" id="int-hex"></dd>
+  </dl>
+  <div class="row">
+    <button class="btn" data-op="inc">+1</button>
+    <button class="btn" data-op="dec">−1</button>
+    <button class="btn" data-op="not">비트 반전 (~x)</button>
+    <button class="btn" data-op="neg">부호 바꾸기 (−x)</button>
+    <button class="btn" data-op="shl">≪ 1</button>
+    <button class="btn" data-op="shr">≫ 1</button>
+    <button class="btn" data-op="clear">0으로</button>
+  </div>
+  <p class="note" id="int-note" aria-live="polite"></p>
+  <p class="hint">비트를 눌러 켜고 끌 수 있다. 맨 앞 비트는 부호 없는 값에서는 그대로, 부호 있는 값에서는 음수 가중치로 읽는다.</p>
+</section>
+
+<!-- 실수 -->
+<section id="p-float" role="tabpanel" aria-labelledby="t-float" hidden>
+  <div class="row">
+    <label for="float-in">10진수 입력</label>
+    <input id="float-in" type="text" class="mono" value="0.1" autocomplete="off">
+    <button class="btn" id="float-apply">적용</button>
+    <span>
+      <button class="btn small" data-preset="0.1">0.1</button>
+      <button class="btn small" data-preset="0.3">0.3</button>
+      <button class="btn small" data-preset="0.5">0.5</button>
+      <button class="btn small" data-preset="-2.5">−2.5</button>
+      <button class="btn small" data-preset="16777217">16777217</button>
+    </span>
+  </div>
+  <div class="bits float" id="float-bits"></div>
+  <dl class="out">
+    <dt>부호</dt><dd class="mono" id="f-sign"></dd>
+    <dt>지수</dt><dd class="mono" id="f-exp"></dd>
+    <dt>가수</dt><dd class="mono" id="f-frac"></dd>
+    <dt>계산식</dt><dd class="mono" id="f-formula"></dd>
+    <dt>실제로 저장된 값</dt><dd class="mono big" id="f-exact"></dd>
+    <dt>입력값과의 차이</dt><dd class="mono" id="f-diff"></dd>
+  </dl>
+  <p class="note" id="float-note" aria-live="polite"></p>
+  <p class="hint">C의 <span class="mono">float</span>와 같은 32비트 실수로 보여 준다. <span class="mono">double</span>은 64비트(지수 11비트, 가수 52비트)라 오차가 더 작지만 원리는 같다.</p>
+</section>
+
+<!-- 문자 -->
+<section id="p-text" role="tabpanel" aria-labelledby="t-text" hidden>
+  <div class="row">
+    <label for="text-in">문자열 입력</label>
+    <input id="text-in" type="text" value="Aé한😀" autocomplete="off">
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>문자</th><th>코드 포인트</th><th>UTF-8 바이트 (2진수)</th><th>16진수</th><th>바이트</th></tr></thead>
+      <tbody id="text-rows"></tbody>
+    </table>
+  </div>
+  <p class="note" id="text-note" aria-live="polite"></p>
+  <p class="hint">굵게 칠한 앞머리 비트는 이 바이트가 몇 바이트짜리 글자의 시작인지(<span class="mono">0</span>, <span class="mono">110</span>, <span class="mono">1110</span>, <span class="mono">11110</span>), 이어지는 바이트인지(<span class="mono">10</span>) 알려 준다. 나머지 비트에 코드 포인트를 나눠 담는다.</p>
+</section>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const BitLogic = (() => {
+  const toUnsigned = (v, n) => ((v % 2 ** n) + 2 ** n) % 2 ** n;
+  const toSigned = (u, n) => (u >= 2 ** (n - 1) ? u - 2 ** n : u);
+
+  // "-5", "200", "0xC8", "0b1010" 을 n비트 부호 없는 값으로. 범위를 벗어나면 null
+  function parseIntInput(text, n) {
+    const t = String(text).trim().replace(/_/g, "").toLowerCase();
+    const m = /^([+-]?)(0x[0-9a-f]+|0b[01]+|\d+)$/.exec(t);
+    if (!m) return null;
+    const body = m[2];
+    let v = body.startsWith("0x") ? parseInt(body.slice(2), 16)
+          : body.startsWith("0b") ? parseInt(body.slice(2), 2)
+          : parseInt(body, 10);
+    if (m[1] === "-") v = -v;
+    if (v < -(2 ** (n - 1)) || v > 2 ** n - 1) return null;
+    return toUnsigned(v, n);
+  }
+
+  const groupBits = (u, n) => u.toString(2).padStart(n, "0").replace(/(.{4})(?=.)/g, "$1 ");
+
+  function floatToBits(x) {
+    const dv = new DataView(new ArrayBuffer(4));
+    dv.setFloat32(0, x);
+    return dv.getUint32(0);
+  }
+  function bitsToFloat(bits) {
+    const dv = new DataView(new ArrayBuffer(4));
+    dv.setUint32(0, bits >>> 0);
+    return dv.getFloat32(0);
+  }
+  function decodeFloat32(bits) {
+    const sign = bits >>> 31, exp = (bits >>> 23) & 0xff, frac = bits & 0x7fffff;
+    const kind = exp === 255 ? (frac ? "nan" : "inf") : exp === 0 ? (frac ? "subnormal" : "zero") : "normal";
+    return { sign, exp, frac, kind };
+  }
+
+  // scaled / 10^k 를 정확한 10진수 문자열로 (끝의 0은 지움)
+  function formatScaled(scaled, k) {
+    const neg = scaled < 0n;
+    let s = (neg ? -scaled : scaled).toString();
+    if (k > 0) {
+      s = s.padStart(k + 1, "0");
+      const ip = s.slice(0, s.length - k), fp = s.slice(s.length - k).replace(/0+$/, "");
+      s = fp ? `${ip}.${fp}` : ip;
+    }
+    return (neg ? "-" : "") + s;
+  }
+
+  // float32 비트가 나타내는 값을 반올림 없이 정확한 10진수로
+  function exactDecimal(bits) {
+    const { sign, exp, frac, kind } = decodeFloat32(bits);
+    if (kind === "nan") return "NaN";
+    if (kind === "inf") return sign ? "-Infinity" : "Infinity";
+    if (kind === "zero") return sign ? "-0" : "0";
+    let m = BigInt(frac), e;
+    if (kind === "normal") { m += 1n << 23n; e = exp - 127 - 23; } else { e = -126 - 23; }
+    if (sign) m = -m;
+    if (e >= 0) return formatScaled(m << BigInt(e), 0);
+    return formatScaled(m * 5n ** BigInt(-e), -e);
+  }
+
+  // 1.가수 (또는 비정규수의 0.가수)를 정확한 10진수로
+  function significand(bits) {
+    const { frac, kind } = decodeFloat32(bits);
+    const m = BigInt(frac) + (kind === "normal" ? 1n << 23n : 0n);
+    return formatScaled(m * 5n ** 23n, 23);
+  }
+
+  // "0.1", "-2.5", "1e-3" 같은 10진수 문자열을 정확하게 {value, scale} (value / 10^scale) 로
+  function parseDecimal(text) {
+    const m = /^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(String(text).trim());
+    if (!m || (m[2] === "" && (m[3] ?? "") === "")) return null;
+    const digits = (m[2] || "0") + (m[3] || "");
+    let scale = (m[3] || "").length - Number(m[4] || 0);
+    let value = BigInt(digits);
+    if (scale < 0) { value *= 10n ** BigInt(-scale); scale = 0; }
+    return { value: m[1] === "-" ? -value : value, scale };
+  }
+
+  // a - b 를 정확한 10진수 문자열로 (둘 다 10진수 문자열)
+  function subtractDecimal(a, b) {
+    const x = parseDecimal(a), y = parseDecimal(b);
+    if (!x || !y) return null;
+    const k = Math.max(x.scale, y.scale);
+    const diff = x.value * 10n ** BigInt(k - x.scale) - y.value * 10n ** BigInt(k - y.scale);
+    return formatScaled(diff, k);
+  }
+
+  // 같은 float32 값으로 돌아오는 가장 짧은 10진수 표기
+  function shortestFloat32(bits) {
+    const x = bitsToFloat(bits);
+    if (!Number.isFinite(x)) return String(x);
+    if (x === 0) return Object.is(x, -0) ? "-0" : "0";
+    for (let p = 1; p <= 9; p++) {
+      const s = Number(x.toPrecision(p));
+      if (Math.fround(s) === x) return String(s);
+    }
+    return String(x);
+  }
+
+  // 한 글자(코드 포인트 하나)의 UTF-8 정보. prefixLens: 바이트마다 앞머리 비트 수
+  function utf8Info(ch) {
+    const cp = ch.codePointAt(0);
+    const bytes = [...new TextEncoder().encode(ch)];
+    const n = bytes.length;
+    const prefixLens = bytes.map((_, i) => (i === 0 ? (n === 1 ? 1 : n + 1) : 2));
+    return { cp, bytes, prefixLens };
+  }
+
+  return {
+    toUnsigned, toSigned, parseIntInput, groupBits,
+    floatToBits, bitsToFloat, decodeFloat32, exactDecimal, significand,
+    parseDecimal, subtractDecimal, shortestFloat32, utf8Info,
+  };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 탭 ----
+(() => {
+  const tabs = [...document.querySelectorAll(".tab")];
+  const select = tab => {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+    }
+  };
+  tabs.forEach((t, i) => {
+    t.addEventListener("click", () => select(t));
+    t.addEventListener("keydown", e => {
+      const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      if (!d) return;
+      const next = tabs[(i + d + tabs.length) % tabs.length];
+      select(next);
+      next.focus();
+    });
+  });
+  select(tabs[0]);
+})();
+
+// ---- 정수 ----
+(() => {
+  const L = BitLogic;
+  let n = 8, u = 5;
+  const $ = id => document.getElementById(id);
+  const note = (text, warn = false) => { $("int-note").textContent = text; $("int-note").classList.toggle("warn", warn); };
+  const max = () => 2 ** n;
+  const signedStr = v => (v < 0 ? `−${-v}` : String(v));
+
+  function render() {
+    const box = $("int-bits");
+    box.replaceChildren();
+    for (let i = n - 1; i >= 0; i--) {
+      const on = Math.floor(u / 2 ** i) % 2;
+      const cell = document.createElement("div");
+      cell.className = "cell" + (i % 4 === 3 && i !== n - 1 ? " gap" : "");
+      const b = document.createElement("button");
+      b.className = "bit mono" + (on ? " on" : "");
+      b.textContent = on;
+      b.setAttribute("aria-pressed", String(!!on));
+      b.setAttribute("aria-label", `비트 ${i}, 가중치 ${2 ** i}` + (i === n - 1 ? `, 부호 있는 값에서는 −${2 ** i}` : ""));
+      b.addEventListener("click", () => { u = on ? u - 2 ** i : u + 2 ** i; note(""); render(); });
+      const w = document.createElement("span");
+      w.className = "weight";
+      w.innerHTML = i === n - 1 ? `${2 ** i}<br><span class="neg">−${2 ** i}</span>` : String(2 ** i);
+      cell.append(b, w);
+      box.append(cell);
+    }
+    const s = L.toSigned(u, n);
+    $("int-bin").textContent = L.groupBits(u, n);
+    $("int-u").textContent = String(u);
+    $("int-s").textContent = signedStr(s);
+    $("int-hex").textContent = "0x" + u.toString(16).toUpperCase().padStart(n / 4, "0");
+  }
+
+  function op(kind) {
+    const before = u, sb = L.toSigned(u, n), mask = max() - 1;
+    if (kind === "inc") u = (u + 1) % max();
+    if (kind === "dec") u = (u - 1 + max()) % max();
+    if (kind === "not") u = mask - u;
+    if (kind === "neg") u = (mask - u + 1) % max();
+    if (kind === "shl") u = (u * 2) % max();
+    if (kind === "shr") u = Math.floor(u / 2);
+    if (kind === "clear") u = 0;
+    const sa = L.toSigned(u, n);
+    const half = 2 ** (n - 1);
+    if (kind === "inc" && before === mask) note(`부호 없는 값: ${mask} + 1 → 0. ${n}비트를 넘친 자리올림이 버려졌다.`, true);
+    else if (kind === "inc" && sb === half - 1) note(`오버플로: 부호 있는 값 ${sb} + 1 → ${signedStr(sa)}. 가장 큰 양수에 1을 더하면 가장 작은 음수가 된다.`, true);
+    else if (kind === "dec" && sb === -half) note(`오버플로: 부호 있는 값 ${signedStr(sb)} − 1 → ${sa}.`, true);
+    else if (kind === "dec" && before === 0) note(`부호 없는 값: 0 − 1 → ${mask}. 0보다 작은 수가 없어 가장 큰 값으로 돌아간다.`, true);
+    else if (kind === "neg" && sb === -half) note(`${signedStr(sb)}의 부호를 바꿔도 ${signedStr(sa)}이다. ${n}비트로는 +${half}을 나타낼 수 없다.`, true);
+    else if (kind === "neg") note(`뒤집기 ${L.groupBits(mask - before, n)} → +1 → ${L.groupBits(u, n)}  (${signedStr(sb)} → ${signedStr(sa)})`);
+    else if (kind === "not") note(`모든 비트를 뒤집었다. 부호 있는 값으로는 항상 −x − 1이 된다: ${signedStr(sb)} → ${signedStr(sa)}`);
+    else if (kind === "shl" && before >= half) note(`맨 앞 비트가 밀려나 사라졌다. 왼쪽 시프트는 넘치지 않을 때만 ×2와 같다.`, true);
+    else if (kind === "shl" && sa < 0) note(`왼쪽으로 한 칸: 부호 없는 값은 ×2 (${before} → ${u})지만, 맨 앞(부호) 비트가 1이 되어 부호 있는 값은 ${sb} → ${signedStr(sa)} (오버플로).`, true);
+    else if (kind === "shl") note(`왼쪽으로 한 칸: ×2 (${before} → ${u})`);
+    else if (kind === "shr" && sb < 0) note(`오른쪽으로 한 칸 (${before} → ${u}). 빈자리를 0으로 채우는 논리 시프트라 부호 있는 값은 ${signedStr(sb)} → ${sa}. C의 부호 없는 정수는 이렇게 동작하지만, 부호 있는 음수의 >>는 Visual Studio를 비롯한 대부분의 컴파일러가 맨 앞 비트를 복사하는 산술 시프트로 계산한다: ${sb} >> 1 → ${Math.floor(sb / 2)}`, true);
+    else if (kind === "shr") note(`오른쪽으로 한 칸: ÷2, 나머지는 버림 (${before} → ${u}). 빈자리는 0으로 채운다(논리 시프트).`);
+    else note("");
+    render();
+  }
+
+  function apply() {
+    const v = L.parseIntInput($("int-in").value, n);
+    if (v === null) { note(`${n}비트로 나타낼 수 없는 값이다. −${2 ** (n - 1)} ~ ${2 ** n - 1} 범위의 정수를 입력한다.`, true); return; }
+    u = v; note(""); render();
+  }
+
+  document.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => op(b.dataset.op)));
+  document.querySelectorAll("[data-width]").forEach(b => b.addEventListener("click", () => {
+    n = Number(b.dataset.width);
+    document.querySelectorAll("[data-width]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    u = u % max();
+    note(""); render();
+  }));
+  $("int-apply").addEventListener("click", apply);
+  $("int-in").addEventListener("keydown", e => { if (e.key === "Enter") apply(); });
+  render();
+})();
+
+// ---- 실수 ----
+(() => {
+  const L = BitLogic;
+  const $ = id => document.getElementById(id);
+  let bits = L.floatToBits(0.1), typed = "0.1";
+  const note = (text, warn = false) => { $("float-note").textContent = text; $("float-note").classList.toggle("warn", warn); };
+  const groups = [
+    { cls: "g-sign", label: "부호", from: 31, to: 31 },
+    { cls: "g-exp", label: "지수 8비트", from: 30, to: 23 },
+    { cls: "g-frac", label: "가수 23비트", from: 22, to: 0 },
+  ];
+
+  function render() {
+    const box = $("float-bits");
+    box.replaceChildren();
+    for (const g of groups) {
+      const wrap = document.createElement("div");
+      wrap.className = "group " + g.cls;
+      const lab = document.createElement("span");
+      lab.className = "group-label";
+      lab.textContent = g.label;
+      const row = document.createElement("div");
+      row.className = "group-bits";
+      for (let i = g.from; i >= g.to; i--) {
+        const on = (bits >>> i) & 1;
+        const b = document.createElement("button");
+        b.className = "bit mono" + (on ? " on" : "");
+        b.textContent = on;
+        b.setAttribute("aria-pressed", String(!!on));
+        b.setAttribute("aria-label", `${g.label.split(" ")[0]} 비트 ${i}`);
+        b.addEventListener("click", () => { bits = (bits ^ (1 << i)) >>> 0; typed = null; $("float-in").value = L.shortestFloat32(bits); render(); });
+        row.append(b);
+      }
+      wrap.append(lab, row);
+      box.append(wrap);
+    }
+
+    const d = L.decodeFloat32(bits);
+    const num = v => (v < 0 ? `−${-v}` : String(v));
+    $("f-sign").textContent = `${d.sign} (${d.sign ? "음수" : "양수"})`;
+    if (d.kind === "normal") $("f-exp").textContent = `저장값 ${d.exp} → ${d.exp} − 127 = ${num(d.exp - 127)}`;
+    else if (d.kind === "zero" || d.kind === "subnormal") $("f-exp").textContent = `저장값 0 (특수: 0 또는 아주 작은 수, 지수는 −126으로 계산)`;
+    else $("f-exp").textContent = `저장값 255 (특수: 무한대 또는 NaN)`;
+    const sig = L.significand(bits);
+    $("f-frac").textContent = d.kind === "normal" ? `1.가수 = ${sig}` : d.kind === "subnormal" ? `0.가수 = ${sig}` : "—";
+    $("f-formula").textContent =
+      d.kind === "normal" ? `(−1)^${d.sign} × ${sig} × 2^${num(d.exp - 127)}` :
+      d.kind === "subnormal" ? `(−1)^${d.sign} × ${sig} × 2^−126` : "—";
+    const exact = L.exactDecimal(bits);
+    $("f-exact").textContent = exact;
+
+    if (typed !== null && d.kind !== "nan" && d.kind !== "inf") {
+      const diff = L.subtractDecimal(exact, typed);
+      $("f-diff").textContent = diff === "0" || diff === "-0" ? "0 (정확히 저장된다)" : (diff.startsWith("-") ? diff : "+" + diff);
+      if (diff !== "0" && diff !== "-0") note(`입력한 ${typed}은(는) 2진수로 정확히 나타낼 수 없어, 가장 가까운 값 ${exact}로 저장된다.`, true);
+      else note(`${typed}은(는) 2진수로 정확히 나타낼 수 있다.`);
+    } else {
+      $("f-diff").textContent = "—";
+      note(d.kind === "nan" ? "지수가 모두 1이고 가수가 0이 아니면 NaN(숫자가 아님)이다."
+        : d.kind === "inf" ? "지수가 모두 1이고 가수가 0이면 무한대다." : "");
+    }
+  }
+
+  function apply(text) {
+    const t = String(text).trim();
+    const x = Number(t);
+    if (t === "" || Number.isNaN(x)) { note("10진수를 입력한다. 예: 0.1, -2.5, 1e-3", true); return; }
+    $("float-in").value = t;
+    bits = L.floatToBits(x);
+    typed = L.parseDecimal(t) ? t : null;
+    render();
+  }
+
+  $("float-apply").addEventListener("click", () => apply($("float-in").value));
+  $("float-in").addEventListener("keydown", e => { if (e.key === "Enter") apply($("float-in").value); });
+  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => apply(b.dataset.preset)));
+  render();
+})();
+
+// ---- 문자 ----
+(() => {
+  const L = BitLogic;
+  const $ = id => document.getElementById(id);
+  const LIMIT = 16;
+
+  function render() {
+    const chars = [...$("text-in").value];
+    const rows = $("text-rows");
+    rows.replaceChildren();
+    let total = 0;
+    chars.forEach((ch, idx) => {
+      const { cp, bytes, prefixLens } = L.utf8Info(ch);
+      total += bytes.length;
+      if (idx >= LIMIT) return;
+      const tr = document.createElement("tr");
+      const shown = ch === " " ? "␠" : ch;
+      const binHtml = bytes.map((b, i) => {
+        const s = b.toString(2).padStart(8, "0"), p = prefixLens[i];
+        return `<span class="byte mono"><span class="pre">${s.slice(0, p)}</span>${s.slice(p)}</span>`;
+      }).join("");
+      const hex = bytes.map(b => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+      tr.innerHTML = `<td class="ch"></td><td class="mono">U+${cp.toString(16).toUpperCase().padStart(4, "0")}</td>` +
+        `<td>${binHtml}</td><td class="mono">${hex}</td><td class="mono">${bytes.length}</td>`;
+      tr.firstChild.textContent = shown;
+      rows.append(tr);
+    });
+    const more = chars.length > LIMIT ? ` (표에는 앞 ${LIMIT}글자만 보인다)` : "";
+    $("text-note").textContent = chars.length
+      ? `글자(코드 포인트) ${chars.length}개, UTF-8 ${total}바이트${more}. C의 strlen(s)는 글자 수가 아니라 바이트 수(${total})를 센다.`
+      : "글자를 입력한다.";
+  }
+
+  $("text-in").addEventListener("input", render);
+  render();
+})();
+</script>
+</body>
+</html>

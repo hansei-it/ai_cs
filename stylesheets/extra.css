@@ -1,0 +1,200 @@
+/* 코드 글꼴(JetBrains Mono)에 없는 한글은 본문 글꼴로 보이게.
+   지정하지 않으면 브라우저 기본 한글 고정폭 글꼴(굴림체)로 깨진 듯 보인다.
+   Material이 이 변수를 body에서 정하므로 body에서 덮어쓴다. */
+body {
+  --md-code-font-family: var(--md-code-font, _), SFMono-Regular, Consolas, Menlo, "Noto Sans KR", "Malgun Gothic", monospace;
+}
+
+/* 한글이 어절 중간에서 끊기지 않게 (본문, 왼쪽 메뉴) */
+.md-typeset,
+.md-nav {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* ── 2단 레이아웃 (데스크톱): 왼쪽 목차 | 경계선 | 본문 ──────────────
+   목차는 햄버거 버튼으로 접고, 경계선을 끌어 폭을 바꾼다 (layout.js).
+   모바일은 Material 기본 동작(햄버거 → 서랍 메뉴)을 그대로 쓴다. */
+:root {
+  --cs-nav-width: 16rem;    /* 목차 기본 폭. layout.js가 사용자가 조절한 값으로 덮어쓴다 */
+  --cs-content-max: 44rem;  /* 본문 한 줄 최대 폭. 넓은 화면에서도 읽기 편한 길이로 제한 */
+}
+
+.cs-resizer {
+  display: none;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-header__inner.md-grid,
+  .md-main__inner.md-grid {
+    max-width: none;
+    margin: 0;
+  }
+
+  .md-header__button[for="__drawer"] {
+    display: inline-block;
+  }
+
+  .md-sidebar--primary {
+    width: var(--cs-nav-width);
+  }
+
+  /* Material은 목차 글자 폭을 11.5rem으로 고정한다. 목차 폭을 바꾼 만큼 글자도 넓어지게 */
+  [dir] .md-sidebar--primary .md-sidebar__inner {
+    padding-right: 0.6rem;
+  }
+
+  .md-main__inner > .md-content {
+    flex-grow: 1;
+    min-width: 0;
+  }
+
+  .md-main .md-main__inner .md-content > .md-content__inner.md-typeset {
+    max-width: var(--cs-content-max);
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1.2rem;
+    padding-right: 1.2rem;
+  }
+
+  .cs-resizer {
+    display: block;
+    position: relative;
+    flex-shrink: 0;
+    width: 0.7rem;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .cs-resizer::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(50% - 0.5px);
+    width: 1px;
+    background: var(--md-default-fg-color--lightest);
+  }
+  .cs-resizer::after {
+    content: "";
+    position: sticky;
+    top: calc(50vh - 1.2rem);
+    display: block;
+    width: 0.3rem;
+    height: 2.4rem;
+    margin: 0 auto;
+    border-radius: 0.2rem;
+    background: var(--md-default-fg-color--lighter);
+  }
+  .cs-resizer:hover::before,
+  .cs-resizer:focus-visible::before,
+  .cs-resizing .cs-resizer::before {
+    left: calc(50% - 1px);
+    width: 2px;
+    background: var(--md-accent-fg-color);
+  }
+  .cs-resizer:hover::after,
+  .cs-resizer:focus-visible::after,
+  .cs-resizing .cs-resizer::after {
+    background: var(--md-accent-fg-color);
+  }
+  .cs-resizer:focus-visible {
+    outline: none;
+  }
+
+  .cs-resizing {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  .cs-nav-collapsed .md-sidebar--primary,
+  .cs-nav-collapsed .cs-resizer {
+    display: none;
+  }
+}
+
+/* 위젯 (<!-- widget:이름 -->). 높이는 위젯이 스스로 맞춘다 */
+.md-typeset .cs-widget {
+  margin: 1.2em 0;
+}
+.md-typeset .cs-widget iframe {
+  box-sizing: content-box;  /* 위젯이 정한 높이가 테두리에 깎이지 않게 */
+  display: block;
+  width: calc(100% - 2px);  /* 좌우 테두리 1px씩 */
+  height: 32rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.3rem;
+  background: var(--md-default-bg-color);
+}
+.md-typeset .cs-widget-open {
+  display: block;
+  margin-top: 0.3em;
+  font-size: 0.75em;
+  text-align: right;
+}
+
+/* 왼쪽 메뉴 섹션 이름 옆 항목 수: 이름보다 흐리고 작게 */
+.cs-nav-count {
+  margin-left: 0.15em;
+  font-size: 0.85em;
+  font-weight: 400;
+  color: var(--md-default-fg-color--light);
+  white-space: nowrap;
+}
+
+.byline {
+  color: var(--md-default-fg-color--light);
+  margin-top: -0.8em;
+}
+
+/* 유형 배지 */
+.layer {
+  display: inline-block;
+  padding: 0.1em 0.65em;
+  border-radius: 1em;
+  font-size: 0.75em;
+  font-weight: 700;
+  line-height: 1.6;
+  color: #fff;
+  white-space: nowrap;
+}
+/* 흰 글자 대비 4.5:1 이상 */
+.layer-direct    { background: #c2410c; }
+.layer-principle { background: #1971c2; }
+.layer-delegate  { background: #237032; }
+
+/* 상태 배지 (미리보기 전용) */
+.status {
+  display: inline-block;
+  padding: 0.05em 0.6em;
+  border: 1px solid currentColor;
+  border-radius: 1em;
+  font-size: 0.72em;
+  white-space: nowrap;
+}
+.status-todo    { color: var(--md-default-fg-color--light); }
+.status-writing { color: #e8590c; }
+.status-review  { color: #7048e8; }
+.status-done    { color: #2b8a3e; }
+
+.soon {
+  margin-left: 0.3em;
+  padding: 0.05em 0.5em;
+  border: 1px dashed var(--md-default-fg-color--lighter);
+  border-radius: 1em;
+  font-size: 0.7em;
+  color: var(--md-default-fg-color--light);
+  white-space: nowrap;
+}
+
+/* 항목 제목 아래 유형 표시 */
+.md-typeset .item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  margin-top: -0.6em;
+}
+.layer-hint {
+  font-size: 0.8em;
+  color: var(--md-default-fg-color--light);
+}
