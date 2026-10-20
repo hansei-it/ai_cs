@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N+1 질의는 얼마나 느릴까</title>
+<meta name="description" content="글 수와 DB까지의 거리(질의 하나의 비용)를 골라, 글마다 작성자를 따로 묻는 N+1과 JOIN, IN으로 묶은 방법의 질의 수와 시간을 견준다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 5.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ways { display: grid; gap: 8px; margin-top: 4px; }
+  .way { border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; background: var(--soft); }
+  .way h2 { font-size: 13.5px; margin: 0 0 4px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .way h2 .n { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+  .bar { height: 14px; border-radius: 3px; background: var(--read); min-width: 2px; }
+  .way.slow .bar { background: var(--write); }
+  .sql { margin: 5px 0 0; font-size: 11.5px; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>N+1 질의는 얼마나 느릴까</h1>
+<p class="lead">글 목록과 작성자 이름을 함께 보여 준다. 시간은 "질의 수 × 질의 하나의 비용 + 받은 행 수 × 행 하나를 읽는 비용(0.00035ms)"으로 어림한다. 이 PC의 SQLite 값은 56번 측정에서 잰 것이고, 서버의 왕복 시간은 가정한 값이다.</p>
+<div class="row" role="group" aria-label="글 수">
+  <span class="label">글 수</span>
+  <button class="btn" data-n="10">10개</button>
+  <button class="btn" data-n="100">100개</button>
+  <button class="btn" data-n="1000">1,000개</button>
+</div>
+<div class="row" role="group" aria-label="DB까지의 거리">
+  <span class="label">DB까지</span>
+  <button class="btn" data-c="0.048">이 PC의 SQLite 파일 (0.048ms, 잰 값)</button>
+  <button class="btn" data-c="0.5">같은 건물의 DB 서버 (왕복 0.5ms라고 하자)</button>
+  <button class="btn" data-c="40">먼 지역의 DB 서버 (왕복 40ms라고 하자)</button>
+</div>
+<div class="ways" id="ways"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const NPlus1Logic = (() => {
+  // 질의 수: N+1은 목록 한 번과 글마다 작성자 한 번, JOIN은 한 번, IN은 목록 한 번과 작성자 한꺼번에 한 번
+  const queries = { n1: n => n + 1, join: () => 1, in: () => 2 };
+  // 받는 행 수: N+1은 목록 n행과 글마다 작성자 1행, JOIN은 n행, IN은 목록 n행과 작성자(56번 측정은 100명) 행
+  const USERS = 100;
+  const rows = { n1: n => 2 * n, join: n => n, in: n => n + Math.min(n, USERS) };
+  // 행 하나를 받아 읽는 비용(ms). 56번 측정의 JOIN 0.39~0.42ms에서 질의 하나(0.048ms)를 빼고 1,000행으로 나눈 값
+  const ROW = 0.00035;
+  const time = (way, n, cost) => queries[way](n) * cost + rows[way](n) * ROW;   // ms
+  // 사람이 읽기 좋게: 1초 넘으면 초, 아니면 ms
+  const fmt = ms => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}초` : ms >= 10 ? `${Math.round(ms)}ms` : ms >= 1 ? `${ms.toFixed(1)}ms` : `${ms.toFixed(2)}ms`);
+  return { queries, rows, ROW, time, fmt };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = NPlus1Logic;
+  const $ = id => document.getElementById(id);
+  let n = 1000, cost = 0.048;
+  const WAYS = [
+    ["n1", "N+1: 글마다 작성자를 따로 묻는다", n => `SELECT id, user_id, title FROM post\nSELECT name FROM user WHERE id = ?   -- 글마다 (${n.toLocaleString("en-US")}번)`],
+    ["join", "JOIN: 한 번에 잇는다", () => "SELECT p.title, u.name FROM post p JOIN user u ON u.id = p.user_id"],
+    ["in", "IN: 목록을 받고, 작성자를 한꺼번에 묻는다", () => "SELECT id, user_id, title FROM post\nSELECT id, name FROM user WHERE id IN (?, ?, …)"],
+  ];
+  function render() {
+    const worst = L.time("n1", n, cost);
+    $("ways").innerHTML = WAYS.map(([w, title, sql]) => {
+      const t = L.time(w, n, cost), q = L.queries[w](n);
+      return `<div class="way ${w === "n1" ? "slow" : ""}"><h2>${title}<span class="n">질의 ${q.toLocaleString("en-US")}번, 약 ${L.fmt(t)}</span></h2>`
+        + `<div class="bar" style="width:${Math.max(0.3, (t / worst) * 100)}%"></div><pre class="sql mono">${sql(n)}</pre></div>`;
+    }).join("");
+    const ratio = L.time("n1", n, cost) / L.time("join", n, cost);
+    $("note").textContent = cost === 0.048
+      ? `이 PC에서 글 1,000개로 재니 N+1은 48~50ms, JOIN은 0.39~0.42ms였다. 같은 PC 안에서도 질의 하나마다 드는 몫이 쌓인다.`
+      : `질의 하나에 ${cost}ms가 들면 N+1은 JOIN보다 ${Math.round(ratio).toLocaleString("en-US")}배 걸린다. 화면 하나에 ${L.fmt(worst)}다. DB가 멀수록 질의의 수가 시간을 정한다.`;
+    document.querySelectorAll("[data-n]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.n) === n)));
+    document.querySelectorAll("[data-c]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.c) === cost)));
+  }
+  document.querySelectorAll("[data-n]").forEach(b => b.addEventListener("click", () => { n = Number(b.dataset.n); render(); }));
+  document.querySelectorAll("[data-c]").forEach(b => b.addEventListener("click", () => { cost = Number(b.dataset.c); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

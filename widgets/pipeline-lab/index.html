@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>파이프라인 단계의 차례</title>
+<meta name="description" content="CI 파이프라인의 다섯 단계를 위아래로 옮겨 차례를 바꾸고, 한 번 돌릴 때 평균 시간과 실패했을 때 알기까지 걸리는 평균 시간이 어떻게 바뀌는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .stages { list-style: none; padding: 0; margin: 4px 0 8px; }
+  .stages li { display: grid; grid-template-columns: 1.6em 8.5em minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .stages .n { color: var(--muted); font-size: 13px; text-align: right; }
+  .nm small { display: block; font-size: 11px; color: var(--muted); }
+  .track { display: block; }
+  .bar { display: block; height: 14px; border-radius: 3px; background: var(--read-bg); border: 1px solid var(--read); }
+  .mv .btn { padding: 0 7px; }
+  .bad { color: var(--write); font-size: 13px; margin: 4px 0; }
+  .res { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; font-size: 14px; margin-top: 6px; }
+  .res b { font-size: 18px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .stages li { grid-template-columns: 1.4em 7.6em minmax(0, 1fr) auto; } .res { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>파이프라인 단계의 차례</h1>
+<p class="lead">앞 단계가 실패하면 뒤 단계는 돌지 않는다. 단계마다 걸리는 시간과 실패하는 비율은 가정한 값이다(내 프로젝트의 CI 기록이 있다면 그 값으로 생각해 본다).</p>
+<ol class="stages" id="stages" aria-label="파이프라인 단계(위에서부터 차례대로 돈다)"></ol>
+<div class="bad" id="bad" aria-live="polite"></div>
+<div class="res" id="res"></div>
+<div class="row" style="margin-top:8px">
+  <button class="btn" id="reset">처음 차례로</button>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const PipeLogic = (() => {
+  // CI 파이프라인의 단계와 차례. 단계마다 걸리는 시간(초)과 실패 비율은 가정한 값이다.
+  // 앞 단계가 실패하면 뒤 단계는 돌지 않는다. 통합 테스트는 빌드 결과가 있어야 하고, 배포 확인은 맨 뒤다.
+  const STAGES = {
+    lint: { name: "정적 검사", t: 30, p: 0.10 },
+    unit: { name: "단위 테스트", t: 120, p: 0.15 },
+    build: { name: "빌드", t: 180, p: 0.03 },
+    integ: { name: "통합 테스트", t: 480, p: 0.10 },
+    deploy: { name: "배포 확인", t: 600, p: 0.05 },
+  };
+  const START = ["build", "integ", "unit", "lint", "deploy"];   // 처음 보여 줄 차례(빌드부터 하는 차례)
+  function problems(order) {
+    const out = [];
+    if (order.indexOf("integ") < order.indexOf("build")) out.push("통합 테스트는 빌드 결과가 있어야 해서 빌드 뒤에 둔다");
+    if (order[order.length - 1] !== "deploy") out.push("배포 확인은 모든 검사를 통과한 뒤 맨 끝에 둔다");
+    return out;
+  }
+  function stats(order) {
+    let reach = 1, mean = 0, failTime = 0, sum = 0;
+    for (const k of order) {
+      const { t, p } = STAGES[k];
+      mean += reach * t;            // 이 단계까지 오면 t초를 쓴다
+      sum += t;
+      failTime += reach * p * sum;  // 여기서 실패하면 지금까지 쓴 시간 뒤에 실패를 안다
+      reach *= 1 - p;
+    }
+    const pfail = 1 - reach;
+    return { allPass: sum, mean, pfail, failMean: failTime / pfail };
+  }
+  const mmss = s => { const r = Math.round(s); return `${Math.floor(r / 60)}분 ${String(r % 60).padStart(2, "0")}초`; };
+  return { STAGES, START, problems, stats, mmss };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = PipeLogic;
+  const $ = id => document.getElementById(id);
+  let order = L.START.slice();
+  const maxT = Math.max(...Object.values(L.STAGES).map(s => s.t));
+  function move(i, d) {
+    const j = i + d;
+    if (j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    render();
+  }
+  function render() {
+    $("stages").innerHTML = order.map((k, i) => {
+      const s = L.STAGES[k];
+      return `<li><span class="n">${i + 1}</span><span class="nm">${s.name}<small class="mono">${L.mmss(s.t)} · 실패 ${Math.round(s.p * 100)}%</small></span>`
+        + `<span class="track"><span class="bar" style="width:${(s.t / maxT * 100).toFixed(1)}%"></span></span>`
+        + `<span class="mv"><button class="btn" data-i="${i}" data-d="-1" aria-label="${s.name} 위로" ${i === 0 ? "disabled" : ""}>↑</button> <button class="btn" data-i="${i}" data-d="1" aria-label="${s.name} 아래로" ${i === order.length - 1 ? "disabled" : ""}>↓</button></span></li>`;
+    }).join("");
+    document.querySelectorAll("[data-d]").forEach(b => b.addEventListener("click", () => move(Number(b.dataset.i), Number(b.dataset.d))));
+    const bad = L.problems(order);
+    $("bad").textContent = bad.length ? `이 차례로는 돌릴 수 없다: ${bad.join(", ")}.` : "";
+    if (bad.length) { $("res").innerHTML = ""; $("note").textContent = "단계 사이의 순서 제약을 먼저 맞춘다."; return; }
+    const r = L.stats(order);
+    $("res").innerHTML = `<span>모두 통과할 때 <b class="mono">${L.mmss(r.allPass)}</b></span><span>어딘가에서 실패할 확률 <b class="mono">${(r.pfail * 100).toFixed(1)}%</b></span>`
+      + `<span>한 번 돌릴 때 평균 <b class="mono">${L.mmss(r.mean)}</b></span><span>실패했을 때 알기까지 평균 <b class="mono">${L.mmss(r.failMean)}</b></span>`;
+    const best = L.stats(["lint", "unit", "build", "integ", "deploy"]);
+    $("note").textContent = Math.abs(r.mean - best.mean) < 1e-9
+      ? "빨리 끝나고 자주 실패하는 검사를 앞에 두었다. 모두 통과하는 시간은 그대로지만, 실패는 훨씬 빨리 알린다."
+      : "모두 통과하는 시간과 실패할 확률은 차례와 상관없다. 바뀌는 것은 실패를 알기까지 기다리는 시간이다. 더 줄일 차례가 있다.";
+  }
+  $("reset").addEventListener("click", () => { order = L.START.slice(); render(); });
+  render();
+})();
+</script>
+</body>
+</html>

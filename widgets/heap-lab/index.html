@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>힙 실험실</title>
+<meta name="description" content="malloc, free 문장이나 실수 시나리오를 눌러, 힙 블록이 생기고 풀리는 모습과 누수·해제 후 사용·이중 해제가 어떻게 생기는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --warn: #c2410c;
+    --warn-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --warn: #ffa94d;
+    --warn-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono, .btn.code { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .main { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-start; margin-top: 4px; }
+  .panel h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
+  .vars { display: grid; grid-template-columns: auto auto; gap: 4px 10px; font-size: 14px; }
+  .vars .name { font-weight: 700; }
+  .heap { display: grid; gap: 6px; min-width: 250px; }
+  .block { border: 1.5px solid var(--accent); border-radius: 6px; padding: 5px 9px; background: var(--accent-bg); font-size: 14px; }
+  .block.freed { border-style: dashed; border-color: var(--line); background: transparent; color: var(--muted); }
+  .block.leak { border-color: var(--warn); background: var(--warn-bg); }
+  .block .head { display: flex; justify-content: space-between; gap: 10px; }
+  .block .tag { font-size: 12px; font-weight: 700; }
+  .block.leak .tag { color: var(--warn); }
+  .block .who { font-size: 12px; color: var(--muted); }
+  .empty { font-size: 13px; color: var(--muted); }
+  .log { font-size: 13px; background: var(--soft); border-radius: 6px; padding: 6px 10px; min-width: 200px; white-space: pre; }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .note.bad { border-left-color: var(--warn); background: var(--warn-bg); }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .heap { min-width: 0; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<h1>힙 실험실</h1>
+<p class="lead">int *p = NULL, *q = NULL; 에서 시작한다. 주소는 설명을 위해 정한 값이고, 이 실험실은 해제한 자리를 같은 크기의 다음 malloc에 바로 다시 준다.</p>
+<div class="row" role="group" aria-label="시나리오">
+  <span class="label">시나리오</span>
+  <button class="btn" data-scenario="ok">올바른 사용</button>
+  <button class="btn" data-scenario="leak">누수</button>
+  <button class="btn" data-scenario="uaf">해제 후 사용</button>
+  <button class="btn" data-scenario="double">이중 해제</button>
+</div>
+<div class="row" id="palette" role="group" aria-label="문장"><span class="label">문장</span></div>
+<div class="main">
+  <div class="panel">
+    <h2>스택의 포인터</h2>
+    <div class="vars mono" id="vars"></div>
+  </div>
+  <div class="panel">
+    <h2>힙</h2>
+    <div class="heap mono" id="heap"></div>
+  </div>
+  <div class="panel">
+    <h2>실행한 문장</h2>
+    <div class="log mono" id="log"></div>
+  </div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const HeapLogic = (() => {
+  const STMTS = ["p = malloc(16);", "q = malloc(16);", "q = p;", "*p = 7;", "*q = 1;", "printf(\"%d\\n\", *q);", "free(p);", "free(q);", "p = NULL;", "끝: 누수 검사"];
+  const SCENARIOS = {
+    ok: ["p = malloc(16);", "*p = 7;", "free(p);", "p = NULL;", "끝: 누수 검사"],
+    leak: ["p = malloc(16);", "*p = 7;", "p = malloc(16);", "끝: 누수 검사"],
+    uaf: ["p = malloc(16);", "free(p);", "q = malloc(16);", "*q = 1;", "*p = 7;", "printf(\"%d\\n\", *q);"],
+    double: ["p = malloc(16);", "q = p;", "free(p);", "free(q);"],
+  };
+  const BASE = 0x2000;
+  const hex = n => "0x" + n.toString(16).toUpperCase();
+
+  // 포인터 값은 { addr, gen }: 몇 번째로 받은 블록의 주소인지까지 기억한다.
+  // 블록이 해제된 뒤 같은 자리를 다시 받으면 gen이 늘어나, 옛 주소를 든 포인터(매달린 포인터)를 가려낼 수 있다.
+  const initial = () => ({ blocks: [], vars: { p: null, q: null }, out: "", next: BASE, gen: 0 });
+  const clone = s => ({ blocks: s.blocks.map(b => ({ ...b })), vars: { p: s.vars.p && { ...s.vars.p }, q: s.vars.q && { ...s.vars.q } }, out: s.out, next: s.next, gen: s.gen });
+  const blockOf = (s, ptr) => s.blocks.find(b => b.addr === ptr.addr);
+  const valid = (s, ptr) => { const b = ptr && blockOf(s, ptr); return !!b && b.used && b.gen === ptr.gen; };
+  // 지금 이 블록을 제대로 가리키는 포인터와, 옛 주소를 든 채 매달린 포인터
+  const owners = (s, b) => Object.keys(s.vars).filter(v => s.vars[v] && s.vars[v].addr === b.addr && b.used && s.vars[v].gen === b.gen);
+  const dangling = (s, b) => Object.keys(s.vars).filter(v => s.vars[v] && s.vars[v].addr === b.addr && !(b.used && s.vars[v].gen === b.gen));
+  // 쓰고 있는데 제대로 가리키는 포인터가 없는 블록 = 누수
+  const leaks = s => s.blocks.filter(b => b.used && owners(s, b).length === 0);
+
+  function malloc(s, size) {
+    s.gen += 1;
+    const reuse = s.blocks.find(b => !b.used && b.size === size);
+    if (reuse) { Object.assign(reuse, { used: true, data: "?", gen: s.gen }); return { addr: reuse.addr, gen: s.gen, reused: true }; }
+    s.blocks.push({ addr: s.next, size, used: true, data: "?", gen: s.gen });
+    s.next += size;
+    return { addr: s.next - size, gen: s.gen, reused: false };
+  }
+
+  // 결과: { state, ok, bad, note }  ok가 false면 실행하지 않았다(멈춤), bad면 잘못된 동작
+  function exec(state, stmt) {
+    const s = clone(state);
+    const done = (note, bad = false) => ({ state: s, ok: true, bad, note });
+    const stop = note => ({ state, ok: false, bad: true, note });
+    const m = stmt.match(/^([pq]) = malloc\((\d+)\);$/);
+    if (m) {
+      const [, v, size] = m;
+      const oldBlock = s.vars[v] && valid(s, s.vars[v]) ? blockOf(s, s.vars[v]) : null;
+      const got = malloc(s, Number(size));
+      s.vars[v] = { addr: got.addr, gen: got.gen };
+      const leaked = !!(oldBlock && owners(s, oldBlock).length === 0);
+      let note = `${size}바이트 블록을 받아 그 주소(${hex(got.addr)})를 ${v}에 넣었다.` + (got.reused ? " 해제했던 자리를 다시 받았다." : "");
+      if (leaked) note += ` ${v}가 가리키던 ${hex(oldBlock.addr)} 블록은 이제 아무도 가리키지 않는다. free할 방법이 없어진 누수다.`;
+      return done(note, leaked);
+    }
+    switch (stmt) {
+      case "q = p;": {
+        const old = s.vars.q && valid(s, s.vars.q) ? blockOf(s, s.vars.q) : null;
+        s.vars.q = s.vars.p && { ...s.vars.p };
+        let note = s.vars.p === null ? "q도 NULL이 되었다." : "q도 p와 같은 주소를 가리킨다. 블록은 하나, 포인터는 둘이다.";
+        const leaked = !!(old && owners(s, old).length === 0);
+        if (leaked) note += ` q가 가리키던 ${hex(old.addr)} 블록은 누수가 되었다.`;
+        return done(note, leaked);
+      }
+      case "p = NULL;": {
+        const b = s.vars.p && valid(s, s.vars.p) ? blockOf(s, s.vars.p) : null;
+        const wasDangling = !!(s.vars.p && !valid(s, s.vars.p));
+        s.vars.p = null;
+        if (b && owners(s, b).length === 0) return done(`p를 지웠다. 그런데 ${hex(b.addr)} 블록을 아직 free하지 않았는데 가리키는 포인터가 없어져 누수가 되었다.`, true);
+        return done("p를 NULL로 지웠다." + (wasDangling ? " 해제한 주소를 들고 있지 않게 하는 좋은 습관이다." : ""));
+      }
+      case "*p = 7;":
+      case "*q = 1;": {
+        const v = stmt[1], val = Number(stmt.match(/= (\d+)/)[1]);
+        const ptr = s.vars[v];
+        if (ptr === null) return stop(`${v}는 NULL이다. NULL이 가리키는 곳에 쓰면 0xC0000005(접근 위반)로 멈춘다.`);
+        const b = blockOf(s, ptr);
+        if (!valid(s, ptr)) {
+          b.data = val;
+          b.corrupted = true;
+          const victims = owners(s, b);
+          if (victims.length) return done(`${v}가 가리키던 블록은 이미 해제했고, 그 자리를 ${victims.join(", ")}가 다시 받았다. *${v} = ${val}은 ${victims.join(", ")}의 데이터를 망가뜨렸다. 해제 후 사용이다. 이 PC에서 같은 일을 하는 코드를 Release로 20번 실행하면 2번 이렇게 되었고, 나머지는 다른 자리를 받아 티가 나지 않았다.`, true);
+          return done(`${v}가 가리키는 블록은 이미 해제했다. 해제 후 사용은 정의되지 않은 동작이다. 지금은 그 자리를 아무도 안 써서 티가 나지 않을 뿐이다.`, true);
+        }
+        b.data = val;
+        b.corrupted = false;
+        const other = owners(s, b).filter(o => o !== v);
+        return done(`${hex(b.addr)} 블록에 ${val}을 썼다.` + (other.length ? ` ${other.join(", ")}도 같은 블록을 가리키므로 *${other[0]}도 ${val}이다.` : ""));
+      }
+      case "printf(\"%d\\n\", *q);": {
+        const ptr = s.vars.q;
+        if (ptr === null) return stop("q는 NULL이다. NULL이 가리키는 곳을 읽으면 0xC0000005(접근 위반)로 멈춘다.");
+        if (!valid(s, ptr)) return stop("q가 가리키는 블록은 이미 해제했다. 이 PC의 Debug 설정에서는 해제한 메모리를 0xDD로 채워 두어 -572662307이, Release에서는 알 수 없는 값이 나왔다. 정의되지 않은 동작이라 이 실험실은 실행하지 않는다.");
+        const b = blockOf(s, ptr);
+        s.out += `${b.data}\n`;
+        if (b.corrupted) return done(`*q를 출력했다: ${b.data}. q로 넣은 값이 아니다. 해제한 p로 쓴 값이 q의 블록을 덮어썼다. 해제 후 사용은 이렇게 엉뚱한 곳에서 드러난다.`, true);
+        return done(`*q를 출력했다: ${b.data}` + (b.data === "?" ? " (값을 넣지 않은 메모리라 무엇이 나올지 모른다)" : ""));
+      }
+      case "free(p);":
+      case "free(q);": {
+        const v = stmt[5];
+        const ptr = s.vars[v];
+        if (ptr === null) return done("free(NULL)은 아무 일도 하지 않는다.");
+        if (!valid(s, ptr) && blockOf(s, ptr).used) {
+          // 해제한 자리를 다른 malloc이 다시 받았다: 힙이 보기에는 쓰고 있는 블록이라 그냥 해제된다
+          const b = blockOf(s, ptr), victims = owners(s, b);
+          b.used = false;
+          const who = victims.length ? victims.join(", ") : "다른 malloc";
+          return done(`${v}가 든 ${hex(b.addr)}는 이미 해제한 주소인데, 그 자리를 ${who}가 다시 받았다. 그래서 free(${v})는 멈추지 않고 ${who}의 블록을 돌려주었다.` + (victims.length ? ` 이제 ${who}도 매달린 포인터다.` : "") + " 이 PC에서 Debug, Release 모두 이 free는 그냥 지나갔고, 그 뒤에 남은 포인터로 한 번 더 free하자 그때 멈췄다. 멈추는 이중 해제보다 찾기 어렵다.", true);
+        }
+        if (!valid(s, ptr)) return stop(`${v}가 가리키는 블록은 이미 해제했다. 이중 해제다. 이 PC의 Debug 설정에서는 "_CrtIsValidHeapPointer(block)" 어설션이 뜨고, Release에서는 0xC0000374(힙 손상)로 멈췄다.`);
+        const b = blockOf(s, ptr);
+        b.used = false;
+        const others = dangling(s, b).filter(o => o !== v);
+        return done(`${hex(b.addr)} 블록을 돌려주었다. ${v}는 여전히 그 주소를 들고 있다(매달린 포인터).` + (others.length ? ` ${others.join(", ")}도 같은 주소를 들고 있다.` : "") + " 다시 쓰지 않도록 NULL로 지워 둔다.");
+      }
+      case "끝: 누수 검사": {
+        const ls = s.blocks.filter(b => b.used);
+        if (!ls.length) return done("프로그램 끝. 받은 블록을 모두 돌려주었다. 누수가 없다.");
+        return done(`프로그램 끝. 돌려주지 않은 블록 ${ls.length}개, ${ls.reduce((a, b) => a + b.size, 0)}바이트가 남았다. Visual Studio Debug 설정의 _CrtDumpMemoryLeaks()는 이런 블록을 "Detected memory leaks!"로 알려 준다.`, true);
+      }
+      default:
+        return stop(`모르는 문장: ${stmt}`);
+    }
+  }
+
+  function run(stmts) {
+    let s = initial();
+    const results = [];
+    for (const x of stmts) {
+      const r = exec(s, x);
+      results.push(r);
+      s = r.state;
+    }
+    return { state: s, results };
+  }
+
+  return { STMTS, SCENARIOS, initial, exec, run, leaks, owners, dangling, valid, hex };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = HeapLogic;
+  const $ = id => document.getElementById(id);
+  let state = L.initial(), log = [], last = null;
+
+  function apply(stmt) {
+    const r = L.exec(state, stmt);
+    state = r.state;
+    log.push({ stmt, ok: r.ok });
+    last = r;
+  }
+  for (const stmt of L.STMTS) {
+    const b = document.createElement("button");
+    b.className = "btn" + (stmt.startsWith("끝") ? "" : " code");
+    b.textContent = stmt;
+    b.addEventListener("click", () => { apply(stmt); render(); });
+    $("palette").append(b);
+  }
+  const reset = document.createElement("button");
+  reset.className = "btn";
+  reset.textContent = "처음으로";
+  reset.addEventListener("click", () => { state = L.initial(); log = []; last = null; render(); });
+  $("palette").append(reset);
+  document.querySelectorAll("[data-scenario]").forEach(b => b.addEventListener("click", () => {
+    state = L.initial(); log = []; last = null;
+    for (const s of L.SCENARIOS[b.dataset.scenario]) apply(s);
+    render();
+  }));
+
+  function render() {
+    const vars = $("vars");
+    vars.textContent = "";
+    for (const v of ["p", "q"]) {
+      const ptr = state.vars[v];
+      const n = document.createElement("span"); n.className = "name"; n.textContent = v;
+      const val = document.createElement("span");
+      val.textContent = ptr === null ? "NULL" : `${L.hex(ptr.addr)}${L.valid(state, ptr) ? "" : " (매달린 포인터)"}`;
+      vars.append(n, val);
+    }
+    const heap = $("heap");
+    heap.textContent = "";
+    if (!state.blocks.length) heap.innerHTML = '<span class="empty">아직 받은 블록이 없다</span>';
+    const leaked = L.leaks(state);
+    for (const b of state.blocks) {
+      const d = document.createElement("div");
+      const leak = leaked.includes(b);
+      d.className = "block" + (b.used ? "" : " freed") + (leak ? " leak" : "");
+      const who = L.owners(state, b), stale = L.dangling(state, b);
+      d.innerHTML = `<div class="head"><span>${L.hex(b.addr)} · ${b.size}바이트</span><span class="tag">${leak ? "누수" : b.used ? "사용 중" : "해제됨"}</span></div>` +
+        `<div>값: ${b.data}</div><div class="who">${who.length ? `가리키는 포인터: ${who.join(", ")}` : "가리키는 포인터 없음"}${stale.length ? ` · 옛 주소를 든 포인터: ${stale.join(", ")}` : ""}</div>`;
+      heap.append(d);
+    }
+    $("log").textContent = ["int *p = NULL, *q = NULL;", ...log.map(x => (x.ok ? x.stmt : `${x.stmt}  ← 멈춤`))].join("\n") + (state.out ? `\n\n출력:\n${state.out}` : "");
+    $("note").textContent = last ? last.note : "시나리오나 문장을 눌러 본다.";
+    $("note").className = "note" + (last && last.bad ? " bad" : "");
+  }
+  render();
+})();
+</script>
+</body>
+</html>

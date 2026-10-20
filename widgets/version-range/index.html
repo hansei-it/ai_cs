@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>버전 범위와 설치될 버전</title>
+<meta name="description" content="requirements.txt에 쓸 버전 범위를 고르거나 직접 써서, mkdocs의 실제 배포 버전 가운데 어느 것이 맞고 pip이 무엇을 설치할지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --pick: #237032;
+    --pick-bg: #e6f4ea;
+    --warn: #c2410c;
+    --warn-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --pick: #69db7c;
+    --pick-bg: #1e3524;
+    --warn: #ffa94d;
+    --warn-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono, .btn.code, input.mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input.mono { font-size: 15px; color: var(--fg); background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; width: 15em; max-width: 100%; }
+  label.check { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; cursor: pointer; }
+  label.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .chip { font-size: 14px; padding: 3px 10px; border-radius: 14px; border: 1.5px solid var(--line); color: var(--muted); }
+  .chip.match { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+  .chip.pick { border-color: var(--pick); background: var(--pick-bg); color: var(--pick); }
+  .chip.pick::after { content: " ← 설치"; font-weight: 700; }
+  .chip.future { border-style: dashed; }
+  .chip.future.match { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+  .chip.future.pick { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+  .note { margin: 6px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  .note.bad { border-left-color: var(--warn); background: var(--warn-bg); }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>버전 범위와 설치될 버전</h1>
+<div class="row" role="group" aria-label="예시"><span class="label">예시</span></div>
+<div class="row">
+  <span class="label">직접 쓰기</span>
+  <span class="mono">mkdocs</span><input id="spec" class="mono" type="text" value="==1.6.1" aria-label="버전 범위" autocomplete="off" spellcheck="false">
+</div>
+<div class="row">
+  <span class="label">가정</span>
+  <label class="check"><input type="checkbox" id="future"> 2.0.0이 나왔다고 하자 (지금은 없다)</label>
+</div>
+<div class="chips mono" id="chips"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const VersionLogic = (() => {
+  // PyPI의 mkdocs 배포 버전 58개 (2026-10-14 `pip index versions mkdocs`로 확인. 2.0.0은 가정)
+  // 화면에는 1.4.0 이후만 하나씩 보이고, 그보다 옛 버전(OLDER)은 묶어서 보인다. 계산에는 모두 쓴다.
+  const OLDER = ["0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.10", "0.11", "0.11.1", "0.12.0", "0.12.1", "0.12.2",
+    "0.13.0", "0.13.1", "0.13.2", "0.13.3", "0.14.0", "0.15.0", "0.15.1", "0.15.2", "0.15.3", "0.16.0", "0.16.1", "0.16.2", "0.16.3",
+    "0.17.0", "0.17.1", "0.17.2", "0.17.3", "0.17.4", "0.17.5", "1.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.1", "1.1.1", "1.1.2",
+    "1.2", "1.2.1", "1.2.2", "1.2.3", "1.2.4", "1.3.0", "1.3.1"];
+  const RELEASED = ["1.4.0", "1.4.1", "1.4.2", "1.4.3", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.6.0", "1.6.1"];
+  const FUTURE = "2.0.0";
+  const PRESETS = ["==1.6.1", ">=1.6", ">=1.6,<2", "~=1.6.0", "~=1.5", "==1.5.*"];
+
+  const parts = v => v.split(".").map(Number);
+  // 두 버전 비교: 짧은 쪽은 0을 채운다 (1.6 == 1.6.0)
+  function cmp(a, b) {
+    const x = parts(a), y = parts(b), n = Math.max(x.length, y.length);
+    for (let i = 0; i < n; i++) {
+      const d = (x[i] || 0) - (y[i] || 0);
+      if (d) return Math.sign(d);
+    }
+    return 0;
+  }
+  const prefix = (v, p) => { const x = parts(v), y = parts(p); return y.every((n, i) => (x[i] || 0) === n); };
+
+  // "==1.6.1", ">=1.6,<2", "~=1.5", "==1.5.*" 같은 범위를 조건 목록으로 읽는다. 읽지 못하면 null
+  function parse(spec) {
+    const clauses = spec.split(",").map(s => s.trim()).filter(Boolean);
+    if (!clauses.length) return null;
+    const out = [];
+    for (const c of clauses) {
+      const m = c.match(/^(==|!=|>=|<=|>|<|~=)\s*(\d+(?:\.\d+)*)(\.\*)?$/);
+      if (!m) return null;
+      const [, op, ver, star] = m;
+      if (star && op !== "==" && op !== "!=") return null;
+      if (op === "~=" && ver.split(".").length < 2) return null;
+      out.push({ op, ver, star: !!star });
+    }
+    return out;
+  }
+
+  function ok(v, c) {
+    switch (c.op) {
+      case "==": return c.star ? prefix(v, c.ver) : cmp(v, c.ver) === 0;
+      case "!=": return c.star ? !prefix(v, c.ver) : cmp(v, c.ver) !== 0;
+      case ">=": return cmp(v, c.ver) >= 0;
+      case "<=": return cmp(v, c.ver) <= 0;
+      case ">": return cmp(v, c.ver) > 0;
+      case "<": return cmp(v, c.ver) < 0;
+      case "~=": {
+        // ~=1.6.0 은 >=1.6.0 이면서 1.6.* ,  ~=1.5 는 >=1.5 이면서 1.*
+        const p = c.ver.split(".").slice(0, -1).join(".");
+        return cmp(v, c.ver) >= 0 && prefix(v, p);
+      }
+    }
+    return false;
+  }
+
+  function evaluate(spec, versions) {
+    const cs = parse(spec);
+    if (!cs) return null;
+    const match = versions.filter(v => cs.every(c => ok(v, c)));
+    const pick = match.reduce((a, b) => (a === null || cmp(b, a) > 0 ? b : a), null);
+    return { match, pick };
+  }
+
+  // 버전 하나로 고정했는가: 별(*) 없는 ==가 있을 때만. 맞는 버전이 지금 하나뿐이어도 범위가 열려 있으면 고정이 아니다
+  function pinned(spec) {
+    const cs = parse(spec);
+    return !!cs && cs.some(c => c.op === "==" && !c.star);
+  }
+
+  return { OLDER, RELEASED, FUTURE, PRESETS, cmp, parse, evaluate, pinned };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = VersionLogic;
+  const $ = id => document.getElementById(id);
+  const row = document.querySelector(".row");
+  for (const p of L.PRESETS) {
+    const b = document.createElement("button");
+    b.className = "btn code"; b.textContent = `mkdocs${p}`; b.dataset.p = p;
+    b.addEventListener("click", () => { $("spec").value = p; render(); });
+    row.append(b);
+  }
+
+  function render() {
+    const spec = $("spec").value.trim();
+    const shown = [...L.RELEASED, ...($("future").checked ? [L.FUTURE] : [])];
+    const versions = [...L.OLDER, ...shown];
+    const r = L.evaluate(spec, versions);
+    document.querySelectorAll("[data-p]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.p === spec)));
+    const oldMatch = r ? r.match.filter(v => L.OLDER.includes(v)).length : 0;
+    const oldChip = `<span class="${["chip", oldMatch ? "match" : "", r && L.OLDER.includes(r.pick) ? "pick" : ""].filter(Boolean).join(" ")}">1.4.0 이전 ${L.OLDER.length}개${oldMatch ? ` 중 ${oldMatch}개` : ""}</span>`;
+    $("chips").innerHTML = oldChip + shown.map(v => {
+      const cls = ["chip", v === L.FUTURE ? "future" : "", r && r.match.includes(v) ? "match" : "", r && r.pick === v ? "pick" : ""].filter(Boolean).join(" ");
+      return `<span class="${cls}">${v}</span>`;
+    }).join("");
+    const note = $("note");
+    note.className = "note";
+    if (!r) { note.textContent = "읽을 수 없는 범위다. ==1.6.1, >=1.6,<2, ~=1.6.0처럼 쓴다."; note.className = "note bad"; return; }
+    if (!r.pick) { note.textContent = "맞는 버전이 없다. pip은 'No matching distribution found'로 설치를 멈춘다."; note.className = "note bad"; return; }
+    const eul = "2459".includes(r.pick.slice(-1)) ? "를" : "을";   // 끝 숫자를 읽은 소리에 맞춘 조사
+    let text = `맞는 버전 ${r.match.length}개 가운데 가장 높은 ${r.pick}${eul} 설치한다.`;
+    if (r.pick === L.FUTURE) { text += " 주 버전이 바뀐 2.0.0은 1.x와 호환되지 않을 수 있다. 플러그인과 테마가 그대로 돌지 장담할 수 없다."; note.className = "note bad"; }
+    else if (L.pinned(spec)) text += " 버전 하나로 고정했으니 언제 설치해도 같은 버전이다.";
+    else if (r.match.length > 1) text += " 같은 줄이라도 새 버전이 나오면 다른 것이 설치될 수 있다. 정확히 같은 것을 다시 깔려면 버전을 고정한 목록(pip freeze)이 필요하다.";
+    else text += " 지금은 맞는 버전이 하나뿐이지만, 범위가 열려 있어 새 버전이 나오면 다른 것이 설치될 수 있다.";
+    note.textContent = text;
+  }
+  $("spec").addEventListener("input", render);
+  $("future").addEventListener("change", render);
+  render();
+})();
+</script>
+</body>
+</html>

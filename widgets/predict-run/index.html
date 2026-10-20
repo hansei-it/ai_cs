@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>예측하고 실행해서 대조하기</title>
+<meta name="description" content="다섯 식의 결과를 먼저 칸에 적고 ‘실행해서 대조’를 눌러, C와 Python의 실제 결과와 맞춰 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --wrong: #c2410c;
+    --wrong-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --wrong: #ffa94d;
+    --wrong-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono, input.mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+  table { border-collapse: collapse; width: 100%; max-width: 640px; }
+  th { text-align: left; font-size: 13px; font-weight: 400; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .lang { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .expr { font-size: 15px; white-space: nowrap; }
+  input[type="text"] {
+    font: inherit; font-size: 15px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 6px; width: 5em;
+  }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .actual { font-weight: 700; min-width: 3em; }
+  .mark { font-weight: 700; white-space: nowrap; }
+  tr.right .mark { color: var(--accent); }
+  tr.wrong .mark { color: var(--wrong); }
+  tr.right td { background: var(--accent-bg); }
+  tr.wrong td { background: var(--wrong-bg); }
+  tr.why td { background: none; padding-top: 0; font-size: 13px; color: var(--muted); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+  .btn {
+    font: inherit; font-size: 14px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 12px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  .score { font-weight: 700; }
+  code { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", monospace; white-space: nowrap; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .expr { font-size: 14px; }
+    input[type="text"] { width: 4em; }
+    th, td { padding: 5px 3px; }
+  }
+</style>
+</head>
+<body>
+<h1>예측하고 실행해서 대조하기</h1>
+<p class="lead">실행하기 전에 결과를 적는다. 다 적었으면 ‘실행해서 대조’를 누른다.</p>
+
+<table>
+  <thead><tr><th>언어</th><th>식</th><th>내 예측</th><th>실제</th><th></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<div class="row">
+  <button class="btn primary" id="run">실행해서 대조</button>
+  <button class="btn" id="again">다시 하기</button>
+  <span class="score" id="score" aria-live="polite"></span>
+</div>
+<p class="note" id="note" hidden></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const PredictLogic = (() => {
+  // C의 정수 나눗셈은 몫의 소수점 아래를 버리고(0 쪽으로), Python의 //는 더 작은 쪽으로 내린다.
+  // 나머지는 두 언어 모두 a - (a 나누기 b의 몫) × b 다.
+  const cDiv = (a, b) => Math.trunc(a / b);
+  const cMod = (a, b) => a - cDiv(a, b) * b;
+  const pyDiv = (a, b) => Math.floor(a / b);
+  const pyMod = (a, b) => a - pyDiv(a, b) * b;
+
+  const PROBLEMS = [
+    { lang: "C", expr: "7 / 2", value: cDiv(7, 2), why: "정수끼리 나누면 몫만 남는다. 3.5가 아니다." },
+    { lang: "C", expr: "-7 / 2", value: cDiv(-7, 2), why: "C는 몫을 0 쪽으로 버린다. −3.5에서 소수점 아래를 버려 −3이다." },
+    { lang: "C", expr: "-7 % 2", value: cMod(-7, 2), why: "나머지는 −7 − (−3 × 2) = −1이다. 그래서 C에서 <code>n % 2 == 1</code>로는 음수 홀수를 못 찾는다." },
+    { lang: "Python", expr: "-7 // 2", value: pyDiv(-7, 2), why: "Python은 더 작은 쪽으로 내린다. −3.5 아래의 정수는 −4다." },
+    { lang: "Python", expr: "-7 % 2", value: pyMod(-7, 2), why: "나머지는 −7 − (−4 × 2) = 1이다. 같은 식도 언어마다 답이 다르다." },
+  ];
+
+  // 적은 예측을 수로 읽는다(3.5 같은 소수도). 수가 아니면 null. 마이너스 기호(−)도 받는다.
+  function parse(text) {
+    const t = String(text).trim().replace(/[−–]/g, "-");
+    return /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : null;
+  }
+
+  // 예측 목록을 채점한다. 칸마다 "right" | "wrong" | "empty"(빈칸)
+  function grade(predictions) {
+    const marks = PROBLEMS.map((p, k) => {
+      const text = String(predictions[k] ?? "").trim();
+      if (!text) return "empty";
+      return parse(text) === p.value ? "right" : "wrong";
+    });
+    return { marks, right: marks.filter(m => m === "right").length, total: PROBLEMS.length };
+  }
+
+  return { cDiv, cMod, pyDiv, pyMod, PROBLEMS, parse, grade };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = PredictLogic;
+  const $ = id => document.getElementById(id);
+  const num = v => (v < 0 ? `−${-v}` : String(v));
+  const tbody = $("rows");
+  const inputs = [], rows = [], whys = [];
+
+  L.PROBLEMS.forEach((p, k) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="lang">${p.lang}</td><td class="expr mono">${p.expr}</td>` +
+      `<td><input type="text" class="mono" inputmode="numeric" autocomplete="off" aria-label="${p.lang} ${p.expr}의 예측"></td>` +
+      `<td class="actual mono"></td><td class="mark"></td>`;
+    const why = document.createElement("tr");
+    why.className = "why";
+    why.hidden = true;
+    why.innerHTML = `<td></td><td colspan="4">${p.why}</td>`;
+    tbody.append(tr, why);
+    rows.push(tr);
+    whys.push(why);
+    const input = tr.querySelector("input");
+    input.addEventListener("keydown", e => {
+      if (e.key !== "Enter") return;
+      if (inputs[k + 1]) inputs[k + 1].focus(); else $("run").click();
+    });
+    inputs.push(input);
+  });
+
+  $("run").addEventListener("click", () => {
+    const g = L.grade(inputs.map(i => i.value));
+    L.PROBLEMS.forEach((p, k) => {
+      rows[k].className = g.marks[k] === "empty" ? "" : g.marks[k];
+      rows[k].querySelector(".actual").textContent = num(p.value);
+      rows[k].querySelector(".mark").textContent = { right: "맞음", wrong: "틀림", empty: "예측 없음" }[g.marks[k]];
+      whys[k].hidden = false;
+    });
+    const empty = g.marks.filter(m => m === "empty").length;
+    $("score").textContent = `${g.total}개 중 ${g.right}개 맞음` + (empty ? ` (빈칸 ${empty}개)` : "");
+    $("note").hidden = false;
+    $("note").textContent = g.right === g.total
+      ? "모두 맞았다. 맞았다는 것도 실행해 봤기 때문에 아는 것이다."
+      : "틀린 식은 왜 틀렸는지 한 문장으로 적어 둔다. 예측이 틀렸을 때가 가장 많이 배우는 때다.";
+  });
+
+  $("again").addEventListener("click", () => {
+    inputs.forEach(i => { i.value = ""; });
+    rows.forEach(r => { r.className = ""; r.querySelector(".actual").textContent = ""; r.querySelector(".mark").textContent = ""; });
+    whys.forEach(w => { w.hidden = true; });
+    $("score").textContent = "";
+    $("note").hidden = true;
+    inputs[0].focus();
+  });
+})();
+</script>
+</body>
+</html>

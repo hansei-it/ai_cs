@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>최고점에 맞춰 살까, 쓰는 만큼 빌릴까</title>
+<meta name="description" content="하루의 주문량(보통 날, 이벤트 날, 늘 같은 부하)을 고르고 자기 서버의 대수를 바꿔, 시간마다 필요한 만큼 늘고 주는 클라우드와 하루 비용, 놓친 요청, 사용률을 견준다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .big { font-size: 18px; min-width: 1.6em; text-align: center; }
+  .chartwrap { overflow-x: auto; }
+  .chartwrap .chart { min-width: 520px; }   /* 휴대폰에서 글자가 너무 작아지지 않게, 줄이지 않고 옆으로 밀어 본다 */
+  .chart { width: 100%; height: auto; display: block; margin: 6px 0 2px; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .chart .axis { fill: var(--muted); font-size: 11px; }
+  .chart .got { fill: var(--read); }
+  .chart .lost { fill: var(--write); }
+  .chart .cap { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 7 4; }
+  .chart .cap-label { fill: var(--accent); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .sw { display: inline-block; width: 14px; height: 10px; border-radius: 2px; vertical-align: middle; margin: 0 4px 0 8px; }
+  .sw.got { background: var(--read); }
+  .sw.lost { background: var(--write); }
+  .sw.cap { height: 0; border-top: 2.5px dashed var(--accent); border-radius: 0; }
+  .res { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; font-size: 13px; }
+  .res .card { border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; }
+  .res .card h3 { margin: 0 0 4px; font-size: 14px; }
+  .res .card b { font-size: 17px; }
+  .res .card.cheap { border-color: var(--good); }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .res { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>최고점에 맞춰 살까, 쓰는 만큼 빌릴까</h1>
+<p class="lead">값은 모두 가정이다: 서버 한 대가 시간당 주문 1,000건을 받는다. 자기 서버는 한 대 시간당 50원(구입비, 전기, 관리를 나눈 값), 클라우드는 시간당 90원이다. 클라우드는 시간마다 필요한 대수만큼 늘고 준다고 본다.</p>
+<div class="row" role="group" aria-label="하루의 주문량">
+  <span class="label">하루</span>
+  <button class="btn" data-day="normal">보통 날</button>
+  <button class="btn" data-day="event">이벤트 날</button>
+  <button class="btn" data-day="flat">늘 같은 부하</button>
+</div>
+<div class="row" role="group" aria-label="자기 서버 대수">
+  <span class="label">자기 서버</span>
+  <button class="btn" id="minus" aria-label="한 대 줄이기">−</button>
+  <b class="mono big" id="n"></b>대
+  <button class="btn" id="plus" aria-label="한 대 늘리기">+</button>
+</div>
+<div class="chartwrap"><svg class="chart" id="chart" viewBox="0 0 640 220" role="img" aria-label="시간마다의 주문량과 자기 서버가 받을 수 있는 양"></svg></div>
+<div class="legend"><i class="sw got"></i>받은 요청 <i class="sw lost"></i>놓친 요청 <i class="sw cap"></i>자기 서버가 받을 수 있는 양 · 초록 테두리: 요청을 다 받으면서 가장 싼 쪽</div>
+<div class="res" id="res"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CapacityLogic = (() => {
+  // 0시부터 23시까지 시간마다의 주문 요청(천 건, 가정). 서버 한 대가 시간당 천 건을 받는다.
+  const NORMAL = [1, 1, 1, 1, 1, 2, 3, 4, 5, 5, 6, 7, 8, 7, 5, 5, 5, 6, 8, 9, 9, 6, 4, 2];
+  const DAYS = {
+    normal: { name: "보통 날", demand: NORMAL },
+    event: { name: "이벤트 날", demand: NORMAL.map((d, h) => (h === 20 ? 18 : d)) },   // 20시에 평소의 2배
+    flat: { name: "늘 같은 부하", demand: Array(24).fill(6) },
+  };
+  const OWN = 50;      // 자기 서버 한 대 시간당(원, 구입비·전기·관리를 나눈 값, 가정)
+  const CLOUD = 90;    // 클라우드 서버 한 대 시간당(원, 가정)
+  function own(demand, n) {                      // 자기 서버 n대를 하루 내내 켜 둔다
+    const got = demand.reduce((s, d) => s + Math.min(d, n), 0);
+    const lost = demand.reduce((s, d) => s + Math.max(0, d - n), 0);
+    return { cost: n * 24 * OWN, lost, use: n ? got / (n * 24) : 0 };
+  }
+  function auto(demand) {                        // 시간마다 필요한 대수만 빌린다
+    const hours = demand.reduce((s, d) => s + Math.ceil(d), 0);
+    return { cost: hours * CLOUD, lost: 0, use: 1 };
+  }
+  function verdict(demand, n) {                 // 안내 문장과 초록 테두리를 정하는 판정
+    const o = own(demand, n), a = auto(demand);
+    const peak = Math.max(...demand);
+    const hours = demand.filter(d => d > n).length;                 // 요청을 놓친 시간 수
+    const ok = [["own", o], ["cloud", a]].filter(([, r]) => r.lost === 0);   // 요청을 다 받는 쪽만 견준다
+    const min = Math.min(...ok.map(([, r]) => r.cost));
+    const cheapest = ok.filter(([, r]) => r.cost === min).map(([k]) => k);
+    const kind = o.lost ? "lost" : o.cost < a.cost ? "own" : o.cost > a.cost ? "cloud" : "tie";
+    return { o, a, peak, hours, cheapest, kind, over: n > peak };
+  }
+  return { DAYS, OWN, CLOUD, own, auto, verdict };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CapacityLogic;
+  const $ = id => document.getElementById(id);
+  const won = v => `${v.toLocaleString("ko-KR")}원`;
+  let day = "normal", n = 9;
+  function render() {
+    const dem = L.DAYS[day].demand;
+    const top = 22;                                // 20대일 때도 점선이 축 제목에 닿지 않게
+    const X0 = 34, X1 = 630, Y0 = 190, Y1 = 14;
+    const bw = (X1 - X0) / 24;
+    const y = v => Y0 - (v / top) * (Y0 - Y1);
+    let svg = "";
+    for (const v of [0, 5, 10, 15, 20]) svg += `<line class="grid" x1="${X0}" x2="${X1}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${X0 - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+    dem.forEach((d, h) => {
+      const x = X0 + h * bw + 2, w = bw - 4, got = Math.min(d, n);
+      svg += `<rect class="got" x="${x.toFixed(1)}" y="${y(got).toFixed(1)}" width="${w.toFixed(1)}" height="${(y(0) - y(got)).toFixed(1)}"/>`;
+      if (d > n) svg += `<rect class="lost" x="${x.toFixed(1)}" y="${y(d).toFixed(1)}" width="${w.toFixed(1)}" height="${(y(n) - y(d)).toFixed(1)}"/>`;
+      if (h % 3 === 0) svg += `<text class="axis" x="${(x + w / 2).toFixed(1)}" y="${Y0 + 16}" text-anchor="middle">${h}시</text>`;
+    });
+    svg += `<line class="cap" x1="${X0}" x2="${X1}" y1="${y(n)}" y2="${y(n)}"/><text class="cap-label" x="${X1}" y="${y(n) - 6}" text-anchor="end">자기 서버 ${n}대</text>`;
+    svg += `<text class="axis" x="${X0}" y="${Y1 - 2}">천 건/시간</text>`;
+    $("chart").innerHTML = svg;
+    $("n").textContent = n;
+    $("minus").disabled = n <= 1;
+    $("plus").disabled = n >= 20;
+    const v = L.verdict(dem, n), o = v.o, a = v.a;
+    const cnt = r => `${(r.lost * 1000).toLocaleString("ko-KR")}건`;
+    const card = (title, r, cheap, use) => `<div class="card${cheap ? " cheap" : ""}"><h3>${title}</h3>하루 비용 <b class="mono">${won(r.cost)}</b><br>`
+      + `놓친 요청 <b class="mono">${cnt(r)}</b> · 사용률 <b class="mono">${use}</b></div>`;
+    $("res").innerHTML = card(`자기 서버 ${n}대, 늘 켜 둠`, o, v.cheapest.includes("own"), `${Math.round(o.use * 100)}%`)
+      + card("클라우드, 시간마다 늘고 줆", a, v.cheapest.includes("cloud"), "100%(가정)");
+    let note;
+    if (v.kind === "lost") note = `자기 서버 ${n}대로는 ${v.hours}시간 동안 모두 ${cnt(o)}을 받지 못했다.`
+      + (o.cost < a.cost ? ` 하루 비용은 ${won(a.cost - o.cost)} 싸지만 그만큼 손님을 놓친 값이다.` : "")
+      + (v.hours === 1 ? " 클라우드는 몰린 그 한 시간만 더 빌린다." : " 클라우드는 몰리는 시간마다 그만큼 더 빌린다.");
+    else if (v.kind === "own") note = `이 하루는 자기 서버가 ${won(a.cost - o.cost)} 싸다. 부하가 고르면 쉬는 서버가 적어, 시간당 더 싼 쪽이 이긴다. 클라우드에서도 오래 쓰기로 약정하면 값을 깎아 준다.`;
+    else if (v.kind === "cloud") note = `클라우드가 ${won(o.cost - a.cost)} 싸다. 자기 서버는 ${v.over ? `가장 바쁜 때(${v.peak}대)보다 많이 사서` : "가장 바쁜 때에 맞춰 두어야 해서"} 사용률이 ${Math.round(o.use * 100)}%에 그친다. 시간당 값은 클라우드가 비싸도, 쉬는 서버 값을 내지 않는다.`;
+    else note = "두 쪽의 하루 비용이 같다. 부하가 더 몰리거나 줄면 어느 쪽이 싸질지 짐작해 본다.";
+    $("note").textContent = note;
+    document.querySelectorAll("[data-day]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.day === day)));
+  }
+  document.querySelectorAll("[data-day]").forEach(b => b.addEventListener("click", () => { day = b.dataset.day; render(); }));
+  $("minus").addEventListener("click", () => { n = Math.max(1, n - 1); render(); });
+  $("plus").addEventListener("click", () => { n = Math.min(20, n + 1); render(); });
+  render();
+})();
+</script>
+</body>
+</html>

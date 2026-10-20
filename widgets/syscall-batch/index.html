@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>시스템 콜을 모아 부르면</title>
+<meta name="description" content="한 번에 쓰는 크기를 1바이트에서 64KiB까지 바꿔 가며, 1MiB를 파일에 쓸 때 시스템 콜 횟수와 걸린 시간이 어떻게 줄어드는지 이 PC에서 잰 값으로 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --user: #8a929c;
+    --kernel: #3f51b5;
+    --warn: #c2410c;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --user: #8a929c;
+    --kernel: #8c9eff;
+    --warn: #ffa94d;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 14px 0 6px; }
+  .lead { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .grid { display: grid; grid-template-columns: minmax(9em, auto) 1fr; gap: 6px 12px; align-items: center; }
+  .name { font-size: 13px; white-space: nowrap; }
+  .name small { display: block; color: var(--muted); font-size: 11px; }
+  .track { position: relative; height: 18px; border-radius: 4px;
+    background: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px calc(100% / var(--cells))); }
+  .bar { position: absolute; left: 0; top: 2px; height: 14px; border-radius: 3px; background: var(--user); transition: width .25s; }
+  .bar.kernel { background: var(--kernel); }
+  .bar.range { opacity: .35; }
+  .val { font-size: 12px; margin-top: 1px; }
+  .axis { position: relative; height: 14px; font-size: 11px; color: var(--muted); }
+  .axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .axis span:first-child { transform: none; }
+  .axis span:last-child { transform: translateX(-100%); }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 6px; }
+  .stat { background: var(--soft); border-radius: 6px; padding: 6px 8px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 17px; font-weight: 700; }
+  .stat .v.kernel { color: var(--kernel); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  .legend { font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 8px; vertical-align: -1px; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .grid { grid-template-columns: 1fr; gap: 2px; }
+    .name { margin-top: 6px; }
+    .stats { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>시스템 콜을 모아 부르면</h1>
+<p class="lead">이 PC(Core i9-14900KF, Windows 11)에서 C(<span class="mono">cl /O2</span>)로 5번 잰 값이다. 막대는 로그 눈금이라 한 칸이 10배다.</p>
+
+<h2>호출 한 번에 걸리는 시간</h2>
+<div class="grid" id="once" style="--cells: 5"></div>
+<div class="legend"><i style="background:var(--user)"></i>사용자 모드에서 끝난다<i style="background:var(--kernel)"></i>커널에 들어간다(시스템 콜)</div>
+
+<h2>1MiB를 파일에 쓸 때</h2>
+<div class="row" role="group" aria-label="한 번에 쓰는 크기">
+  <span class="label">한 번에</span>
+  <button class="btn mono" data-w="0">1B</button>
+  <button class="btn mono" data-w="1">16B</button>
+  <button class="btn mono" data-w="2">256B</button>
+  <button class="btn mono" data-w="3">4KiB</button>
+  <button class="btn mono" data-w="4">64KiB</button>
+  <button class="btn" data-w="5">fputc로 1B씩</button>
+</div>
+<div class="stats">
+  <div class="stat"><div class="k">WriteFile 횟수</div><div class="v kernel mono" id="calls"></div></div>
+  <div class="stat"><div class="k">걸린 시간</div><div class="v mono" id="time"></div></div>
+  <div class="stat"><div class="k" id="perk">한 번 평균</div><div class="v mono" id="per"></div></div>
+</div>
+<div class="grid" id="all" style="--cells: 5"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const BatchLogic = (() => {
+  const TOTAL = 1 << 20;   // 1MiB
+  // 호출 한 번 (ns, 5번 잰 범위). kernel: 커널에 들어가는지
+  const ONCE = [
+    { name: "함수 호출", sub: "add(a, b)", ns: [0.4, 0.4], kernel: false },
+    { name: "GetCurrentProcessId", sub: "커널에 가지 않는 API", ns: [1.6, 1.7], kernel: false },
+    { name: "SetEvent", sub: "시스템 콜", ns: [72.9, 77.6], kernel: true },
+    { name: "WriteFile", sub: "NUL 장치에 1바이트", ns: [106.4, 109.4], kernel: true },
+  ];
+  // 1MiB를 쓰는 방법별 걸린 시간 (ms, 5번 잰 범위). calls가 없으면 TOTAL / size
+  const WAYS = [
+    { name: "WriteFile 1B", size: 1, ms: [2270.44, 2341.47] },
+    { name: "WriteFile 16B", size: 16, ms: [137.40, 141.80] },
+    { name: "WriteFile 256B", size: 256, ms: [9.08, 9.95] },
+    { name: "WriteFile 4KiB", size: 4096, ms: [1.04, 1.29] },
+    { name: "WriteFile 64KiB", size: 65536, ms: [0.26, 1.17] },
+    { name: "fputc 1B", size: 1, calls: 256, ms: [14.93, 16.95] },   // C 라이브러리가 4KiB씩 모아 WriteFile을 부른다 (GetProcessIoCounters로 셌다)
+  ];
+  const calls = w => (w.calls != null ? w.calls : Math.ceil(TOTAL / w.size));
+  const mid = r => (r[0] + r[1]) / 2;
+  // 한 번 평균 (µs): 범위 가운데 값 / 횟수
+  const perCallUs = w => (mid(w.ms) * 1000) / calls(w);
+  // fputc 한 번 평균 (ns): 범위 가운데 값 / 바이트 수
+  const perByteNs = w => (mid(w.ms) * 1e6) / TOTAL;
+
+  // 시간 표기: ns 단위 값을 받아 읽기 좋게 (10 미만은 소수 한 자리, 1000 이상은 쉼표)
+  function dur(ns) {
+    const units = [["ns", 1], ["µs", 1e3], ["ms", 1e6], ["초", 1e9]];
+    let u = units[0];
+    for (const x of units) if (ns >= x[1]) u = x;
+    const v = ns / u[1], one = Math.round(v * 10) / 10;   // 소수 한 자리로 반올림해 10이 되면 정수로 쓴다
+    return (one < 10 ? one.toFixed(1) : Math.round(v).toLocaleString("en-US")) + u[0];
+  }
+  const range = (r, scale) => (dur(r[0] * scale) === dur(r[1] * scale) ? dur(r[0] * scale) : `${dur(r[0] * scale)}~${dur(r[1] * scale)}`);
+  // 로그 눈금 위치 0~1: lo에서 hi까지
+  const pos = (v, lo, hi) => Math.min(1, Math.max(0, Math.log10(v / lo) / Math.log10(hi / lo)));
+
+  return { TOTAL, ONCE, WAYS, calls, mid, perCallUs, perByteNs, dur, range, pos };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = BatchLogic;
+  const $ = id => document.getElementById(id);
+  const axis = (ticks) => `<div></div><div class="axis mono">${ticks.map(([p, s]) => `<span style="left:${p * 100}%">${s}</span>`).join("")}</div>`;
+
+  // 호출 한 번: 0.1ns ~ 10µs (5칸)
+  $("once").innerHTML = L.ONCE.map(o => {
+    const w = L.pos(L.mid(o.ns), 0.1, 1e4) * 100;
+    return `<div class="name">${o.name}<small>${o.sub}</small></div>
+      <div><div class="track"><div class="bar${o.kernel ? " kernel" : ""}" style="width:${Math.max(1.5, w)}%"></div></div>
+      <div class="val mono">${L.range(o.ns, 1)}</div></div>`;
+  }).join("") + axis([[0, "0.1ns"], [0.2, "1ns"], [0.4, "10ns"], [0.6, "100ns"], [0.8, "1µs"], [1, "10µs"]]);
+
+  // 1MiB 쓰기: 0.1ms ~ 10초 (5칸)
+  const MS_LO = 0.1, MS_HI = 1e4;
+  function render(k) {
+    const w = L.WAYS[k];
+    $("calls").textContent = L.calls(w).toLocaleString("en-US") + "번";
+    $("time").textContent = L.range(w.ms, 1e6);
+    const viaCrt = w.calls != null;   // fputc: 횟수는 WriteFile, 평균은 fputc 한 번
+    $("perk").textContent = viaCrt ? "fputc 한 번 평균" : "WriteFile 한 번 평균";
+    $("per").textContent = viaCrt ? L.dur(L.perByteNs(w)) : L.dur(L.perCallUs(w) * 1000);
+    $("all").innerHTML = L.WAYS.map((x, i) => {
+      const lo = L.pos(x.ms[0], MS_LO, MS_HI) * 100, hi = L.pos(x.ms[1], MS_LO, MS_HI) * 100;
+      return `<div class="name" style="${i === k ? "font-weight:700;color:var(--accent)" : ""}">${x.name}<small>WriteFile ${L.calls(x).toLocaleString("en-US")}번</small></div>
+        <div><div class="track"><div class="bar kernel range" style="width:${Math.max(1.5, hi)}%"></div><div class="bar kernel" style="width:${Math.max(1.5, lo)}%"></div></div></div>`;
+    }).join("") + axis([[0, "0.1ms"], [0.2, "1ms"], [0.4, "10ms"], [0.6, "100ms"], [0.8, "1초"], [1, "10초"]]);
+    let note;
+    if (k === 0) note = "1바이트마다 WriteFile을 부르면 커널에 104만 번 들어간다. 시간 대부분이 바이트를 옮기는 일이 아니라 부탁할 때마다 커널이 하는 일이다. NUL 장치에 쓰면 한 번에 약 0.1µs인데, 파일에 쓰면 파일 시스템과 캐시를 거치느라 약 2.2µs가 든다.";
+    else if (k < 3) note = `한 번에 ${w.size.toLocaleString("en-US")}바이트씩 쓰면 횟수가 ${L.calls(w).toLocaleString("en-US")}번으로 줄고 시간도 거의 같은 비율로 준다. 한 번의 비용(2.1~2.3µs)은 크기와 상관없이 거의 같기 때문이다.`;
+    else if (k === 3) note = "4KiB씩이면 256번, 1ms 남짓이다. 1바이트씩 쓸 때의 약 2,000분의 1이다.";
+    else if (k === 4) note = "64KiB씩이면 16번이다. 이쯤 되면 횟수보다 바이트를 옮기는 일이 시간을 정한다.";
+    else note = "fputc는 한 바이트씩 받아도 C 라이브러리가 4KiB 버퍼에 모았다가 WriteFile을 부른다. fputc 한 번은 버퍼에 한 바이트를 넣는 일이라 평균 15ns쯤이고, 같은 1바이트씩인데 WriteFile을 직접 부를 때보다 약 140배 빠르다.";
+    $("note").textContent = note;
+    document.querySelectorAll("[data-w]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.w) === k)));
+  }
+  document.querySelectorAll("[data-w]").forEach(b => b.addEventListener("click", () => render(Number(b.dataset.w))));
+  const q = Number(new URLSearchParams(location.search).get("w"));
+  render(Number.isInteger(q) && q >= 0 && q < L.WAYS.length ? q : 0);
+})();
+</script>
+</body>
+</html>

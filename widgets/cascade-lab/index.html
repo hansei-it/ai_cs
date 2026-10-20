@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>겹친 CSS 규칙 가운데 무엇이 이기나</title>
+<meta name="description" content="같은 단추에 걸린 CSS 규칙 다섯을 켜고 끄며, 단추의 글자색을 정하는 규칙이 어느 것인지와 그 까닭(명시도, 나중에 쓴 것)을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --write: #c2410c;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --write: #ffa94d;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .main { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+  .rules { display: grid; gap: 4px; }
+  .rule { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 13px; cursor: pointer; }
+  .rule input { margin: 0; }
+  .rule .sel { flex: 1; }
+  .rule .spec { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .rule.win { border-color: var(--accent); background: var(--accent-bg); font-weight: 700; }
+  .rule.off { opacity: .55; }
+  .stage { border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #ffffff; text-align: center; color-scheme: light; }   /* 어두운 화면에서도 견본은 밝은 바탕의 기본 단추로 보인다 */
+  .stage-label { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
+  .html { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 520px) { .main { grid-template-columns: 1fr; } body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>겹친 CSS 규칙 가운데 무엇이 이기나</h1>
+<p class="lead">단추 하나에 글자색 규칙 다섯이 걸려 있다. 규칙을 켜고 끄면 이 브라우저가 실제로 정한 색이 견본 단추에 보인다. 괄호 안은 명시도 (id 수, class 수, 태그 수)다.</p>
+<p class="html mono">&lt;button id="buy" class="btn primary"&gt;사기&lt;/button&gt;</p>
+<div class="main">
+  <div class="rules" id="rules"></div>
+  <div><div class="stage" id="stage"></div><p class="stage-label" id="computed"></p></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CascadeLogic = (() => {
+  // 쓴 차례대로의 규칙. spec은 (id, class, 태그) 수
+  const RULES = [
+    { sel: "button", color: "gray", spec: [0, 0, 1] },
+    { sel: "#buy", color: "green", spec: [1, 0, 0] },
+    { sel: ".btn", color: "black", spec: [0, 1, 0] },
+    { sel: ".btn.primary", color: "blue", spec: [0, 2, 0] },
+    { sel: ".primary", color: "orange", spec: [0, 1, 0] },
+  ];
+  const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  // 켜진 규칙 가운데 명시도가 가장 높은 것, 같으면 나중에 쓴 것이 이긴다. 없으면 -1(브라우저 기본값)
+  function winner(on) {
+    let best = -1;
+    on.forEach((isOn, i) => { if (isOn && (best < 0 || cmp(RULES[i].spec, RULES[best].spec) >= 0)) best = i; });
+    return best;
+  }
+  const css = on => RULES.filter((_, i) => on[i]).map(r => `${r.sel} { color: ${r.color}; }`).join("\n");
+  return { RULES, cmp, winner, css };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CascadeLogic;
+  const $ = id => document.getElementById(id);
+  const on = [true, false, true, true, false];
+  // 견본 단추는 그림자 DOM 안에 둔다. 규칙이 이 위젯의 다른 단추에 번지지 않는다
+  const shadow = $("stage").attachShadow({ mode: "open" });
+  shadow.innerHTML = `<style id="rules"></style><style>button { font: 700 18px sans-serif; padding: 6px 18px; }</style><button id="buy" class="btn primary">사기</button>`;
+  const NAMES = { "rgb(128, 128, 128)": "gray", "rgb(0, 128, 0)": "green", "rgb(0, 0, 0)": "black", "rgb(0, 0, 255)": "blue", "rgb(255, 165, 0)": "orange" };
+  function render() {
+    const w = L.winner(on);
+    $("rules").innerHTML = L.RULES.map((r, i) => `<label class="rule ${i === w ? "win" : ""} ${on[i] ? "" : "off"}"><input type="checkbox" data-i="${i}" ${on[i] ? "checked" : ""}>`
+      + `<span class="sel mono">${r.sel} { color: ${r.color}; }</span><span class="spec mono">(${r.spec.join(",")})</span></label>`).join("");
+    shadow.getElementById("rules").textContent = L.css(on);
+    const got = getComputedStyle(shadow.getElementById("buy")).color;
+    $("computed").textContent = `이 브라우저가 정한 색: ${NAMES[got] ?? got}`;
+    if (w < 0) { $("note").textContent = "켜진 규칙이 없어 브라우저의 기본 글자색이다."; return; }
+    const r = L.RULES[w];
+    const others = L.RULES.filter((x, i) => on[i] && i !== w);
+    const ties = others.filter(x => L.cmp(x.spec, r.spec) === 0);
+    const next = others.reduce((a, x) => (a && L.cmp(a.spec, x.spec) >= 0 ? a : x), null);   // 이긴 규칙 다음으로 센 규칙
+    let why;
+    if (!others.length) why = "켜진 규칙이 이것 하나다.";
+    else if (ties.length) why = `명시도가 같은 규칙(${ties.map(x => x.sel).join(", ")})보다 나중에 썼다.`;
+    else if (r.spec[0] > next.spec[0]) why = "id가 있는 규칙은 class가 몇 개든 이긴다.";
+    else if (r.spec[1] > next.spec[1]) why = next.spec[1] ? "class가 더 많은 쪽이 이긴다." : "class는 태그 이름보다 세다.";
+    else why = "태그 이름이 더 많은 쪽이 이긴다.";
+    $("note").textContent = `이긴 규칙: ${r.sel} (${r.spec.join(",")}). ${why}`;
+  }
+  $("rules").addEventListener("change", e => { if (e.target.dataset.i !== undefined) { on[Number(e.target.dataset.i)] = e.target.checked; render(); } });
+  render();
+})();
+</script>
+</body>
+</html>

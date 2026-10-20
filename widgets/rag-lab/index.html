@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>찾아서 넣어 주기(RAG)</title>
+<meta name="description" content="질문을 고르거나 고쳐 쓰고, 넣을 문서 수를 바꿔, 어느 문서를 찾는지, AI에게 가는 입력이 어떻게 만들어지는지, 낱말이 다르면 왜 못 찾는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  #qs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .qin { flex: 1 1 100%; font: inherit; font-size: 14px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; min-width: 0; }
+  .docs { display: grid; gap: 4px; margin: 4px 0 8px; }
+  .doc { display: grid; grid-template-columns: 4.2em 5.5em minmax(0, 1fr); gap: 8px; align-items: start; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; }
+  .doc.in { border-color: var(--accent); background: var(--accent-bg); }
+  .docs.off .doc { opacity: .5; }
+  .doc .name { font-weight: 700; }
+  .doc .score { display: flex; align-items: center; gap: 6px; }
+  .doc .score i { display: inline-block; height: 10px; background: var(--read); border-radius: 2px; }
+  .doc .txt { color: var(--muted); }
+  .chip { display: inline-block; font-size: 12px; padding: 0 6px; margin: 0 3px 2px 0; border-radius: 9px; border: 1px solid var(--write); color: var(--write); }
+  .plabel { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .prompt { margin: 4px 0 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); font-size: 12.5px; white-space: pre-wrap; word-break: break-all; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .doc { grid-template-columns: 3.8em 4.6em minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<h1>찾아서 넣어 주기(RAG)</h1>
+<p class="lead">가게 고객센터 문서 다섯 개 가운데 질문과 겹치는 조각이 많은 문서를 찾는다. 조각은 질문과 문서를 낱말마다 두 글자씩 겹쳐 자른 것이고("배송비" → "배송", "송비"), 문서 이름(배송 등)은 찾기에 쓰지 않는다. 찾은 문서를 질문과 함께 AI에게 보낸다. AI의 답은 흉내 내지 않고, AI가 받는 입력까지만 보인다.</p>
+<div class="row" role="group" aria-label="질문 고르기">
+  <span class="label">질문</span>
+  <span id="qs"></span>
+</div>
+<div class="row">
+  <input type="text" id="q" class="qin" aria-label="질문(직접 고쳐 써도 된다)">
+</div>
+<div class="row" role="group" aria-label="넣을 문서 수">
+  <span class="label">넣을 문서</span>
+  <button class="btn" data-k="0">검색 없이</button>
+  <button class="btn" data-k="1">1개</button>
+  <button class="btn" data-k="2">2개</button>
+  <button class="btn" data-k="3">3개</button>
+</div>
+<div class="docs" id="docs"></div>
+<div class="plabel">AI에게 가는 입력(AI가 볼 수 있는 것은 이것뿐이다)</div>
+<pre class="prompt mono" id="prompt"></pre>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const RagLogic = (() => {
+  // 가게 고객센터 문서. 94번 본문의 search.py와 같다(배송비와 쿠폰은 섹션 10의 주문 계산과 같은 규칙).
+  const DOCS = [
+    ["배송", "주문은 결제한 다음 날 보낸다. 받기까지 보통 1~2일 걸리고 제주와 섬 지역은 2일 더 걸린다."],
+    ["배송비", "배송비는 3,000원이다. 할인 뒤 결제 금액이 30,000원 이상이거나 FREESHIP 쿠폰을 쓰면 배송비를 받지 않는다."],
+    ["쿠폰", "쿠폰은 주문 하나에 하나만 쓴다. WELCOME10은 상품 금액을 10% 깎아 준다(최대 5,000원)."],
+    ["환불", "상품을 받은 날부터 7일 안에 환불을 신청할 수 있다. 포장을 뜯어 쓴 상품은 환불하지 않는다."],
+    ["교환", "크기나 색을 바꾸려면 받은 날부터 14일 안에 교환을 신청한다. 교환 배송비는 가게가 낸다."],
+  ];
+  // 미리 넣어 둔 질문과, 답이 든 문서(사람이 정한 것. 검색은 이것을 모른다)
+  const QUESTIONS = [
+    ["환불은 며칠 안에 신청해야 하나요?", "환불"],
+    ["제주도는 며칠 걸려요?", "배송"],
+    ["쿠폰 두 개를 같이 쓸 수 있나요?", "쿠폰"],
+    ["주문한 옷이 작아서 돈으로 돌려받고 싶어요", "환불"],
+  ];
+
+  // 낱말(Python의 \w+와 같게 글자, 숫자, 밑줄이 이어진 것)마다 두 글자씩 자른 조각. 한 글자 낱말은 그 글자 하나.
+  function pieces(text) {
+    const out = new Set();
+    for (const w of text.match(/[\p{L}\p{N}_]+/gu) || []) {
+      const cs = [...w];
+      if (cs.length === 1) out.add(w);
+      for (let i = 0; i + 1 < cs.length; i++) out.add(cs[i] + cs[i + 1]);
+    }
+    return out;
+  }
+
+  // 문서마다 질문과 겹치는 조각과 그 수. 점수가 높은 차례로, 같으면 문서의 차례대로.
+  function search(question) {
+    const q = pieces(question);
+    const rows = DOCS.map(([name, doc], i) => {
+      const shared = [...pieces(doc)].filter(p => q.has(p));
+      return { name, doc, i, shared, score: shared.length };
+    });
+    return rows.sort((a, b) => b.score - a.score || a.i - b.i);
+  }
+
+  // AI에게 보내는 입력(프롬프트). k개의 문서를 넣는다. k가 0이면 검색 없이 질문만.
+  function prompt(question, k) {
+    if (k === 0) return `[질문] ${question}`;
+    const docs = search(question).slice(0, k).map(r => `[문서: ${r.name}] ${r.doc}`).join("\n");
+    return `아래 [문서]만 근거로 답하라. 문서에 답이 없으면 "문서에서 찾지 못했다"고 답하라.\n\n${docs}\n\n[질문] ${question}`;
+  }
+
+  // 답이 든 문서가 몇 번째로 올라왔나. 점수가 맨 위와 같은지(같으면 문서 차례에 밀린 것)도 함께.
+  function locate(question, name) {
+    const rows = search(question);
+    const i = rows.findIndex(r => r.name === name);
+    return { pos: i + 1, score: rows[i].score, top: rows[0], tied: rows[i].score === rows[0].score };
+  }
+
+  return { DOCS, QUESTIONS, pieces, search, prompt, locate };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = RagLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  let k = 1;
+  const preset = new URLSearchParams(location.search).get("q");
+  let qi = preset !== null && L.QUESTIONS[Number(preset)] ? Number(preset) : 0;
+
+  $("qs").innerHTML = L.QUESTIONS.map(([q], i) => `<button class="btn" data-q="${i}">질문 ${i + 1}</button>`).join("");
+  $("q").value = L.QUESTIONS[qi][0];
+
+  function render() {
+    const q = $("q").value.trim();
+    const rows = L.search(q);
+    const top = rows[0].score;
+    $("docs").classList.toggle("off", k === 0);
+    $("docs").innerHTML = rows.map((r, i) => {
+      const inside = k > 0 && i < k;
+      const pcs = r.shared.map(p => `<span class="chip">${esc(p)}</span>`).join("");
+      return `<div class="doc${inside ? " in" : ""}"><span class="name">${r.name}${inside ? " ✓" : ""}</span>`
+        + `<span class="score mono">${r.score}<i style="width:${Math.min(r.score, 12) * 4}px"></i></span>`
+        + `<span class="txt">${pcs ? pcs + "<br>" : ""}${esc(r.doc)}</span></div>`;
+    }).join("");
+    $("prompt").textContent = L.prompt(q, k);
+
+    const known = L.QUESTIONS.find(([t]) => t === q);   // 미리 넣은 질문과 글자까지 같을 때만 답이 든 문서를 안다
+    let note;
+    if (k === 0) note = "검색 없이 질문만 보낸다(위의 점수는 참고로만 보인다). 이 가게의 규칙이 입력에 없으니, AI는 흔한 규칙으로 그럴듯하게 지어낼 수 있다(93번). 문서를 넣어 본다.";
+    else if (!q) note = "질문이 비었다. 위의 단추로 질문을 고르거나 직접 써 본다.";
+    else if (!known) note = top === 0
+      ? "겹치는 조각이 있는 문서가 하나도 없다. 그래도 위에서부터 넣었다. 점수가 0이면 넣지 않는 기준을 두기도 한다."
+      : "직접 쓴 질문이다. 답이 든 문서가 위로 올라왔는지, 겹친 조각(주황)이 뜻이 같은 낱말인지 우연히 같은 글자인지 본다.";
+    else {
+      const gold = known[1];
+      const g = L.locate(q, gold);
+      const why = g.tied ? `맨 위와 점수(${g.score}점)가 같지만 문서 차례에 밀려 ${g.pos}번째다` : `${g.score}점으로 ${g.pos}번째다`;
+      if (g.pos === 1) note = `답이 든 '${gold}' 문서가 맨 위다. AI는 이 글을 근거로 답할 수 있고, 어느 글을 보고 답했는지도 밝힐 수 있다.`;
+      else if (g.pos <= k) note = `답이 든 '${gold}' 문서는 ${why}. ${g.pos}개 이상 넣어야 들어가고, 지금은 ${k}개라 들어갔다. 함께 들어간 다른 문서도 AI가 읽는다.`;
+      else if (g.score > 0) note = `답이 든 '${gold}' 문서는 ${why}. ${k}개만 넣으면 빠진다. 문서 수를 늘려 본다.`;
+      else note = `답이 든 '${gold}' 문서를 넣지 못했다(점수 0). `
+        + (g.top.shared.length ? `맨 위 '${g.top.name}' 문서와 겹친 조각은 '${g.top.shared.join("', '")}'뿐이다. ` : "")
+        + "AI는 엉뚱한 글을 받았으니 '찾지 못했다'고 하거나 받은 글로 그럴듯하게 틀린 답을 낼 수 있다. 낱말이 다르면 뜻이 같아도 찾지 못한다.";
+    }
+    $("note").textContent = note;
+    document.querySelectorAll("[data-q]").forEach(b => b.setAttribute("aria-pressed", String(L.QUESTIONS[b.dataset.q][0] === q)));   // 끝 빈칸은 빼고 견준다
+    document.querySelectorAll("[data-k]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.k) === k)));
+  }
+  document.querySelectorAll("[data-q]").forEach(b => b.addEventListener("click", () => { $("q").value = L.QUESTIONS[b.dataset.q][0]; render(); }));
+  document.querySelectorAll("[data-k]").forEach(b => b.addEventListener("click", () => { k = Number(b.dataset.k); render(); }));
+  $("q").addEventListener("input", render);
+  render();
+})();
+</script>
+</body>
+</html>

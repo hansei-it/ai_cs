@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI가 빨라지면 주기는 얼마나 짧아질까</title>
+<meta name="description" content="기능 하나가 손님에게 닿기까지의 단계별 날수를 정하고 AI로 구현을 몇 배 빠르게 할지 골라, 한 바퀴의 길이와 가장 긴 단계가 어떻게 바뀌는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .more { flex-wrap: nowrap; align-items: flex-start; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .more input { flex: none; margin: 3px 0 0; accent-color: var(--accent); }
+  .stages { display: grid; gap: 4px; margin: 4px 0 6px; }
+  .st { display: grid; grid-template-columns: 7.2em 5.6em minmax(0, 1fr); gap: 4px 10px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .st .nm small { display: block; font-size: 11px; color: var(--muted); }
+  .st .d { display: flex; align-items: center; gap: 3px; }
+  .st .d .btn { padding: 0 7px; }
+  .st .d b { min-width: 1.2em; text-align: center; }
+  .bars { display: grid; gap: 2px; }
+  .bars span { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .bars i { display: block; height: 10px; border-radius: 2px; flex: none; }
+  .b0 { background: var(--soft); border: 1px solid var(--line); }
+  .b1 { background: var(--read); }
+  .st.big .b1 { background: var(--write); }
+  .st.big .nm { color: var(--write); font-weight: 700; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .sw { display: inline-block; width: 14px; height: 10px; border-radius: 2px; vertical-align: middle; margin: 0 4px 0 8px; }
+  .res { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 14px; font-size: 13px; }
+  .res b { font-size: 18px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .st { grid-template-columns: 5.2em 6.2em minmax(0, 1fr); gap: 4px 6px; } .res { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>AI가 빨라지면 주기는 얼마나 짧아질까</h1>
+<p class="lead">단계별 날수는 예로 든 가정이다. 내 팀이나 조별 과제의 값으로 바꿔 본다. AI는 구현만 빠르게 한다고 본다.</p>
+<div class="row" role="group" aria-label="AI로 구현이 빨라지는 배수">
+  <span class="label">AI로 구현</span>
+  <button class="btn" data-ai="1">그대로</button>
+  <button class="btn" data-ai="2">2배 빠르게</button>
+  <button class="btn" data-ai="5">5배</button>
+  <button class="btn" data-ai="10">10배</button>
+</div>
+<label class="row more"><input type="checkbox" id="more"> AI가 코드를 2배 많이 써서 리뷰와 테스트도 2배 걸린다고 가정한다</label>
+<div class="stages" id="stages"></div>
+<div class="legend"><i class="sw b0"></i>AI 없이 <i class="sw b1"></i>AI와 함께</div>
+<div class="res" id="res"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CycleLogic = (() => {
+  // 기능 하나가 손님에게 닿기까지의 단계와 기본 날수(예로 든 가정). item은 그 단계를 다루는 항목 번호다.
+  const STAGES = [
+    { name: "요구사항 확인", days: 2, item: 81 },
+    { name: "설계", days: 1, item: 82 },
+    { name: "구현", days: 5, item: null },
+    { name: "리뷰", days: 1, item: 87 },
+    { name: "테스트", days: 2, item: 84 },
+    { name: "배포", days: 1, item: 89 },
+  ];
+  const IMPL = 2;                                // 구현 단계의 자리
+  const VERIFY = [3, 4];                         // 리뷰와 테스트의 자리
+  // AI와 함께일 때 단계별 날수: 구현은 ai배 빨라지고, more가 켜져 있고 AI를 쓰면 리뷰와 테스트가 2배가 된다
+  function withAI(days, ai, more) {
+    return days.map((d, i) => (i === IMPL ? d / ai : VERIFY.includes(i) && more && ai > 1 ? d * 2 : d));
+  }
+  const sum = a => a.reduce((s, x) => s + x, 0);
+  const round1 = x => Math.round(x * 10) / 10;
+  const speedup = (days, ai, more) => sum(days) / sum(withAI(days, ai, more));
+  const floor = (days, more) => sum(withAI(days, Infinity, more));   // 구현이 0일이 되어도 남는 날수
+  function longest(a) {                          // 가장 긴 단계들의 자리
+    const m = Math.max(...a);
+    return a.map((x, i) => (x === m ? i : -1)).filter(i => i >= 0);
+  }
+  return { STAGES, IMPL, withAI, sum, round1, speedup, floor, longest };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CycleLogic;
+  const $ = id => document.getElementById(id);
+  const fmt = x => String(L.round1(x));
+  const batchim = s => { const c = s.charCodeAt(s.length - 1); return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 > 0; };
+  const and = names => names.map((n, i) => (i < names.length - 1 ? n + (batchim(n) ? "과" : "와") : n)).join(" ");
+  const days = L.STAGES.map(s => s.days);
+  let ai = 1;
+  function render() {
+    const more = $("more").checked;
+    const after = L.withAI(days, ai, more);
+    const scale = Math.max(...days, ...after, 1);
+    const big = ai > 1 ? L.longest(after) : [];
+    $("stages").innerHTML = L.STAGES.map((s, i) => `<div class="st${big.includes(i) ? " big" : ""}">
+      <span class="nm">${s.name}${s.item ? `<small>${s.item}번</small>` : ""}</span>
+      <span class="d"><button class="btn" data-i="${i}" data-d="-1" aria-label="${s.name} 하루 줄이기"${days[i] === 0 ? " disabled" : ""}>−</button><b class="mono">${days[i]}</b>일<button class="btn" data-i="${i}" data-d="1" aria-label="${s.name} 하루 늘리기"${days[i] === 10 ? " disabled" : ""}>+</button></span>
+      <span class="bars"><span><i class="b0" style="width:${(days[i] / scale * 78).toFixed(1)}%"></i>${days[i]}일</span><span><i class="b1" style="width:${(after[i] / scale * 78).toFixed(1)}%"></i>${fmt(after[i])}일</span></span>
+    </div>`).join("");
+    document.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", () => {
+      const i = Number(b.dataset.i);
+      days[i] = Math.min(10, Math.max(0, days[i] + Number(b.dataset.d)));
+      render();
+    }));
+    const t0 = L.sum(days), t1 = L.sum(after), fl = L.floor(days, more);
+    const sp = t1 > 0 ? t0 / t1 : Infinity;
+    $("res").innerHTML = `<span>한 바퀴, AI 없이<br><b class="mono">${fmt(t0)}</b>일</span>`
+      + `<span>AI와 함께<br><b class="mono">${fmt(t1)}</b>일${t0 > 0 ? ` (${sp.toFixed(2)}배)` : ""}</span>`
+      + `<span>구현이 0일이 되어도<br><b class="mono">${fmt(fl)}</b>일 ${fl > 0 ? ` (최대 ${(t0 / fl).toFixed(2)}배)` : ""}</span>`;
+    let note;
+    if (t0 === 0) note = "날수가 모두 0일이다. 단계마다 걸리는 날수를 하루 이상 넣어 본다.";
+    else if (ai > 1 && days[L.IMPL] === 0) note = "구현이 0일이라 AI로 줄일 것이 없다. 구현에 날수를 넣거나 다른 단계를 줄여 본다.";
+    else if (ai === 1) note = "AI로 구현을 몇 배 빠르게 할지 고르기 전에, 한 바퀴가 며칠이 될지 먼저 짐작해 본다.";
+    else {
+      const names = big.map(i => L.STAGES[i].name);
+      note = sp >= 1 ? `구현을 ${ai}배 빠르게 하면 한 바퀴는 ${fmt(t0)}일에서 ${fmt(t1)}일로, ${sp.toFixed(2)}배 빨라진다.`
+        : `구현을 ${ai}배 빠르게 했는데 한 바퀴는 ${fmt(t0)}일에서 ${fmt(t1)}일로 오히려 길어졌다.`;
+      note += ` 이제 가장 긴 단계는 ${and(names)}(${names.length > 1 ? "각 " : ""}${fmt(after[big[0]])}일)${batchim(names.at(-1)) ? "이" : ""}다.`;
+      const items = big.map(i => L.STAGES[i].item).filter(Boolean);
+      if (items.length) note += ` 주기를 더 줄이려면 구현이 아니라 이 단계를 줄여야 한다(${items.join("·")}번).`;
+    }
+    $("note").textContent = note;
+    document.querySelectorAll("[data-ai]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.ai) === ai)));
+  }
+  document.querySelectorAll("[data-ai]").forEach(b => b.addEventListener("click", () => { ai = Number(b.dataset.ai); render(); }));
+  $("more").addEventListener("change", render);
+  render();
+})();
+</script>
+</body>
+</html>

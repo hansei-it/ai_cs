@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이 패키지 이름은 믿을 만할까</title>
+<meta name="description" content="패키지 이름을 써 넣거나 예를 눌러, 널리 쓰는 패키지 이름과 몇 글자 다른지 보고 오타를 노린 이름인지 가린다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .inp { flex: 1 1 14em; min-width: 0; font-size: 14px; padding: 3px 8px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  .norm { font-size: 13px; color: var(--muted); margin: 2px 0 6px; overflow-wrap: anywhere; }
+  .t { border-collapse: collapse; font-size: 13px; width: 100%; }
+  .t td, .t th { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: left; }
+  .t th { color: var(--muted); font-weight: 400; white-space: nowrap; }
+  .t td.d { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", monospace; width: 5em; }
+  .t tr.close td { color: var(--write); font-weight: 700; }
+  .t tr.same td { color: var(--good); font-weight: 700; }
+  .row .btn { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", monospace; font-size: 12px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>이 패키지 이름은 믿을 만할까</h1>
+<p class="lead">AI가 추천했거나 손으로 친 패키지 이름을, 널리 쓰는 패키지 20개의 이름과 견준다. PyPI는 대소문자와 - _ . 를 가리지 않으므로 먼저 그렇게 맞춘 뒤, 한 글자씩 넣고 빼고 바꾸는 수(편집 거리)를 센다. 이 위젯은 이름만 견주고 PyPI에 묻지 않는다.</p>
+<div class="row">
+  <label class="label" for="name">이름</label>
+  <input id="name" class="mono inp" value="urlib3" spellcheck="false" autocomplete="off">
+</div>
+<div class="row" role="group" aria-label="예">
+  <span class="label">예</span>
+  <button class="btn" data-ex="urlib3">urlib3</button>
+  <button class="btn" data-ex="Typing.Extensions">Typing.Extensions</button>
+  <button class="btn" data-ex="charset_normalizer">charset_normalizer</button>
+  <button class="btn" data-ex="cs77-no-such-pkg">cs77-no-such-pkg</button>
+</div>
+<div class="norm" id="norm"></div>
+<table class="t" id="near"></table>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const TypoLogic = (() => {
+  // 널리 쓰는 패키지 이름(PyPI 이름을 정규화한 꼴). 견주는 기준일 뿐, 이 목록에 있다고 안전하다는 뜻은 아니다
+  const POPULAR = ["requests", "numpy", "pandas", "urllib3", "python-dateutil", "setuptools", "certifi", "idna",
+    "charset-normalizer", "six", "packaging", "pyyaml", "typing-extensions", "pip", "wheel", "attrs",
+    "cryptography", "boto3", "botocore", "jinja2"];
+
+  // PyPI는 이름의 대소문자와 - _ . 의 이어짐을 가리지 않는다(77번 본문의 normalize와 같다)
+  const normalize = name => name.replace(/[-_.]+/g, "-").toLowerCase();
+
+  // requirements 줄이나 설치 명령에서 이름만 뗀다(버전, [추가 기능], 환경 표시를 뺀다)
+  const nameOf = line => line.trim().replace(/^(python\s+-m\s+)?pip\s+install\s+/i, "").split(/[\s\[\]=<>!~;@(,]/)[0];
+
+  // a를 b로 바꾸는 데 드는 최소 편집 수(한 글자 넣기, 빼기, 바꾸기). 77번 본문의 distance와 같은 계산
+  function distance(a, b) {
+    a = [...a]; b = [...b];                            // Python처럼 글자(코드 포인트) 단위로 센다
+    const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      let prev = row[0];
+      row[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const cur = row[j];
+        row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] !== b[j - 1] ? 1 : 0));
+        prev = cur;
+      }
+    }
+    return row[b.length];
+  }
+
+  // 가까운 이름 셋과 판정: same(정규화하면 같은 이름), close(1~2글자 다름), far(가까운 이름 없음), empty
+  function judge(name) {
+    const n = normalize(name.trim());
+    if (!n) return { n, near: [], verdict: "empty" };
+    const near = POPULAR.map(p => ({ name: p, d: distance(n, p) })).sort((x, y) => x.d - y.d || (x.name < y.name ? -1 : 1)).slice(0, 3);
+    const d = near[0].d;
+    return { n, near, verdict: d === 0 ? "same" : d <= 2 ? "close" : "far" };
+  }
+
+  return { POPULAR, normalize, nameOf, distance, judge };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = TypoLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  function render() {
+    const raw = $("name").value;
+    const nm = L.nameOf(raw);
+    const r = L.judge(nm);
+    document.querySelectorAll("[data-ex]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.ex === raw)));
+    $("norm").innerHTML = (r.n && nm !== raw.trim() ? "버전, [추가 기능], 명령은 떼고 이름만 본다. " : "")
+      + (r.n ? `PyPI가 보는 이름: <span class="mono">${esc(r.n)}</span>` : "");
+    $("near").innerHTML = r.near.length
+      ? "<tr><th>가까운 유명 이름</th><th>다른 글자 수</th></tr>" + r.near.map(x =>
+        `<tr class="${x.d === 0 ? "same" : x.d <= 2 ? "close" : ""}"><td class="mono">${x.name}</td><td class="d">${x.d}</td></tr>`).join("")
+      : "";
+    const top = r.near[0];
+    const tops = top ? r.near.filter(x => x.d === top.d).map(x => x.name).join(", ") : "";   // 거리가 같은 이름은 함께 보인다
+    $("note").textContent = r.verdict === "empty" ? "이름을 써 넣는다."
+      // 영문 이름 뒤의 조사는 읽는 법에 따라 달라지므로, 이름은 콜론 뒤에 둔다
+      : r.verdict === "same" ? (r.n === nm ? `널리 쓰는 이름 그대로다: ${top.name}. 그래도 버전, 배포 기록, 라이선스는 확인한다(check_pkg.py).`
+        : `PyPI는 대소문자와 - _ . 를 가리지 않아, 이 이름을 같은 이름으로 본다: ${top.name}. 그래도 버전, 배포 기록, 라이선스는 확인한다(check_pkg.py).`)
+      : r.verdict === "close" ? `널리 쓰는 이름에서 ${top.d}글자 다르다: ${tops}. 오타를 노린 이름일 수 있다. 내가 뜻한 이름이 맞는지 다시 보고, 맞다면 설치하기 전에 check_pkg.py로 저장소와 배포 기록을 확인한다.`
+      : "이 목록(20개)에는 가까운 이름이 없다. 목록 밖 패키지의 오타인지는 이 위젯으로 가릴 수 없다. 실제 패키지일 수도, AI가 지어낸 이름일 수도 있으니 설치하기 전에 PyPI에서 실재와 저장소, 배포 기록을 확인한다(check_pkg.py).";
+  }
+  $("name").addEventListener("input", render);
+  document.querySelectorAll("[data-ex]").forEach(b => b.addEventListener("click", () => { $("name").value = b.dataset.ex; render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

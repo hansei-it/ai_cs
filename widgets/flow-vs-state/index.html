@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>상태를 바꾸는 코드와 데이터가 흐르는 코드</title>
+<meta name="description" content="절차형과 함수형을 골라 ‘한 단계’를 눌러, 같은 합계를 변수를 바꿔 가며 구하는 모습과 데이터가 단계를 지나며 구해지는 모습을 비교한다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --drop: #9aa0aa;
+    --changed: #fff3bf;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --drop: #6b7280;
+    --changed: #4a4220;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .stepno { font-size: 13px; color: var(--muted); }
+  .main { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-start; margin-top: 4px; }
+  .panel h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
+  .src { font-size: 13px; line-height: 1.6; background: var(--soft); border-radius: 6px; padding: 6px 0; min-width: 300px; max-width: 100%; overflow-x: auto; }
+  .panel { min-width: 0; max-width: 100%; }
+  .src .ln { display: block; padding: 0 10px; white-space: pre; }
+  .src .ln.cur { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+  .vars { display: grid; grid-template-columns: auto auto; gap: 4px 12px; font-size: 15px; }
+  .vars .k { color: var(--muted); }
+  .vars .v { font-weight: 700; padding: 0 4px; border-radius: 3px; }
+  .vars .v.changed { background: var(--changed); }
+  .changes { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .pipe { display: grid; gap: 8px; min-width: 260px; }
+  .stage { border: 1.5px solid var(--line); border-radius: 8px; padding: 6px 9px; }
+  .stage.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .stage .name { font-weight: 700; font-size: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; min-height: 26px; }
+  .chip { font-size: 13px; padding: 1px 7px; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); }
+  .chip.now { border-color: var(--accent); background: var(--accent-bg); font-weight: 700; }
+  .chip.drop { color: var(--drop); text-decoration: line-through; }
+  .chip.pass { border-color: var(--accent); color: var(--accent); }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .src { min-width: 0; width: 100%; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<h1>상태를 바꾸는 코드와 데이터가 흐르는 코드</h1>
+<div class="row" role="group" aria-label="방식">
+  <span class="label">방식</span>
+  <button class="btn" data-mode="proc">절차형 (for 문)</button>
+  <button class="btn" data-mode="func">함수형 (LINQ)</button>
+</div>
+<div class="row">
+  <span class="label">실행</span>
+  <button class="btn" id="prev">이전</button>
+  <button class="btn primary" id="next">한 단계</button>
+  <button class="btn" id="end">끝까지</button>
+  <button class="btn" id="reset">처음으로</button>
+  <span class="stepno" id="stepno"></span>
+</div>
+<div class="main">
+  <div class="panel">
+    <h2>코드</h2>
+    <div class="src mono" id="src"></div>
+  </div>
+  <div class="panel" id="right"></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const FlowLogic = (() => {
+  const AMOUNTS = [12000, 8000, 25000, 9900, 10000];
+  const MIN = 10000;
+  // 조사: 숫자를 읽은 끝소리로 고른다 (2 이, 4 사, 5 오, 9 구는 받침 없음)
+  const neun = n => ("2459".includes(String(n).slice(-1)) ? "는" : "은");
+  const SOURCE = {
+    proc: [
+      "int[] amounts = { 12000, 8000, 25000, 9900, 10000 };",
+      "int total = 0;",
+      "for (int i = 0; i < amounts.Length; i++)",
+      "{",
+      "    if (amounts[i] >= 10000)",
+      "        total += amounts[i];",
+      "}",
+      "Console.WriteLine(total);",
+    ],
+    func: [
+      "int[] amounts = { 12000, 8000, 25000, 9900, 10000 };",
+      "var big = amounts.Where(a => a >= 10000);",
+      "int total = big.Sum();",
+      "Console.WriteLine(total);",
+    ],
+  };
+
+  // 절차형: 줄마다 변수의 값을 찍는다. changes는 지금까지 바뀐 변수 대입 횟수
+  function procTrace() {
+    const steps = [];
+    let total = null, i = null, changes = 0;
+    const snap = (line, note) => steps.push({ line, note, vars: { i, "amounts[i]": i !== null && i < AMOUNTS.length ? AMOUNTS[i] : "", total }, changes });
+    snap(1, "배열을 만든다.");
+    total = 0; changes++;
+    snap(2, "total을 0으로 둔다. 이 변수가 계산하는 동안 계속 바뀐다.");
+    for (i = 0; ; i++) {
+      if (i > 0) changes++;
+      if (!(i < AMOUNTS.length)) { snap(3, `i가 ${i}라 반복이 끝난다.`); break; }
+      if (i === 0) changes++;
+      snap(3, `i = ${i}. amounts[${i}]${neun(i)} ${AMOUNTS[i]}이다.`);
+      const ok = AMOUNTS[i] >= MIN;
+      snap(5, `${AMOUNTS[i]} >= 10000은 ${ok ? "참" : "거짓"}이다.`);
+      if (ok) { total += AMOUNTS[i]; changes++; snap(6, `total이 ${total}이 되었다.`); }
+    }
+    i = null;
+    snap(8, `${total}을 출력한다. 처음부터 끝까지 i와 total에 값을 ${changes}번 넣었다.`);
+    return { steps, total };
+  }
+
+  // 함수형: Where는 걸러 낼 조건만 정해 둔다. Sum이 하나씩 달라고 할 때 비로소 거른다(지연 실행)
+  function funcTrace() {
+    const steps = [];
+    const base = { line: 1, now: null, passed: [], dropped: [], sum: null, stage: null };
+    const snap = (o, note) => steps.push({ ...base, ...o, passed: [...(o.passed || [])], dropped: [...(o.dropped || [])], note });
+    snap({ line: 1 }, "배열을 만든다.");
+    snap({ line: 2, stage: "where" }, "Where는 '10000 이상만'이라는 조건을 붙인 질의를 만들 뿐, 아직 아무것도 거르지 않았다.");
+    const passed = [], dropped = [];
+    let sum = 0;
+    for (const a of AMOUNTS) {
+      snap({ line: 3, now: a, passed, dropped, sum, stage: "where" }, `Sum이 다음 값을 달라고 하자 Where가 ${a}을 꺼내 조건을 본다.`);
+      if (a >= MIN) {
+        passed.push(a); sum += a;
+        snap({ line: 3, now: a, passed, dropped, sum, stage: "sum" }, `${a}${neun(a)} 조건을 통과해 Sum으로 간다. 지금까지 합 ${sum}.`);
+      } else {
+        dropped.push(a);
+        snap({ line: 3, now: a, passed, dropped, sum, stage: "where" }, `${a}${neun(a)} 조건을 통과하지 못해 버려진다.`);
+      }
+    }
+    snap({ line: 4, passed, dropped, sum, stage: null }, `${sum}을 출력한다. 내가 쓴 코드에는 값이 바뀌는 변수가 없다. 합을 쌓는 일은 Sum 안에서 일어난다.`);
+    return { steps, total: sum, passed: [...passed], dropped: [...dropped] };
+  }
+
+  return { AMOUNTS, MIN, SOURCE, procTrace, funcTrace, neun };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = FlowLogic;
+  const $ = id => document.getElementById(id);
+  let mode = "proc", steps = [], at = 0;
+
+  function load(m) {
+    mode = m;
+    steps = (m === "proc" ? L.procTrace() : L.funcTrace()).steps;
+    at = 0;
+    const src = $("src");
+    src.textContent = "";
+    for (const line of L.SOURCE[m]) {
+      const d = document.createElement("span");
+      d.className = "ln";
+      d.textContent = line || " ";
+      src.append(d);
+    }
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
+    render();
+  }
+
+  function render() {
+    const s = steps[at], prev = at > 0 ? steps[at - 1] : null;
+    $("src").querySelectorAll(".ln").forEach((d, i) => d.classList.toggle("cur", i + 1 === s.line));
+    const right = $("right");
+    right.textContent = "";
+    const h = document.createElement("h2");
+    if (mode === "proc") {
+      h.textContent = "변수 (값이 바뀌면 노란색)";
+      right.append(h);
+      const vars = document.createElement("div");
+      vars.className = "vars mono";
+      for (const k of ["i", "amounts[i]", "total"]) {
+        const v = s.vars[k];
+        const changed = prev && prev.vars[k] !== v && k !== "amounts[i]";
+        vars.insertAdjacentHTML("beforeend", `<span class="k">${k}</span><span class="v${changed ? " changed" : ""}">${v === null ? "-" : v}</span>`);
+      }
+      right.append(vars);
+      right.insertAdjacentHTML("beforeend", `<div class="changes">변수에 값을 넣은 횟수: ${s.changes}</div>`);
+    } else {
+      h.textContent = "데이터가 지나가는 길";
+      right.append(h);
+      const pipe = document.createElement("div");
+      pipe.className = "pipe";
+      const chip = (a, extra = "") => `<span class="chip mono${extra}">${a}</span>`;
+      const src = L.AMOUNTS.map(a => chip(a, s.now === a ? " now" : s.passed.includes(a) ? " pass" : s.dropped.includes(a) ? " drop" : "")).join("");
+      pipe.insertAdjacentHTML("beforeend", `<div class="stage"><div class="name">amounts</div><div class="chips">${src}</div></div>`);
+      pipe.insertAdjacentHTML("beforeend", `<div class="stage${s.stage === "where" ? " active" : ""}"><div class="name mono">Where(a => a >= 10000)</div><div class="chips">${s.passed.map(a => chip(a, " pass")).join("") || '<span class="chip">아직 없음</span>'}</div></div>`);
+      pipe.insertAdjacentHTML("beforeend", `<div class="stage${s.stage === "sum" ? " active" : ""}"><div class="name mono">Sum()</div><div class="chips">${s.sum === null ? '<span class="chip">아직 없음</span>' : chip(s.sum, " pass")}</div></div>`);
+      right.append(pipe);
+    }
+    $("note").textContent = s.note;
+    $("stepno").textContent = `단계 ${at + 1} / ${steps.length}`;
+    $("prev").disabled = at === 0;
+    $("next").disabled = $("end").disabled = at === steps.length - 1;
+  }
+
+  $("next").addEventListener("click", () => { if (at < steps.length - 1) { at++; render(); } });
+  $("prev").addEventListener("click", () => { if (at > 0) { at--; render(); } });
+  $("end").addEventListener("click", () => { at = steps.length - 1; render(); });
+  $("reset").addEventListener("click", () => { at = 0; render(); });
+  document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => load(b.dataset.mode)));
+  const first = new URLSearchParams(location.search).get("mode");
+  load(first === "func" ? "func" : "proc");
+})();
+</script>
+</body>
+</html>

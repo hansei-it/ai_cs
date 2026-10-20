@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>변수의 타입과 객체의 타입</title>
+<meta name="description" content="변수 타입, 넣을 객체, 부를 멤버를 골라, 컴파일러가 막는 경우와 실제로 실행되는 코드를 본다 (모든 조합을 .NET 10으로 컴파일해 얻은 결과)">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --err: #c2410c;
+    --err-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --err: #ffa94d;
+    --err-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono, .btn.code { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 5.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .main { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-start; margin-top: 6px; }
+  .panel h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
+  .code { font-size: 13px; line-height: 1.6; background: var(--soft); border-radius: 6px; padding: 8px 10px; white-space: pre; overflow-x: auto; max-width: 100%; }
+  .code .hl { background: var(--accent-bg); border-radius: 3px; }
+  .code .dim { color: var(--muted); }
+  .result { border: 1.5px solid var(--accent); border-radius: 8px; padding: 8px 10px; min-width: 260px; max-width: 100%; }
+  .result.err { border-color: var(--err); background: var(--err-bg); }
+  .result .title { font-weight: 700; }
+  .result.err .title { color: var(--err); }
+  .result .out { font-size: 18px; font-weight: 700; margin: 4px 0; }
+  .result .msg { font-size: 13px; margin: 4px 0; overflow-wrap: anywhere; }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  .panel { min-width: 0; max-width: 100%; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .result { min-width: 0; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<h1>변수의 타입과 객체의 타입</h1>
+<div class="row" role="group" aria-label="변수 타입"><span class="label">변수 타입</span></div>
+<div class="row" role="group" aria-label="넣을 객체"><span class="label">넣을 객체</span></div>
+<div class="row" role="group" aria-label="부를 멤버"><span class="label">부를 멤버</span></div>
+<div class="main">
+  <div class="panel">
+    <h2>코드</h2>
+    <div class="code mono" id="code"></div>
+  </div>
+  <div class="panel">
+    <h2>결과 (.NET 10으로 컴파일하고 실행한 그대로)</h2>
+    <div class="result" id="result"></div>
+  </div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const DispatchLogic = (() => {
+  const TYPES = ["IShape", "Circle", "Square", "object"];
+  const OBJECTS = { Circle: "new Circle(1)", Square: "new Square(2)" };
+  const MEMBERS = ["Area()", "Name", "Radius", "Side", "ToString()"];
+  // 각 타입이 가진 멤버 (object는 ToString 등 모든 객체가 물려받는 것만)
+  const HAS = {
+    IShape: ["Area()", "Name", "ToString()"],
+    Circle: ["Area()", "Name", "Radius", "ToString()"],
+    Square: ["Area()", "Name", "Side", "ToString()"],
+    object: ["ToString()"],
+  };
+  // 이 PC에서 40가지 조합을 모두 컴파일·실행해 얻은 결과 (오류 메시지는 첫 문장)
+  const CS0029 = (o, t) => ({ error: "CS0029", msg: `암시적으로 '${o}' 형식을 '${t}' 형식으로 변환할 수 없습니다.` });
+  const CS1061 = (t, m) => ({ error: "CS1061", msg: `'${t}'에는 '${m.replace("()", "")}'에 대한 정의가 포함되어 있지 않고, …` });
+  const RUN = {
+    Circle: { "Area()": "3.141592653589793", Name: "원", Radius: "1", "ToString()": "Circle" },
+    Square: { "Area()": "4", Name: "정사각형", Side: "2", "ToString()": "Square" },
+  };
+  const RECORDED = {};
+  for (const t of TYPES) for (const o of Object.keys(OBJECTS)) for (const m of MEMBERS) {
+    const key = `${t}|${o}|${m}`;
+    if ((t === "Circle" || t === "Square") && t !== o) RECORDED[key] = CS0029(o, t);
+    else if (!HAS[t].includes(m)) RECORDED[key] = CS1061(t, m);
+    else RECORDED[key] = { out: RUN[o][m] };
+  }
+
+  // 조사: 멤버 이름을 읽은 끝소리 (에어리어, 네임, 레이디어스, 사이드, 투스트링)
+  const GA = { "Area()": "가", Name: "이", Radius: "가", Side: "가", "ToString()": "이" };
+  const EUL = { "Area()": "를", Name: "을", Radius: "를", Side: "를", "ToString()": "을" };
+
+  // 결과와 그 이유를 고른다
+  function explain(t, o, m) {
+    const r = RECORDED[`${t}|${o}|${m}`];
+    if (r.error === "CS0029") return { ...r, why: `${t} 변수에는 ${t}(또는 그것을 물려받은 클래스)의 객체만 넣을 수 있다. ${o}는 ${t}가 아니다.` };
+    if (r.error === "CS1061") {
+      const realHas = HAS[o].includes(m);
+      return { ...r, why: `컴파일러는 변수의 타입(${t})만 보고 부를 수 있는 멤버를 정한다. ${t}에는 ${m}${GA[m]} 없다.` + (realHas ? ` 실제 객체(${o})는 ${m}${EUL[m]} 가졌지만 소용없다.` : "") };
+    }
+    if (m === "ToString()") return { ...r, why: `ToString은 모든 클래스가 object에서 물려받는다. 다시 정의하지 않았으니 기본 동작대로 클래스 이름 ${o}를 돌려준다.` };
+    const viaIface = t !== o;
+    return { ...r, why: viaIface ? `변수는 ${t}지만 실제 객체는 ${o}다. 실행할 코드는 객체의 실제 타입이 정하므로 ${o}의 ${m}${GA[m]} 실행됐다. 이것이 다형성이다.` : `${o} 변수로 ${o} 객체의 ${m}${EUL[m]} 불렀다.` };
+  }
+
+  return { TYPES, OBJECTS, MEMBERS, HAS, RECORDED, explain };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = DispatchLogic;
+  const $ = id => document.getElementById(id);
+  const sel = { t: "IShape", o: "Circle", m: "Area()" };
+  const rows = document.querySelectorAll(".row");
+  const groups = [["t", L.TYPES], ["o", Object.keys(L.OBJECTS)], ["m", L.MEMBERS]];
+  groups.forEach(([k, list], i) => {
+    for (const v of list) {
+      const b = document.createElement("button");
+      b.className = "btn code";
+      b.textContent = k === "o" ? L.OBJECTS[v] : v;
+      b.dataset.k = k; b.dataset.v = v;
+      b.addEventListener("click", () => { sel[k] = v; render(); });
+      rows[i].append(b);
+    }
+  });
+
+  const DECL = [
+    "interface IShape { double Area(); string Name { get; } }",
+    "",
+    "class Circle(double r) : IShape {",
+    "    public double Radius => r;",
+    "    public double Area() => Math.PI * r * r;",
+    "    public string Name => \"원\";",
+    "}",
+    "class Square(double s) : IShape {",
+    "    public double Side => s;",
+    "    public double Area() => s * s;",
+    "    public string Name => \"정사각형\";",
+    "}",
+  ];
+
+  function render() {
+    document.querySelectorAll("[data-k]").forEach(b => b.setAttribute("aria-pressed", String(sel[b.dataset.k] === b.dataset.v)));
+    const r = L.explain(sel.t, sel.o, sel.m);
+    const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const ran = r.out !== undefined && sel.m !== "ToString()";
+    const memberName = sel.m.replace("()", "");
+    const decl = DECL.map(line => {
+      const hl = ran && line.includes(`class ${sel.o}`) ? false : ran && DECL.indexOf(line) > 0 && line.includes(memberName) && belongs(line, sel.o);
+      return hl ? `<span class="hl">${esc(line)}</span>` : `<span class="dim">${esc(line)}</span>`;
+    }).join("\n");
+    $("code").innerHTML = `<span class="hl">${sel.t}</span> x = <span class="hl">${L.OBJECTS[sel.o]}</span>;\nConsole.WriteLine(x.<span class="hl">${sel.m}</span>);\n\n${decl}`;
+    const box = $("result");
+    box.className = "result" + (r.error ? " err" : "");
+    box.innerHTML = r.error
+      ? `<div class="title">컴파일 오류 ${r.error}</div><div class="msg mono">${esc(r.msg)}</div>`
+      : `<div class="title">실행 결과</div><div class="out mono">${esc(r.out)}</div>`;
+    $("note").textContent = r.why;
+  }
+  // 그 줄이 어느 클래스 안에 있는지
+  function belongs(line, cls) {
+    const i = DECL.indexOf(line);
+    for (let k = i; k >= 0; k--) if (DECL[k].startsWith("class ")) return DECL[k].includes(`class ${cls}`);
+    return false;
+  }
+  render();
+})();
+</script>
+</body>
+</html>

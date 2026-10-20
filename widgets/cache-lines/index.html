@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>캐시 줄과 읽는 순서</title>
+<meta name="description" content="행 순서나 열 순서를 고르고 ‘한 칸’이나 ‘재생’을 눌러, 캐시가 줄 단위로 채워지고 놓침이 생기는 모습을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --miss: #c2410c;
+    --miss-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --miss: #ffa94d;
+    --miss-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .main { display: flex; flex-wrap: wrap; gap: 14px 22px; margin-top: 10px; }
+  .panel h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
+  .grid { display: grid; grid-template-columns: auto repeat(8, 30px); gap: 3px; font-size: 11px; }
+  .grid .head { color: var(--muted); text-align: center; align-self: center; }
+  .cell {
+    height: 30px; border: 1px solid var(--line); border-radius: 4px; background: var(--soft);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; position: relative;
+  }
+  .cell.cached { box-shadow: inset 0 0 0 2px var(--accent); }
+  .cell.hit { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+  .cell.miss { background: var(--miss-bg); color: var(--miss); font-weight: 700; }
+  .cell.now { outline: 2.5px solid var(--fg); outline-offset: 1px; z-index: 1; }
+  /* 행 안에서 줄(4칸)이 나뉘는 곳 */
+  .grid .gap { margin-left: 6px; }
+
+  .strip { display: flex; flex-wrap: wrap; gap: 4px; }
+  .sline { display: flex; gap: 1px; padding: 2px; border: 1px solid var(--line); border-radius: 4px; }
+  .sline.cached { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .scell { width: 7px; height: 14px; border-radius: 1px; background: var(--line); }
+  .scell.hit { background: var(--accent); }
+  .scell.miss { background: var(--miss); }
+  .scell.now { outline: 2px solid var(--fg); outline-offset: 1px; }
+
+  .slots { display: grid; gap: 4px; min-width: 190px; }
+  .slot { border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 13px; background: var(--soft); display: flex; justify-content: space-between; gap: 8px; }
+  .slot .k { color: var(--muted); }
+  .slot.in { border-color: var(--miss); background: var(--miss-bg); }
+  .slot.use { border-color: var(--accent); background: var(--accent-bg); }
+  .stats { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin-top: 10px; font-size: 14px; }
+  .stats .k { color: var(--muted); }
+  .stats .v { font-weight: 700; text-align: right; }
+  .stats .v.hit { color: var(--accent); }
+  .stats .v.miss { color: var(--miss); }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--line); background: var(--soft); }
+  .legend .l-hit::before { background: var(--accent-bg); border-color: var(--accent); }
+  .legend .l-miss::before { background: var(--miss-bg); border-color: var(--miss); }
+  .legend .l-cached::before { box-shadow: inset 0 0 0 2px var(--accent); }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .grid { grid-template-columns: auto repeat(8, 26px); }
+    .cell { height: 26px; }
+  }
+</style>
+</head>
+<body>
+<h1>캐시 줄과 읽는 순서</h1>
+
+<div class="row" role="group" aria-label="읽는 순서">
+  <span class="label">순서</span>
+  <button class="btn" data-order="row" aria-pressed="true">행 순서 (옆 칸으로)</button>
+  <button class="btn" data-order="col" aria-pressed="false">열 순서 (아래 칸으로)</button>
+</div>
+<div class="row" role="group" aria-label="캐시 크기">
+  <span class="label">캐시</span>
+  <button class="btn" data-slots="2" aria-pressed="false">2줄</button>
+  <button class="btn" data-slots="4" aria-pressed="true">4줄</button>
+  <button class="btn" data-slots="8" aria-pressed="false">8줄</button>
+</div>
+<div class="row" role="group" aria-label="실행">
+  <span class="label">실행</span>
+  <button class="btn primary" id="step">한 칸</button>
+  <button class="btn" id="play">재생</button>
+  <button class="btn" id="end">끝까지</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+
+<div class="main">
+  <div class="panel">
+    <h2>배열 <span class="mono">int a[8][8]</span> (한 줄 = 옆으로 붙은 4칸)</h2>
+    <div class="grid mono" id="grid"></div>
+  </div>
+  <div class="panel">
+    <h2>캐시 (<span id="slot-count">4</span>줄)</h2>
+    <div class="slots mono" id="slots"></div>
+    <div class="stats">
+      <span class="k">읽은 칸</span><span class="v" id="s-read">0 / 64</span>
+      <span class="k">적중</span><span class="v hit" id="s-hit">0</span>
+      <span class="k">놓침 (메모리까지)</span><span class="v miss" id="s-miss">0</span>
+      <span class="k">적중률</span><span class="v" id="s-rate">-</span>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:12px">
+  <h2>메모리에 놓인 순서 (a[0][0]부터 차례로, 네 칸씩 한 줄)</h2>
+  <div class="strip" id="strip"></div>
+</div>
+<div class="legend"><span class="l-hit">적중: 캐시에 있었다</span><span class="l-miss">놓침: 메모리에서 줄을 가져왔다</span><span class="l-cached">지금 캐시에 있는 줄</span></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CacheLogic = (() => {
+  const N = 8;      // 배열 a[N][N]
+  const LINE = 4;   // 캐시 줄 하나에 들어가는 칸 수 (실제 CPU는 64바이트 = int 16칸)
+
+  // 읽는 칸의 순서. 행 순서는 a[0][0], a[0][1], …, 열 순서는 a[0][0], a[1][0], …
+  function cells(order) {
+    const out = [];
+    for (let p = 0; p < N; p++)
+      for (let q = 0; q < N; q++) out.push(order === "row" ? [p, q] : [q, p]);
+    return out;
+  }
+
+  // C의 2차원 배열은 행이 차례로 놓인다. 칸이 들어 있는 줄 번호
+  const lineOf = (i, j) => Math.floor((i * N + j) / LINE);
+  const lineLabel = line => {
+    const i = Math.floor(line * LINE / N), j = (line * LINE) % N;
+    return `a[${i}][${j}~${j + LINE - 1}]`;
+  };
+
+  // 칸을 차례로 읽으며 캐시(slots줄, 가장 오래 안 쓴 줄을 내보냄)를 흉내 낸다.
+  // 칸마다 { i, j, line, hit, slot(넣거나 쓴 자리), evicted(내보낸 줄 또는 null), cache(그 뒤 자리별 줄) }
+  function simulate(order, slots) {
+    const cache = new Array(slots).fill(null);
+    const lastUse = new Array(slots).fill(-1);
+    return cells(order).map(([i, j], t) => {
+      const line = lineOf(i, j);
+      let slot = cache.indexOf(line);
+      const hit = slot >= 0;
+      let evicted = null;
+      if (!hit) {
+        slot = cache.indexOf(null);
+        if (slot < 0) {
+          slot = lastUse.indexOf(Math.min(...lastUse));
+          evicted = cache[slot];
+        }
+        cache[slot] = line;
+      }
+      lastUse[slot] = t;
+      return { i, j, line, hit, slot, evicted, cache: cache.slice() };
+    });
+  }
+
+  function summary(steps) {
+    const hits = steps.filter(s => s.hit).length;
+    return { reads: steps.length, hits, misses: steps.length - hits };
+  }
+
+  return { N, LINE, cells, lineOf, lineLabel, simulate, summary };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CacheLogic;
+  const $ = id => document.getElementById(id);
+  let order = "row", slots = 4, steps = [], done = 0, timer = null;
+
+  // 배열 격자와 메모리 띠를 한 번 만든다
+  const grid = $("grid"), strip = $("strip");
+  const cellEl = [], stripEl = [], lineEl = [];
+  grid.append(Object.assign(document.createElement("span"), { className: "head" }));
+  for (let j = 0; j < L.N; j++) grid.append(Object.assign(document.createElement("span"), { className: "head" + (j === L.LINE ? " gap" : ""), textContent: `[${j}]` }));
+  for (let i = 0; i < L.N; i++) {
+    grid.append(Object.assign(document.createElement("span"), { className: "head", textContent: `[${i}]` }));
+    cellEl.push([]);
+    for (let j = 0; j < L.N; j++) {
+      const c = Object.assign(document.createElement("span"), { className: "cell" + (j === L.LINE ? " gap" : "") });
+      c.title = `a[${i}][${j}]`;
+      grid.append(c);
+      cellEl[i].push(c);
+    }
+  }
+  for (let line = 0; line < (L.N * L.N) / L.LINE; line++) {
+    const g = Object.assign(document.createElement("span"), { className: "sline" });
+    g.title = L.lineLabel(line);
+    for (let k = 0; k < L.LINE; k++) {
+      const c = Object.assign(document.createElement("span"), { className: "scell" });
+      g.append(c);
+      stripEl.push(c);
+    }
+    strip.append(g);
+    lineEl.push(g);
+  }
+
+  function reset() {
+    stop();
+    steps = L.simulate(order, slots);
+    done = 0;
+    $("slot-count").textContent = slots;
+    render();
+  }
+
+  function render() {
+    const last = done ? steps[done - 1] : null;
+    const cache = last ? last.cache : new Array(slots).fill(null);
+    const cached = new Set(cache.filter(x => x !== null));
+    const result = new Map(steps.slice(0, done).map(s => [`${s.i},${s.j}`, s.hit ? "hit" : "miss"]));
+    for (let i = 0; i < L.N; i++)
+      for (let j = 0; j < L.N; j++) {
+        const r = result.get(`${i},${j}`);
+        const c = cellEl[i][j];
+        c.className = "cell" + (j === L.LINE ? " gap" : "") + (r ? ` ${r}` : "") + (cached.has(L.lineOf(i, j)) ? " cached" : "") + (last && last.i === i && last.j === j ? " now" : "");
+        c.textContent = r === "hit" ? "○" : r === "miss" ? "×" : "";
+        const sc = stripEl[i * L.N + j];
+        sc.className = "scell" + (r ? ` ${r}` : "") + (last && last.i === i && last.j === j ? " now" : "");
+      }
+    lineEl.forEach((g, line) => g.classList.toggle("cached", cached.has(line)));
+
+    const box = $("slots");
+    box.textContent = "";
+    cache.forEach((line, k) => {
+      const d = document.createElement("div");
+      d.className = "slot" + (last && last.slot === k ? (last.hit ? " use" : " in") : "");
+      d.innerHTML = `<span class="k">${k + 1}</span><span>${line === null ? "(빈 자리)" : L.lineLabel(line)}</span>`;
+      box.append(d);
+    });
+
+    const sum = L.summary(steps.slice(0, done));
+    $("s-read").textContent = `${sum.reads} / ${steps.length}`;
+    $("s-hit").textContent = sum.hits;
+    $("s-miss").textContent = sum.misses;
+    $("s-rate").textContent = sum.reads ? `${Math.round((sum.hits / sum.reads) * 100)}%` : "-";
+
+    let note;
+    if (!last) note = order === "row"
+      ? "행 순서: a[0][0], a[0][1], a[0][2] … 옆 칸으로 읽는다. ‘한 칸’을 눌러 본다."
+      : "열 순서: a[0][0], a[1][0], a[2][0] … 아래 칸으로 읽는다. ‘한 칸’을 눌러 본다.";
+    else if (last.hit) note = `a[${last.i}][${last.j}] 읽기: ${L.lineLabel(last.line)} 줄이 이미 캐시에 있다 → 적중.`;
+    else note = `a[${last.i}][${last.j}] 읽기: 캐시에 없다 → 메모리에서 ${L.lineLabel(last.line)} 줄을 통째로 가져온다 (놓침)` +
+      (last.evicted !== null ? `. 자리가 없어 가장 오래 안 쓴 ${L.lineLabel(last.evicted)} 줄을 내보낸다.` : ".");
+    if (done === steps.length) note += ` 끝: 64칸 중 놓침 ${sum.misses}번.`;
+    $("note").textContent = note;
+
+    $("step").disabled = $("end").disabled = done === steps.length;
+    $("play").disabled = done === steps.length;
+  }
+
+  function step() { if (done < steps.length) { done++; render(); } if (done === steps.length) stop(); }
+  function stop() { clearInterval(timer); timer = null; $("play").textContent = "재생"; }
+
+  $("step").addEventListener("click", () => { stop(); step(); });
+  $("end").addEventListener("click", () => { stop(); done = steps.length; render(); });
+  $("reset").addEventListener("click", reset);
+  $("play").addEventListener("click", () => {
+    if (timer) { stop(); return; }
+    $("play").textContent = "멈춤";
+    timer = setInterval(step, 280);
+  });
+  document.querySelectorAll("[data-order]").forEach(b => b.addEventListener("click", () => {
+    order = b.dataset.order;
+    document.querySelectorAll("[data-order]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    reset();
+  }));
+  document.querySelectorAll("[data-slots]").forEach(b => b.addEventListener("click", () => {
+    slots = Number(b.dataset.slots);
+    document.querySelectorAll("[data-slots]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    reset();
+  }));
+
+  // 페이지가 ?order=col 처럼 처음 순서를 정할 수 있다
+  const first = new URLSearchParams(location.search).get("order");
+  if (first === "col") document.querySelector('[data-order="col"]').click();
+  else reset();
+})();
+</script>
+</body>
+</html>

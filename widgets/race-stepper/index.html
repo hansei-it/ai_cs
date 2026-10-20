@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>count++ 한 단계씩</title>
+<meta name="description" content="스레드 T1과 T2의 count++를 읽기, 더하기, 쓰기 한 단계씩 원하는 차례로 눌러 보며, 값을 잃어버리는 순서를 직접 만들고 잠금과 원자적 연산으로 막아 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #237032;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3a26;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .stage { display: grid; grid-template-columns: 1fr minmax(120px, auto) 1fr; gap: 10px; align-items: start; margin-top: 6px; }
+  .thread { border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-width: 0; }
+  .thread h2 { font-size: 14px; margin: 0 0 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .steps { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .steps li { padding: 2px 6px; border-radius: 4px; display: flex; justify-content: space-between; gap: 8px; }
+  .steps li.done { color: var(--muted); text-decoration: line-through; }
+  .steps li.next { background: var(--accent-bg); font-weight: 700; }
+  .steps li small { color: var(--muted); font-weight: 400; }
+  .reg { margin-top: 6px; font-size: 13px; }
+  .mem { border: 2px solid var(--write); background: var(--write-bg); border-radius: 8px; padding: 8px; text-align: center; }
+  .mem .k { font-size: 12px; color: var(--muted); }
+  .mem .v { font-size: 26px; font-weight: 700; }
+  .lock { margin-top: 8px; border: 1px dashed var(--line); border-radius: 6px; padding: 4px; font-size: 12px; text-align: center; }
+  .lock.held { border-style: solid; border-color: var(--read); background: var(--read-bg); }
+  .result { margin-top: 8px; font-size: 13px; font-weight: 700; text-align: center; border-radius: 6px; padding: 4px; }
+  .result.bad { background: var(--write-bg); color: var(--write); }
+  .result.good { background: var(--good-bg); color: var(--good); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 560px) {
+    body { padding: 10px; font-size: 14px; }
+    .stage { grid-template-columns: 1fr 1fr; }
+    .stage .center { grid-column: 1 / -1; grid-row: 1; }
+  }
+</style>
+</head>
+<body>
+<h1>count++ 한 단계씩</h1>
+<p class="lead">두 스레드가 같은 <span class="mono">count</span>(처음 0)에 <span class="mono">count++</span>를 한 번씩 한다. 기본 옵션의 기계어처럼 읽기, 더하기, 쓰기의 세 단계다. 어느 스레드를 먼저 한 단계 진행할지 직접 고른다.</p>
+
+<div class="row" role="group" aria-label="고치는 방법">
+  <span class="label">방법</span>
+  <button class="btn" data-mode="plain">그냥 count++</button>
+  <button class="btn" data-mode="lock">잠금 (임계 영역)</button>
+  <button class="btn" data-mode="atomic">InterlockedIncrement</button>
+</div>
+<div class="row">
+  <span class="label">한꺼번에</span>
+  <button class="btn" id="seq">T1을 다 하고 T2</button>
+  <button class="btn" id="mix">번갈아 한 단계씩</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+
+<div class="stage">
+  <div class="thread" id="t0"></div>
+  <div class="center">
+    <div class="mem"><div class="k">메모리의 count</div><div class="v mono" id="count">0</div></div>
+    <div class="lock" id="lock"></div>
+    <div class="result" id="result"></div>
+  </div>
+  <div class="thread" id="t1"></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const RaceLogic = (() => {
+  // 단계 이름과, 기본 옵션(cl, 최적화 없음)으로 만든 실제 기계어 (34번 항목에서 /FAs로 확인. InterlockedIncrement는 돌려받는 값을 안 쓰면 lock inc)
+  const STEPS = {
+    plain: [["읽기", "mov eax, count"], ["더하기", "inc eax"], ["쓰기", "mov count, eax"]],
+    lock: [["잠그기", "EnterCriticalSection"], ["읽기", "mov eax, count"], ["더하기", "inc eax"], ["쓰기", "mov count, eax"], ["풀기", "LeaveCriticalSection"]],
+    atomic: [["한 번에 늘리기", "lock inc"]],
+  };
+  const initial = mode => ({ mode, count: 0, owner: null, th: [{ pc: 0, reg: null }, { pc: 0, reg: null }] });
+  const finished = s => s.th.every(t => t.pc >= STEPS[s.mode].length);
+  // who 스레드를 한 단계 진행한다. blocked: 다른 스레드가 잠금을 쥐고 있어 기다린다
+  function step(s, who) {
+    const t = s.th[who], steps = STEPS[s.mode];
+    if (t.pc >= steps.length) return { state: s, done: true };
+    const name = steps[t.pc][0];
+    const n = { mode: s.mode, count: s.count, owner: s.owner, th: s.th.map(x => ({ ...x })) };
+    const me = n.th[who];
+    if (name === "잠그기") {
+      if (n.owner !== null && n.owner !== who) return { state: s, blocked: true };
+      n.owner = who;
+    } else if (name === "읽기") me.reg = n.count;
+    else if (name === "더하기") me.reg += 1;
+    else if (name === "쓰기") n.count = me.reg;
+    else if (name === "풀기") n.owner = null;
+    else if (name === "한 번에 늘리기") n.count += 1;   // 읽기·더하기·쓰기를 다른 스레드가 끼어들 수 없게 한 명령으로
+    me.pc += 1;
+    return { state: n, name };
+  }
+  // 차례 목록대로 진행한다. 막히면 그 스레드는 건너뛰고 다음 차례로
+  function run(mode, order) {
+    let s = initial(mode);
+    const log = [];
+    for (const who of order) {
+      if (finished(s)) break;
+      if (s.th[who].pc >= STEPS[mode].length) continue;   // 이미 끝난 스레드의 차례는 건너뛴다
+      const r = step(s, who);
+      log.push(r.blocked ? `T${who + 1} 기다림` : r.done ? `T${who + 1} 끝` : `T${who + 1} ${r.name}`);
+      s = r.state;
+    }
+    return { state: s, log };
+  }
+  return { STEPS, initial, step, run, finished };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = RaceLogic;
+  const $ = id => document.getElementById(id);
+  let s;
+  // 조사: T1(일)은 받침이 있고 T2(이)는 없다
+  const ig = who => (who === 0 ? "T1이" : "T2가");
+  const eun = who => (who === 0 ? "T1은" : "T2는");
+
+  function render(msg) {
+    const steps = L.STEPS[s.mode];
+    for (const who of [0, 1]) {
+      const t = s.th[who];
+      $("t" + who).innerHTML = `<h2>T${who + 1}<button class="btn go" data-step="${who}" ${t.pc >= steps.length ? "disabled" : ""}>한 단계</button></h2>
+        <ol class="steps">${steps.map(([name, asm], i) => `<li class="${i < t.pc ? "done" : i === t.pc ? "next" : ""}"><span>${name}</span><small class="mono">${asm}</small></li>`).join("")}</ol>
+        ${s.mode === "atomic" ? "" : `<div class="reg">레지스터 eax: <b class="mono">${t.reg === null ? "-" : t.reg}</b></div>`}`;
+    }
+    $("count").textContent = s.count;
+    $("lock").className = "lock" + (s.owner !== null ? " held" : "");
+    $("lock").textContent = s.mode === "lock" ? (s.owner === null ? "잠금: 비어 있다" : `잠금: ${ig(s.owner)} 쥐고 있다`) : "";
+    $("lock").style.display = s.mode === "lock" ? "" : "none";
+    const done = L.finished(s);
+    $("result").className = "result" + (done ? (s.count === 2 ? " good" : " bad") : "");
+    $("result").textContent = done ? (s.count === 2 ? "결과 2: 맞다" : `결과 ${s.count}: 하나를 잃어버렸다`) : "";
+    $("note").textContent = msg;
+    document.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => doStep(Number(b.dataset.step))));
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === s.mode)));
+  }
+  function doStep(who) {
+    const r = L.step(s, who);
+    if (r.blocked) { render(`${eun(who)} 잠그려 했지만 ${ig(s.owner)} 잠금을 쥐고 있어 기다린다. ${ig(s.owner)} 풀 때까지 T${who + 1}의 읽기는 시작되지 않는다.`); return; }
+    s = r.state;
+    const other = s.th[1 - who];
+    let msg = `T${who + 1}: ${r.name}.`;
+    if (r.name === "읽기" && other.reg !== null && other.pc < L.STEPS[s.mode].length && s.mode === "plain") msg += " 상대도 이미 읽어 둔 값이 있다. 둘이 같은 값에서 출발하면 하나는 잃어버린다.";
+    if (r.name === "쓰기" && L.finished(s) && s.count !== 2) msg += " 늦게 쓴 스레드가 먼저 쓴 값을 덮어썼다. 두 번 늘렸는데 1이다(갱신 손실).";
+    if (r.name === "한 번에 늘리기") msg += " 읽기, 더하기, 쓰기가 한 명령(lock inc) 안에서 끝나서 다른 스레드가 사이에 끼어들 수 없다.";
+    render(msg);
+  }
+  function start(mode) {
+    s = L.initial(mode);
+    render(mode === "plain" ? "\"번갈아 한 단계씩\"을 누르거나, T1과 T2의 \"한 단계\"를 원하는 차례로 눌러 결과를 1로 만들어 본다."
+      : mode === "lock" ? "같은 차례로 눌러도 잠금이 있으면 한 스레드가 읽기부터 쓰기까지 끝낼 때까지 다른 스레드는 들어오지 못한다."
+      : "InterlockedIncrement는 세 단계를 한 명령으로 한다. 어떤 차례로 눌러도 2다.");
+  }
+  function play(order) {
+    const r = L.run(s.mode, order);
+    s = r.state;
+    render(`진행 차례: ${r.log.join(" → ")}`);
+  }
+  document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => start(b.dataset.mode)));
+  $("reset").addEventListener("click", () => start(s.mode));
+  $("seq").addEventListener("click", () => { s = L.initial(s.mode); const n = L.STEPS[s.mode].length; play([...Array(n).fill(0), ...Array(n).fill(1)]); });
+  $("mix").addEventListener("click", () => { s = L.initial(s.mode); const n = L.STEPS[s.mode].length; play(Array.from({ length: n * 4 }, (_, i) => i % 2)); });
+  const q = new URLSearchParams(location.search).get("mode");
+  start(L.STEPS[q] ? q : "plain");
+})();
+</script>
+</body>
+</html>

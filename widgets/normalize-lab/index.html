@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>표를 나누면 무엇이 달라질까</title>
+<meta name="description" content="수강 기록을 한 표, 2NF, 3NF로 바꿔 가며 사무실 옮기기, 새 강좌 열기, 수강 취소를 해 보고, 고친 행 수와 사라지는 정보를 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --ok: #2b8a3e;
+    --ok-bg: #e6f4ea;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --ok: #69db7c;
+    --ok-bg: #1f3a27;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .fd { font-size: 12.5px; color: var(--muted); margin: 0 0 10px; }
+  .tables { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .tbl { flex: 1 1 auto; min-width: 0; max-width: 100%; overflow-x: auto; }
+  .tbl h2 { font-size: 13px; margin: 0 0 3px; }
+  table { border-collapse: collapse; font-size: 12.5px; }
+  th, td { border: 1px solid var(--line); padding: 2px 6px; text-align: left; white-space: nowrap; }
+  th { background: var(--soft); font-weight: 400; color: var(--muted); }
+  th.key { color: var(--fg); font-weight: 700; }
+  td.dup { background: var(--write-bg); }
+  td.chg { background: var(--read-bg); font-weight: 700; }
+  tr.gone td { text-decoration: line-through; color: var(--muted); }
+  tr.added td { background: var(--ok-bg); }
+  .legend { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+  .legend .d { background: var(--write-bg); padding: 0 4px; }
+  .legend .c { background: var(--read-bg); padding: 0 4px; }
+  .result { margin-top: 10px; font-size: 13.5px; }
+  .chip { display: inline-block; font-size: 12px; border-radius: 4px; padding: 0 6px; margin: 2px 4px 0 0; }
+  .chip.ok { color: var(--ok); background: var(--ok-bg); }
+  .chip.no { color: var(--write); background: var(--write-bg); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>표를 나누면 무엇이 달라질까</h1>
+<p class="lead">같은 수강 기록을 한 표, 2NF, 3NF로 두고 세 가지 일을 해 본다. 결과는 이 PC의 SQLite에서 실제로 실행한 것과 같다.</p>
+<div class="row" role="group" aria-label="설계">
+  <span class="label">설계</span>
+  <button class="btn" data-stage="flat">한 표</button>
+  <button class="btn" data-stage="2nf">2NF로 나누기</button>
+  <button class="btn" data-stage="3nf">3NF로 나누기</button>
+</div>
+<div class="row" role="group" aria-label="할 일">
+  <span class="label">할 일</span>
+  <button class="btn" data-act="none">처음 상태</button>
+  <button class="btn" data-act="move">컴퓨터공학 사무실 옮기기</button>
+  <button class="btn" data-act="open">새 강좌 열기(수강생 없음)</button>
+  <button class="btn" data-act="drop">이두리의 네트워크 수강 취소</button>
+</div>
+<p class="fd">함수 종속: 학번 → 이름, 학과 · 학과 → 학과 사무실 · 강좌번호 → 강좌명, 학점 · (학번, 강좌번호) → 성적</p>
+<div class="tables" id="tables"></div>
+<p class="legend"><span class="d">주황</span>: 같은 사실을 여러 행에 적은 칸, <span class="c">파랑</span>: 이번에 고친 칸, 초록 행: 새로 넣은 행, 줄 그은 행: 지운 행</p>
+<div class="result" id="result"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const NormLogic = (() => {
+  // 학번, 이름, 학과, 학과 사무실, 강좌번호, 강좌명, 학점, 성적
+  const FLAT = [
+    [1, "김하나", "컴퓨터공학", "공학관 301", 101, "데이터베이스", 3, "A"],
+    [1, "김하나", "컴퓨터공학", "공학관 301", 102, "네트워크", 3, "B"],
+    [2, "이두리", "경영", "상경관 105", 102, "네트워크", 3, "A"],
+    [3, "박세나", "컴퓨터공학", "공학관 301", 101, "데이터베이스", 3, "B"],
+    [3, "박세나", "컴퓨터공학", "공학관 301", 103, "운영체제", 3, "A"],
+  ];
+  const COLS = {
+    flat: { record: ["sid", "name", "dept", "office", "cid", "title", "credit", "grade"] },
+    "2nf": { student: ["sid", "name", "dept", "office"], course: ["cid", "title", "credit"], enrollment: ["sid", "cid", "grade"] },
+    "3nf": { dept: ["dept", "office"], student: ["sid", "name", "dept"], course: ["cid", "title", "credit"], enrollment: ["sid", "cid", "grade"] },
+  };
+  const KEYS = { record: ["sid", "cid"], student: ["sid"], course: ["cid"], enrollment: ["sid", "cid"], dept: ["dept"] };
+  // 한 표 안에서 "같은 사실": 앞의 열 값이 같으면 뒤의 열 값도 같다(함수 종속). 앞 값이 여러 행에 나오면 뒤 칸이 겹친 사실이다
+  const FDS = [["sid", ["name", "dept"]], ["dept", ["office"]], ["cid", ["title", "credit"]]];
+  const cmp = (x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0);   // ORDER BY 1, 2
+  const uniq = rows => [...new Map(rows.map(r => [JSON.stringify(r), r])).values()].sort(cmp);
+  function build(stage) {
+    if (stage === "flat") return { record: FLAT.map(r => [...r]).sort(cmp) };
+    const course = uniq(FLAT.map(r => [r[4], r[5], r[6]]));
+    const enrollment = FLAT.map(r => [r[0], r[4], r[7]]).sort(cmp);
+    if (stage === "2nf") return { student: uniq(FLAT.map(r => [r[0], r[1], r[2], r[3]])), course, enrollment };
+    return { dept: uniq(FLAT.map(r => [r[2], r[3]])), student: uniq(FLAT.map(r => [r[0], r[1], r[2]])), course, enrollment };
+  }
+  const col = (stage, t, c) => COLS[stage][t].indexOf(c);
+  const officeTable = stage => (stage === "flat" ? "record" : stage === "2nf" ? "student" : "dept");
+  // 할 일 하나를 하고 결과를 돌려준다. rows: 고치거나 넣거나 지운 행 수
+  function act(stage, action) {
+    const t = build(stage);
+    let ok = true, rows = 0, msg = "";
+    if (action === "move") {
+      const T = officeTable(stage), d = col(stage, T, "dept"), o = col(stage, T, "office");
+      for (const r of t[T]) if (r[d] === "컴퓨터공학") { r[o] = "공학관 502"; rows++; }
+    } else if (action === "open") {
+      if (stage === "flat") { ok = false; msg = "IntegrityError: NOT NULL constraint failed: record.sid"; }   // 학번 없이는 행을 만들 수 없다
+      else { t.course.push([104, "컴퓨터구조", 3]); t.course.sort(cmp); rows = 1; }
+    } else if (action === "drop") {
+      const T = stage === "flat" ? "record" : "enrollment", s = col(stage, T, "sid"), c = col(stage, T, "cid");
+      const before = t[T].length;
+      t[T] = t[T].filter(r => !(r[s] === 2 && r[c] === 102));
+      rows = before - t[T].length;
+    }
+    return { ok, rows, msg, knows: knows(stage, t), tables: t };
+  }
+  // 표에 아직 남은 정보
+  function knows(stage, t) {
+    const has = (T, c, v) => (t[T] || []).some(r => r[col(stage, T, c)] === v);
+    const S = stage === "flat" ? "record" : "student", C = stage === "flat" ? "record" : "course", O = officeTable(stage);
+    return {
+      "이두리": has(S, "name", "이두리"),
+      "경영 사무실": has(O, "dept", "경영"),
+      "컴퓨터구조": has(C, "title", "컴퓨터구조"),
+      "컴퓨터공학 사무실": [...new Set(t[O].filter(r => r[col(stage, O, "dept")] === "컴퓨터공학").map(r => r[col(stage, O, "office")]))].sort(),
+    };
+  }
+  // 칸마다 겹친 사실인지: [표][행][열] = true/false
+  function dupCells(stage, t) {
+    const out = {};
+    for (const [T, cols] of Object.entries(COLS[stage])) {
+      out[T] = (t[T] || []).map(() => cols.map(() => false));
+      for (const [k, deps] of FDS) {
+        const ki = cols.indexOf(k);
+        if (ki < 0 || KEYS[T].length === 1 && KEYS[T][0] === k) continue;   // 그 표의 키라면 한 번씩만 나온다
+        const count = new Map();
+        for (const r of t[T]) count.set(r[ki], (count.get(r[ki]) || 0) + 1);
+        t[T].forEach((r, i) => { if (count.get(r[ki]) > 1) for (const dcol of deps) { const di = cols.indexOf(dcol); if (di >= 0) out[T][i][di] = true; } });
+      }
+    }
+    return out;
+  }
+  // "컴퓨터공학의 사무실은 공학관 301"을 적은 횟수
+  const officeCopies = stage => build(stage)[officeTable(stage)].filter(r => r[col(stage, officeTable(stage), "dept")] === "컴퓨터공학").length;
+  return { COLS, KEYS, build, act, knows, dupCells, officeCopies };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = NormLogic;
+  const $ = id => document.getElementById(id);
+  const HEAD = { sid: "학번", name: "이름", dept: "학과", office: "학과 사무실", cid: "강좌번호", title: "강좌명", credit: "학점", grade: "성적" };
+  const TNAME = { record: "수강 기록 (한 표)", student: "학생", course: "강좌", enrollment: "수강", dept: "학과" };
+  let stage = "flat", action = "none";
+  function render() {
+    const start = L.build(stage);
+    const r = action === "none" ? { ok: true, rows: 0, msg: "", knows: L.knows(stage, start), tables: start } : L.act(stage, action);
+    const dups = L.dupCells(stage, r.tables);
+    $("tables").innerHTML = Object.entries(L.COLS[stage]).map(([T, cols]) => {
+      const now = r.tables[T], was = start[T];
+      const key = r2 => JSON.stringify(L.KEYS[T].map(k => r2[cols.indexOf(k)]));
+      const wasBy = new Map(was.map(x => [key(x), x])), nowKeys = new Set(now.map(key));
+      const body = now.map((row, i) => {
+        const old = wasBy.get(key(row));
+        return `<tr class="${old ? "" : "added"}">${row.map((v, j) => `<td class="${old && old[j] !== v ? "chg" : dups[T][i][j] ? "dup" : ""}">${v}</td>`).join("")}</tr>`;
+      }).concat(was.filter(x => !nowKeys.has(key(x))).map(x => `<tr class="gone">${x.map(v => `<td>${v}</td>`).join("")}</tr>`)).join("");
+      return `<div class="tbl"><h2>${TNAME[T]} <span class="mono" style="font-weight:400;color:var(--muted)">${T}</span></h2><table><thead><tr>${cols.map(c => `<th class="${L.KEYS[T].includes(c) ? "key" : ""}">${HEAD[c]}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }).join("");
+    const k = r.knows;
+    const chip = (label, ok) => `<span class="chip ${ok ? "ok" : "no"}">${label} ${ok ? "남음" : "사라짐"}</span>`;
+    $("result").innerHTML = action === "none" ? `컴퓨터공학의 사무실을 적은 칸: <b>${L.officeCopies(stage)}</b>개`
+      : `${r.ok ? `${{ move: "고친", open: "넣은", drop: "지운" }[action]} 행 <b>${r.rows}</b>개` : `<span class="mono">${r.msg}</span>`}<br>${chip("이두리의 정보", k["이두리"])}${chip("경영 사무실", k["경영 사무실"])}`
+        + (action === "open" ? `<span class="chip ${k["컴퓨터구조"] ? "ok" : "no"}">새 강좌 컴퓨터구조 ${k["컴퓨터구조"] ? "열림" : "열지 못함"}</span>` : "");
+    const NOTE = {
+      none: { flat: "한 표에 다 적었다. 학번이 같은 행마다 이름과 학과를, 학과가 같은 행마다 사무실을 되풀이한다(주황). 할 일을 하나씩 눌러 본다.",
+        "2nf": "기본 키(학번, 강좌번호)의 일부에만 딸린 값을 떼어 학생 표와 강좌 표로 옮겼다. 그래도 학생 표에 학과 사무실이 같은 학과 학생마다 되풀이된다.",
+        "3nf": "학과 → 사무실처럼 키가 아닌 열에 딸린 값도 학과 표로 옮겼다. 이제 같은 사실은 한 번씩만 적힌다." },
+      move: { flat: "사무실 하나를 옮기는데 4행을 고쳐야 했다. 하나라도 빠뜨리면 컴퓨터공학의 사무실이 두 곳이 된다(수정 이상).",
+        "2nf": "학생 표의 2행을 고쳤다. 한 표보다 줄었지만 아직 그 학과 학생 수만큼 고친다.", "3nf": "학과 표의 1행만 고쳤다." },
+      open: { flat: "수강생이 없으면 학번을 비워야 하는데, 학번은 기본 키라 비울 수 없다(이 표는 NOT NULL도 적었다). 강좌를 열 수 없다(삽입 이상).",
+        "2nf": "강좌 표에 강좌만 넣으면 된다.", "3nf": "강좌 표에 강좌만 넣으면 된다." },
+      drop: { flat: "수강 한 건을 지웠을 뿐인데 이두리가 누구인지, 경영 학과의 사무실이 어디인지도 함께 사라졌다(삭제 이상).",
+        "2nf": "수강 표의 1행만 지웠다. 이두리와 경영 사무실은 학생 표에 남는다.", "3nf": "수강 표의 1행만 지웠다. 학생과 학과는 그대로다." },
+    };
+    $("note").textContent = NOTE[action][stage];
+    document.querySelectorAll("[data-stage]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.stage === stage)));
+    document.querySelectorAll("[data-act]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.act === action)));
+  }
+  document.querySelectorAll("[data-stage]").forEach(b => b.addEventListener("click", () => { stage = b.dataset.stage; render(); }));
+  document.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => { action = b.dataset.act; render(); }));
+  const q = new URLSearchParams(location.search);
+  if (q.get("stage") in L.COLS) stage = q.get("stage");
+  render();
+})();
+</script>
+</body>
+</html>

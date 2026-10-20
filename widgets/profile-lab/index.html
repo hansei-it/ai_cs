@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>어디가 느릴까: 짐작과 프로파일러</title>
+<meta name="description" content="report.py에서 가장 오래 걸릴 것 같은 함수를 눌러 짐작한 뒤 프로파일러로 재어 견주고, 병목을 사전으로 고친 판을 다시 재어 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 6px 0 8px; }
+  .card { min-width: 0; display: block; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px 8px; background: var(--bg); cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; }
+  .card:hover { border-color: var(--accent); }
+  .card[aria-pressed="true"] { border: 2px solid var(--accent); padding: 5px 9px 7px; }
+  .card .hd { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; font-size: 14px; }
+  .card .hd b { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", monospace; }
+  .card .guess { color: var(--accent); font-size: 12px; font-weight: 700; }
+  .card .calls { color: var(--muted); font-size: 12px; }
+  .card pre { margin: 4px 0 0; padding: 4px 8px; background: var(--soft); border-radius: 4px; font: 12px/1.45 "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", monospace; overflow-x: auto; white-space: pre; }
+  .bars { margin-top: 6px; display: grid; grid-template-columns: minmax(0, 1fr) 8.5em; gap: 2px 8px; align-items: center; font-size: 12px; }
+  .bars .tk { display: block; height: 9px; border-radius: 2px; background: var(--soft); position: relative; overflow: hidden; }
+  .bars .tk span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; }
+  .bars .ct span { background: var(--read-bg); border: 1px solid var(--read); }
+  .bars .tt span { background: var(--write); }
+  .bars .v { white-space: nowrap; font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", monospace; color: var(--muted); }
+  .subs { list-style: none; margin: 4px 0 0; padding: 0; font-size: 12px; color: var(--muted); }
+  .subs b { color: var(--fg); font-weight: 600; }
+  .card.top { border-color: var(--write); }
+  .legend { font-size: 12px; color: var(--muted); }
+  .sw { display: inline-block; width: 14px; height: 9px; border-radius: 2px; vertical-align: middle; margin: 0 3px 0 8px; }
+  .sw.ct { background: var(--read-bg); border: 1px solid var(--read); }
+  .sw.tt { background: var(--write); }
+  .sum { font-size: 14px; min-height: 1.4em; }
+  .sum b { font-size: 18px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .bars { grid-template-columns: minmax(0, 1fr) auto; } }
+  .card:disabled { cursor: default; opacity: 1; }
+  .card:disabled:hover { border-color: var(--line); }
+  .card.top:disabled:hover { border-color: var(--write); }
+</style>
+</head>
+<body>
+<h1>어디가 느릴까: 짐작과 프로파일러</h1>
+<p class="lead">88번의 report.py(주문 10만 건, 손님 2,000명)를 이 PC에서 python -m cProfile로 한 번 실행한 실제 값이다. 함수 카드를 하나 눌러 가장 오래 걸릴 것 같은 곳을 먼저 고른다.</p>
+<div class="row" role="group" aria-label="코드의 판">
+  <span class="label">코드</span>
+  <button class="btn" data-v="slow">원래 판</button>
+  <button class="btn" data-v="fast">사전으로 고친 판</button>
+</div>
+<div class="cards" id="cards"></div>
+<div class="row">
+  <button class="btn go" id="run">프로파일러로 재기</button>
+  <span class="legend"><i class="sw ct"></i>부른 함수까지(cumtime) <i class="sw tt"></i>자기 시간(tottime)</span>
+</div>
+<div class="sum" id="sum"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ProfileLogic = (() => {
+  // 이 PC(Core i9-14900KF, Python 3.14.0)에서 python -m cProfile -o p.out report.py를 다섯 번 실행해 전체 시간이 가운데인 한 번을
+  // pstats로 읽은 값이다. 함수마다 [이름, 코드, 부른 횟수, 자기 시간(tottime), 부른 함수까지(cumtime)]이고, subs는 그 함수가 부른
+  // 내장 함수다(부른 쪽에서 센 횟수와 시간). 시간은 초다.
+  const FUNCS = {
+    slow: [
+      { name: "read_orders", calls: 1, tt: 0.0442, ct: 0.0444, subs: [],
+        code: ["def read_orders(path):", "    with open(path, newline=\"\") as f:",
+          "        return [(name, int(price), int(qty)) for name, price, qty in csv.reader(f)]"] },
+      { name: "customer_no", calls: 100000, tt: 0.5829, ct: 1.1647, subs: [["list.index", 100000, 0.5816], ["list.append", 2000, 0.0002]],
+        code: ["def customer_no(customers, name):", "    if name not in customers:", "        customers.append(name)",
+          "    return customers.index(name)"] },
+      { name: "totals", calls: 1, tt: 0.0258, ct: 1.1974, subs: [["customer_no", 100000, 1.1647], ["len", 100000, 0.0068], ["list.append", 2000, 0.0002]],
+        code: ["def totals(orders):", "    customers, sums = [], []", "    for name, price, qty in orders:",
+          "        no = customer_no(customers, name)", "        if no == len(sums):", "            sums.append(0)",
+          "        sums[no] += price * qty", "    return customers, sums"] },
+      { name: "top", calls: 1, tt: 0.0000, ct: 0.0003, subs: [["sorted", 1, 0.0002]],
+        code: ["def top(customers, sums, k=5):", "    return sorted(zip(sums, customers), reverse=True)[:k]"] },
+    ],
+    fast: [
+      { name: "read_orders", calls: 1, tt: 0.0444, ct: 0.0446, subs: [],
+        code: ["def read_orders(path):", "    with open(path, newline=\"\") as f:",
+          "        return [(name, int(price), int(qty)) for name, price, qty in csv.reader(f)]"] },
+      { name: "totals", calls: 1, tt: 0.0117, ct: 0.0200, subs: [["dict.get", 100000, 0.0083]],
+        code: ["def totals(orders):", "    sums = {}", "    for name, price, qty in orders:",
+          "        sums[name] = sums.get(name, 0) + price * qty", "    return list(sums), list(sums.values())"] },
+      { name: "top", calls: 1, tt: 0.0000, ct: 0.0003, subs: [["sorted", 1, 0.0003]],
+        code: ["def top(customers, sums, k=5):", "    return sorted(zip(sums, customers), reverse=True)[:k]"] },
+    ],
+  };
+  const TOTAL = { slow: 1.2467, fast: 0.0684 };   // cProfile이 첫 줄에 보이는 전체 시간(… in 1.247 seconds)
+  const share = (v, x) => x / TOTAL[v] * 100;      // 전체에서 차지하는 비율(%)
+  const pct = (v, x) => { const p = share(v, x); return p < 1 ? "1% 미만" : `${Math.round(p)}%`; };
+  const sec = x => x.toFixed(3);                   // cProfile처럼 소수 셋째 자리까지
+  const biggest = (v, key) => FUNCS[v].reduce((a, f) => (f[key] > a[key] ? f : a)).name;
+  // 짐작의 판정: 자기 시간이 가장 큰 함수를 골랐으면 맞음, 부른 함수까지가 가장 큰 함수(그 안에 병목이 있다)면 반쯤, 아니면 틀림
+  function verdict(v, guess) {
+    if (!guess) return "none";
+    if (guess === biggest(v, "tt")) return "hit";
+    if (guess === biggest(v, "ct")) return "half";
+    return "miss";
+  }
+  return { FUNCS, TOTAL, share, pct, sec, biggest, verdict };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ProfileLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const num = n => n.toLocaleString("ko-KR");
+  let v = "slow", guess = null, measured = false;
+  const NOTE = {
+    none: "짐작 없이 쟀다. 자기 시간이 가장 큰 곳은 customer_no다. 다음에는 재기 전에 먼저 짐작해 본다. 짐작과 측정이 다를 때 가장 많이 배운다.",
+    hit: "맞았다. 네 줄짜리 customer_no가 부른 함수까지 전체의 93%를 쓴다. in과 index가 손님 목록을 매번 처음부터 훑기 때문이고, 주문 10만 건마다 두 번씩 훑는다.",
+    half: "반쯤 맞았다. totals는 부른 함수까지 96%지만 자기 시간은 2%뿐이다. 시간은 totals가 부르는 customer_no 안에서 쓰인다. 자기 시간이 큰 곳까지 따라 내려간다.",
+    read_orders: "파일 10만 줄 읽기는 전체의 4%다. 디스크는 느리다는 짐작이 여기서는 맞지 않았다. 시간을 쓰는 곳은 customer_no다.",
+    top: "정렬은 손님 2,000명뿐이라 0.0003초다. 정렬은 비싸다는 짐작이 여기서는 맞지 않았다. 시간을 쓰는 곳은 customer_no다.",
+  };
+  function render() {
+    const fs = L.FUNCS[v];
+    const big = measured ? L.biggest(v, "tt") : null;
+    $("cards").innerHTML = fs.map(f => {
+      const bars = measured ? `<div class="bars">
+          <span class="tk ct"><span style="width:${Math.max(L.share(v, f.ct), 0.4).toFixed(2)}%"></span></span><span class="v">${L.sec(f.ct)}초 ${L.pct(v, f.ct)}</span>
+          <span class="tk tt"><span style="width:${Math.max(L.share(v, f.tt), 0.4).toFixed(2)}%"></span></span><span class="v">${L.sec(f.tt)}초 ${L.pct(v, f.tt)}</span>
+        </div>
+        <ul class="subs">${f.subs.map(([n, c, t]) => `<li>└ 부른 함수 <b class="mono">${n}</b> ${num(c)}번, ${L.sec(t)}초</li>`).join("")}</ul>` : "";
+      const tag = v === "slow" && guess === f.name ? ` <span class="guess">내 짐작</span>` : "";
+      return `<button class="card${f.name === big ? " top" : ""}" data-f="${f.name}" aria-pressed="${String(v === "slow" && guess === f.name)}"${measured || v === "fast" ? " disabled" : ""}>
+        <span class="hd"><span><b>${f.name}</b>${tag}</span><span class="calls">${measured ? `${num(f.calls)}번 불림` : ""}</span></span>
+        <pre>${esc(f.code.join("\n"))}</pre>${bars}</button>`;
+    }).join("");
+    document.querySelectorAll("[data-f]").forEach(b => b.addEventListener("click", () => { guess = b.dataset.f; render(); }));
+    $("run").textContent = measured ? "처음부터" : "프로파일러로 재기";
+    $("sum").innerHTML = !measured ? "" : v === "slow"
+      ? `전체 <b class="mono">${L.sec(L.TOTAL.slow)}</b>초 (cProfile 한 번)`
+      : `전체 <b class="mono">${L.sec(L.TOTAL.slow)}</b>초 → <b class="mono">${L.sec(L.TOTAL.fast)}</b>초 (cProfile 한 번)`;
+    let note;
+    if (v === "fast") note = measured
+      ? `이제 가장 큰 곳은 read_orders(${L.pct("fast", L.FUNCS.fast[0].ct)})다. 보고서를 하루 한 번 만든다면 이걸로 충분하다. 목표에 닿으면 멈춘다.`
+      : "customer_no를 없애고 이름으로 바로 찾는 사전으로 바꿨다. 결과가 같은지 확인했으면 다시 잰다.";
+    else if (!measured) note = guess ? `${guess}를 골랐다. 이제 재어 본다.` : "주문 10만 건, 손님 2,000명이다. 코드를 읽고 가장 오래 걸릴 것 같은 함수 카드를 하나 누른 뒤 재어 본다.";
+    else { const r = L.verdict(v, guess); note = NOTE[r === "miss" ? guess : r]; }
+    $("note").textContent = note;
+    document.querySelectorAll("[data-v]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === v)));
+  }
+  document.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", () => { v = b.dataset.v; measured = false; render(); }));
+  $("run").addEventListener("click", () => {
+    if (measured) { measured = false; guess = null; } else measured = true;
+    render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>

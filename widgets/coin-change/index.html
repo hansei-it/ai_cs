@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>거스름돈: 그리디와 동적 계획법</title>
+<meta name="description" content="동전 종류와 금액을 골라, 큰 동전부터 고르는 그리디의 답과 작은 금액부터 표를 채우는 동적 계획법의 답을 한 칸씩 비교한다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3044;
+    --write: #ffa94d;
+    --write-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); width: 170px; }
+  .table { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
+  .cell { width: 38px; text-align: center; }
+  .cell .v { border: 1px solid var(--line); border-radius: 4px; height: 32px; line-height: 30px; font-size: 14px; background: var(--soft); }
+  .cell .v.empty { border-style: dashed; background: transparent; color: var(--muted); }
+  .cell .v.cand { border-color: var(--read); background: var(--read-bg); }
+  .cell .v.now { border-color: var(--write); background: var(--write-bg); font-weight: 700; }
+  .cell .v.ans { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+  .cell .a { font-size: 11px; color: var(--muted); }
+  .cell .p { font-size: 10px; color: var(--muted); height: 14px; }
+  .res { margin-top: 10px; font-size: 14px; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+  .res b { color: var(--accent); }
+  .res .bad { color: var(--write); font-weight: 700; }
+  .calc { font-size: 13px; margin-top: 6px; min-height: 1.4em; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .cell { width: 32px; } }
+</style>
+</head>
+<body>
+<h1>거스름돈: 그리디와 동적 계획법</h1>
+<p class="lead">동전 개수를 가장 적게 해서 금액을 만든다. 표의 칸 a에는 "금액 a를 만드는 가장 적은 동전 수"를 채우고, 칸 아래 작은 글자는 그때 마지막에 쓴 동전이다.</p>
+
+<div class="row" role="group" aria-label="동전 종류">
+  <span class="label">동전</span>
+  <button class="btn mono" data-coins="1,4,5">1, 4, 5</button>
+  <button class="btn mono" data-coins="1,3,4">1, 3, 4</button>
+  <button class="btn mono" data-coins="1,5,10,50">1, 5, 10, 50</button>
+</div>
+<div class="row">
+  <span class="label">금액</span>
+  <input type="range" id="amt" min="1" max="30" value="8" aria-label="금액">
+  <span class="mono" id="amtv"></span>
+</div>
+<div class="row">
+  <button class="btn go" id="step">한 칸 채우기</button>
+  <button class="btn" id="end">끝까지</button>
+</div>
+<div class="table mono" id="table"></div>
+<div class="calc mono" id="calc"></div>
+<div class="res" id="res"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CoinLogic = (() => {
+  // 그리디: 큰 동전부터 쓸 수 있는 만큼 쓴다. 정확히 만들 수 없으면 null
+  function greedy(coins, amount) {
+    const used = [];
+    for (const c of [...coins].sort((a, b) => b - a)) while (amount >= c) { amount -= c; used.push(c); }
+    return amount === 0 ? used : null;
+  }
+  // 동적 계획법: best[a] = 금액 a를 만드는 가장 적은 동전 수, pick[a] = 그때 마지막에 쓴 동전
+  // 칸마다 후보(동전 c를 마지막에 쓰면 best[a - c] + 1)를 함께 남긴다
+  function dp(coins, amount) {
+    const best = [0], pick = [0], steps = [];
+    for (let a = 1; a <= amount; a++) {
+      let b = Infinity, p = 0;
+      const cands = [];
+      for (const c of coins) if (c <= a && best[a - c] !== Infinity) {
+        cands.push({ c, from: a - c, val: best[a - c] + 1 });
+        if (best[a - c] + 1 < b) { b = best[a - c] + 1; p = c; }
+      }
+      best.push(b); pick.push(p);
+      steps.push({ a, cands, best: b, pick: p });
+    }
+    const used = [];
+    if (best[amount] !== Infinity) for (let a = amount; a > 0; a -= pick[a]) used.push(pick[a]);
+    return { best, pick, steps, used: best[amount] === Infinity ? null : used };
+  }
+  return { greedy, dp };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CoinLogic;
+  const $ = id => document.getElementById(id);
+  let coins = [1, 4, 5], amount = 8, r = null, k = 0;
+
+  function prepare() {
+    amount = Number($("amt").value);
+    r = L.dp(coins, amount);
+    k = 0;
+    document.querySelectorAll("[data-coins]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.coins === coins.join(","))));
+    $("amtv").textContent = `${amount}`;
+    render();
+  }
+
+  function render() {
+    const done = k >= amount;
+    const step = k > 0 ? r.steps[k - 1] : null;
+    const candFrom = step && !done ? step.cands.map(x => x.from) : [];
+    let h = "";
+    for (let a = 0; a <= amount; a++) {
+      const filled = a <= k;
+      const v = filled ? (r.best[a] === Infinity ? "∞" : r.best[a]) : "·";
+      let cls = filled ? "v" : "v empty";
+      if (step && !done && a === step.a) cls += " now";
+      else if (candFrom.includes(a)) cls += " cand";
+      if (done && a === amount) cls += " ans";
+      h += `<div class="cell"><div class="${cls}">${v}</div><div class="a">${a}</div><div class="p">${filled && a > 0 && r.pick[a] ? `+${r.pick[a]}` : ""}</div></div>`;
+    }
+    $("table").innerHTML = h;
+    $("calc").textContent = step ? `칸 ${step.a}: ` + (step.cands.length ? step.cands.map(x => `동전 ${x.c} → 칸 ${x.from} + 1 = ${x.val}`).join(", ") + ` → 가장 작은 ${step.best === Infinity ? "∞" : step.best}` : "쓸 수 있는 동전이 없다 → ∞") : "";
+    const g = L.greedy(coins, amount);
+    const show = u => (u ? `${u.length}개 (${u.join(" + ")})` : "만들 수 없다");
+    $("res").innerHTML = `<span>그리디</span><span class="${g && r.used && g.length > r.used.length ? "bad" : ""}">${show(g)}</span>` +
+      `<span>동적 계획법</span><span>${done ? `<b>${show(r.used)}</b>` : "표를 다 채우면 나온다"}</span>`;
+    let note;
+    if (!done) note = k === 0 ? "\"한 칸 채우기\"를 눌러 금액 1부터 채운다. 칸 a는 '마지막에 동전 c를 쓰면 칸 a−c의 답 + 1'인 후보 가운데 가장 작은 값이다." : "파란 칸은 지금 칸의 후보로 읽은 앞의 답이다. 이미 구한 답을 다시 계산하지 않고 표에서 읽는다.";
+    else if (!g && !r.used) note = "이 동전들로는 정확히 만들 수 없다.";
+    else if (g && r.used && g.length > r.used.length) note = `그리디는 큰 동전 ${g[0]}부터 써서 ${g.length}개가 되었다. 동적 계획법은 모든 경우를 표로 따져 ${r.used.length}개를 찾았다. 지금 가장 좋아 보이는 선택이 전체로는 손해일 수 있다.`;
+    else note = coins.join(",") === "1,5,10,50" ? "원화처럼 큰 동전이 작은 동전의 배수인 단위에서는 그리디도 늘 가장 적은 개수를 준다. 다른 금액도 바꿔 본다." : "이 금액에서는 그리디와 동적 계획법의 개수가 같다. 금액을 바꿔 다른 결과가 나오는 곳을 찾아본다.";
+    $("note").textContent = note;
+  }
+
+  $("step").addEventListener("click", () => { if (k < amount) k++; render(); });
+  $("end").addEventListener("click", () => { k = amount; render(); });
+  $("amt").addEventListener("input", prepare);
+  document.querySelectorAll("[data-coins]").forEach(b => b.addEventListener("click", () => { coins = b.dataset.coins.split(",").map(Number); prepare(); }));
+  prepare();
+})();
+</script>
+</body>
+</html>

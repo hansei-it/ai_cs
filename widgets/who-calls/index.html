@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>누가 누구를 부르나</title>
+<meta name="description" content="라이브러리를 쓰는 코드와 작은 프레임워크에 맡기는 코드를 골라 ‘한 단계’를 눌러, 스택에서 누가 누구를 부르는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --lib: #237032;
+    --lib-bg: #e6f4ea;
+    --fw: #c2410c;
+    --fw-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --lib: #69db7c;
+    --lib-bg: #1e3524;
+    --fw: #ffa94d;
+    --fw-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .stepno { font-size: 13px; color: var(--muted); }
+  .main { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-start; margin-top: 4px; }
+  .panel { min-width: 0; max-width: 100%; }
+  .panel h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
+  .src { font-size: 13px; line-height: 1.55; background: var(--soft); border-radius: 6px; padding: 6px 0; overflow-x: auto; max-width: 100%; }
+  .src .ln { display: block; padding: 0 10px 0 0; white-space: pre; }
+  .src .ln .no { display: inline-block; width: 2.4em; text-align: right; color: var(--muted); margin-right: 10px; user-select: none; }
+  .src .ln.cur { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+  .stack { min-width: 230px; }
+  .frame { border: 1.5px solid var(--line); border-radius: 8px; padding: 5px 9px; margin-bottom: 6px; }
+  .frame.mine { border-color: var(--accent); background: var(--accent-bg); }
+  .frame.lib { border-color: var(--lib); background: var(--lib-bg); }
+  .frame.fw { border-color: var(--fw); background: var(--fw-bg); }
+  .frame.top { box-shadow: 0 0 0 2px var(--fg); }
+  .frame .name { font-weight: 700; font-size: 14px; }
+  .frame .who { font-size: 12px; }
+  .frame.mine .who { color: var(--accent); }
+  .frame.lib .who { color: var(--lib); }
+  .frame.fw .who { color: var(--fw); }
+  .grow { font-size: 12px; color: var(--muted); }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .out { margin-top: 8px; font-size: 13px; }
+  .out pre { margin: 4px 0 0; padding: 6px 8px; background: var(--soft); border-radius: 4px; min-height: 1.6em; white-space: pre-wrap; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .src { font-size: 12px; } }
+</style>
+</head>
+<body>
+<h1>누가 누구를 부르나</h1>
+<div class="row" role="group" aria-label="예제">
+  <span class="label">예제</span>
+  <button class="btn" data-preset="lib">라이브러리를 부른다</button>
+  <button class="btn" data-preset="fw">프레임워크가 부른다</button>
+</div>
+<div class="row">
+  <span class="label">실행</span>
+  <button class="btn" id="prev">이전</button>
+  <button class="btn primary" id="next">한 단계</button>
+  <button class="btn" id="end">끝까지</button>
+  <button class="btn" id="reset">처음으로</button>
+  <span class="stepno" id="stepno"></span>
+</div>
+<div class="main">
+  <div class="panel">
+    <h2>코드 (C#)</h2>
+    <div class="src mono" id="src"></div>
+  </div>
+  <div class="panel stack">
+    <h2>스택 (아래로 쌓인다, 맨 아래가 지금 실행 중)</h2>
+    <div id="frames"></div>
+    <div class="grow">↓ 불린 쪽</div>
+  </div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+<div class="out">출력<pre class="mono" id="out"></pre></div>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const WhoLogic = (() => {
+  // 두 예제를 줄마다 따라가며 스택(누가 누구를 불렀는지)을 찍는다. owner: mine(내 코드), lib(라이브러리), fw(프레임워크)
+  const PROGRAMS = {
+    lib: {
+      source: [
+        "var names = new List<string> { \"kim\", \"lee\" };",
+        "string line = string.Join(\", \", names);",
+        "Console.WriteLine(line);",
+      ],
+      *run(m) {
+        yield m.push("Main", "mine", 1, "내 코드가 시작해 이름 목록을 만들었다. 이 프로그램의 흐름은 내가 쓴 순서대로다.");
+        m.callFrom(2);
+        yield m.push("string.Join", "lib", 2, "이어 붙이는 일을 라이브러리 함수에 시켰다. 언제, 무엇을 넘겨 부를지는 내가 정했다.");
+        yield m.pop(2, "Join이 \"kim, lee\"를 돌려주고 끝났다. 흐름이 다시 내 코드로 돌아왔다.");
+        yield m.push("Console.WriteLine", "lib", 3, "출력도 라이브러리에 시킨다.");
+        m.print("kim, lee\n");
+        yield m.pop(3, "출력하고 돌아왔다. 처음부터 끝까지 흐름을 쥔 것은 내 코드다.");
+      },
+    },
+    fw: {
+      source: [
+        "var app = new MiniApp();",
+        "app.OnStart(() => Console.WriteLine(\"my start\"));",
+        "app.OnRequest(path => Console.WriteLine($\"my handler {path}\"));",
+        "Console.WriteLine(\"before Run\");",
+        "app.Run([\"/a\", \"/b\"]);",
+        "Console.WriteLine(\"after Run\");",
+        "",
+        "class MiniApp",
+        "{",
+        "    private Action? start;",
+        "    private Action<string>? handler;",
+        "    public void OnStart(Action a) => start = a;",
+        "    public void OnRequest(Action<string> h) => handler = h;",
+        "    public void Run(string[] requests)",
+        "    {",
+        "        Console.WriteLine(\"framework ready\");",
+        "        start?.Invoke();",
+        "        foreach (var r in requests)",
+        "            handler?.Invoke(r);",
+        "        Console.WriteLine(\"framework end\");",
+        "    }",
+        "}",
+      ],
+      *run(m) {
+        yield m.push("Main", "mine", 1, "내 코드가 시작해 MiniApp 객체를 만들었다.");
+        yield m.at(2, "시작할 때 할 일을 프레임워크에 맡겼다. 등록만 할 뿐, 아직 부르지 않는다.");
+        yield m.at(3, "요청이 오면 할 일도 등록했다. 언제 부를지는 이제 프레임워크가 정한다.");
+        m.print("before Run\n");
+        yield m.at(4, "before Run을 출력했다.");
+        m.callFrom(5);
+        yield m.push("MiniApp.Run", "fw", 14, "Run을 불러 흐름을 프레임워크에 넘겼다. 여기서부터는 프레임워크가 순서를 정한다.");
+        m.print("framework ready\n");
+        yield m.at(16, "프레임워크가 준비를 마쳤다.");
+        m.callFrom(17);
+        yield m.push("내 시작 코드 (람다)", "mine", 2, "프레임워크가 맡겨 둔 내 시작 코드를 불렀다. 제어의 역전이다.");
+        m.print("my start\n");
+        yield m.pop(17, "내 시작 코드가 끝나고 프레임워크로 돌아갔다.");
+        for (const r of ["/a", "/b"]) {
+          m.callFrom(19);
+          yield m.push(`내 요청 처리 (path = ${r})`, "mine", 3, `요청 ${r}가 왔다고 하자. 프레임워크가 ${r}를 넘기며 내 처리 코드를 불렀다.`);
+          m.print(`my handler ${r}\n`);
+          yield m.pop(19, "내 처리 코드가 끝나고 프레임워크로 돌아갔다.");
+        }
+        m.print("framework end\n");
+        yield m.at(20, "요청을 다 처리했다.");
+        yield m.pop(5, "Run이 끝나 흐름이 내 코드로 돌아왔다. 실제 웹 서버는 끄기 전까지 Run이 끝나지 않는다.");
+        m.print("after Run\n");
+        yield m.at(6, "after Run을 출력했다.");
+      },
+    },
+  };
+
+  function machine() {
+    const m = { frames: [], out: "" };
+    const snap = (line, note) => ({ line, note, out: m.out, frames: m.frames.map(f => ({ ...f })) });
+    m.push = (name, owner, line, note) => { m.frames.push({ name, owner, line }); return snap(line, note); };
+    m.pop = (line, note) => { m.frames.pop(); if (m.frames.length) m.frames[m.frames.length - 1].line = line; return snap(line, note); };
+    m.at = (line, note) => { m.frames[m.frames.length - 1].line = line; return snap(line, note); };
+    // 부르는 쪽이 멈춰 있는 줄을 정한다 (단계는 만들지 않는다). 강조한 줄은 늘 "방금 실행한 줄, 또는 그 줄이 부른 함수가 도는 중"이다
+    m.callFrom = line => { m.frames[m.frames.length - 1].line = line; };
+    m.print = s => { m.out += s; };
+    return m;
+  }
+
+  function trace(name) {
+    const m = machine();
+    return [...PROGRAMS[name].run(m)];
+  }
+
+  // 내 코드를 부른 쪽이 누구였는지: 내 코드 프레임 바로 위(먼저 쌓인) 프레임의 주인
+  function callersOfMine(steps) {
+    const out = new Set();
+    for (const s of steps)
+      s.frames.forEach((f, i) => { if (f.owner === "mine" && i > 0) out.add(s.frames[i - 1].owner); });
+    return [...out];
+  }
+
+  return { PROGRAMS, trace, callersOfMine };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = WhoLogic;
+  const $ = id => document.getElementById(id);
+  const WHO = { mine: "내 코드", lib: "라이브러리", fw: "프레임워크" };
+  let name = "lib", steps = [], at = 0;
+
+  function load(n) {
+    name = n; steps = L.trace(n); at = 0;
+    const src = $("src");
+    src.textContent = "";
+    L.PROGRAMS[n].source.forEach((line, i) => {
+      const d = document.createElement("span");
+      d.className = "ln";
+      d.innerHTML = `<span class="no">${i + 1}</span>`;
+      d.append(line || " ");
+      src.append(d);
+    });
+    document.querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.preset === n)));
+    render();
+  }
+
+  function render() {
+    const s = steps[at];
+    $("src").querySelectorAll(".ln").forEach((d, i) => d.classList.toggle("cur", i + 1 === s.line));
+    const box = $("frames");
+    box.textContent = "";
+    s.frames.forEach((f, i) => {
+      const d = document.createElement("div");
+      d.className = `frame ${f.owner}` + (i === s.frames.length - 1 ? " top" : "");
+      const caller = i > 0 ? ` · ${WHO[s.frames[i - 1].owner]}가 불렀다` : "";
+      d.innerHTML = `<div class="name mono"></div><div class="who">${WHO[f.owner]}${caller}</div>`;
+      d.querySelector(".name").textContent = f.name;
+      box.append(d);
+    });
+    $("note").textContent = s.note;
+    $("out").textContent = s.out;
+    $("stepno").textContent = `단계 ${at + 1} / ${steps.length}`;
+    $("prev").disabled = at === 0;
+    $("next").disabled = $("end").disabled = at === steps.length - 1;
+  }
+
+  $("next").addEventListener("click", () => { if (at < steps.length - 1) { at++; render(); } });
+  $("prev").addEventListener("click", () => { if (at > 0) { at--; render(); } });
+  $("end").addEventListener("click", () => { at = steps.length - 1; render(); });
+  $("reset").addEventListener("click", () => { at = 0; render(); });
+  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => load(b.dataset.preset)));
+  const first = new URLSearchParams(location.search).get("preset");
+  load(first === "fw" ? "fw" : "lib");
+})();
+</script>
+</body>
+</html>

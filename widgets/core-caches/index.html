@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>코어마다 따로 있는 캐시</title>
+<meta name="description" content="두 변수를 같은 줄이나 다른 줄에 두고 '한 걸음'을 눌러, 두 코어가 번갈아 쓰거나 읽을 때 줄이 코어 사이를 오가는 모습과 적중 횟수를 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .mem { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+  .memline { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .cells { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .cells span { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-right: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .cells span:last-child { border-right: 0; }
+  .cells span.v { color: var(--fg); font-weight: 700; background: var(--soft); }
+  .cores { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .core { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 120px; }
+  .core.now { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .core h2 { font-size: 14px; margin: 0 0 2px; }
+  .core .sub { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .slot { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 13px; padding: 3px 6px; border-radius: 5px; background: var(--soft); margin-top: 4px; }
+  .st { font-size: 12px; font-weight: 700; padding: 0 7px; border-radius: 10px; white-space: nowrap; }
+  .st.M { background: var(--write-bg); color: var(--write); }
+  .st.S { background: var(--read-bg); color: var(--read); }
+  .st.I { color: var(--muted); font-weight: 400; }
+  .event { margin-top: 10px; padding: 8px 10px; background: var(--soft); border-radius: 8px; font-size: 14px; min-height: 42px; }
+  .event .hit { color: var(--accent); font-weight: 700; }
+  .event .miss { color: var(--write); font-weight: 700; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+  .stat { background: var(--soft); border-radius: 6px; padding: 6px 8px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 17px; font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .cells span { width: 18px; }
+  }
+</style>
+</head>
+<body>
+<h1>코어마다 따로 있는 캐시</h1>
+<p class="lead">코어 0은 x만, 코어 1은 y만 다룬다. 두 코어가 번갈아 6번씩 접근한다. 줄은 64바이트, 칸 하나는 8바이트(long long)다.</p>
+
+<div class="row" role="group" aria-label="두 변수의 자리">
+  <span class="label">자리</span>
+  <button class="btn" data-layout="same">x와 y가 같은 줄</button>
+  <button class="btn" data-layout="apart">64바이트 띄워 다른 줄</button>
+</div>
+<div class="row" role="group" aria-label="동작">
+  <span class="label">동작</span>
+  <button class="btn" data-op="write">쓰기 (x++, y++)</button>
+  <button class="btn" data-op="read">읽기만</button>
+</div>
+<div class="mem mono" id="mem"></div>
+<div class="cores">
+  <div class="core" id="c0"></div>
+  <div class="core" id="c1"></div>
+</div>
+<div class="event" id="event" aria-live="polite"></div>
+<div class="row" style="margin-top:10px">
+  <button class="btn primary" id="step">한 걸음</button>
+  <button class="btn" id="end">끝까지</button>
+  <button class="btn" id="reset">처음부터</button>
+</div>
+<div class="stats">
+  <div class="stat"><div class="k">접근</div><div class="v mono" id="sAcc"></div></div>
+  <div class="stat"><div class="k">적중</div><div class="v mono" id="sHit"></div></div>
+  <div class="stat"><div class="k">놓침</div><div class="v mono" id="sMiss"></div></div>
+  <div class="stat"><div class="k">코어 사이를 오감</div><div class="v mono" id="sMove"></div></div>
+</div>
+<p class="note" id="note"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CcLogic = (() => {
+  const ROUNDS = 6;
+  // 줄 상태: I(없음), S(읽기만 하는 중: 여러 코어가 복사본을 가질 수 있다), M(혼자 고치는 중: 이 코어만 가진다)
+  // 코어 0은 x, 코어 1은 y에 번갈아 접근한다. 접근마다 { core, v, line, hit, src, inv, st }
+  //   src: 놓쳤을 때 줄을 가져온 곳 ("mem": L3나 메모리, "core0"/"core1": 그 코어의 캐시, null: 가져올 필요 없음)
+  //   inv: 복사본을 지운 코어 (없으면 null), st: 그 뒤 [코어][줄] 상태
+  function simulate(layout, op) {
+    const lineOf = { x: 0, y: layout === "same" ? 0 : 1 };
+    const st = [["I", "I"], ["I", "I"]];
+    const out = [];
+    for (let r = 0; r < ROUNDS; r++) {
+      for (const [core, v] of [[0, "x"], [1, "y"]]) {
+        const L = lineOf[v], o = 1 - core;
+        let src = null, inv = null, hit;
+        if (op === "read") {
+          hit = st[core][L] !== "I";
+          if (!hit) {
+            if (st[o][L] === "M") { src = `core${o}`; st[o][L] = "S"; } else src = "mem";
+            st[core][L] = "S";
+          }
+        } else {
+          hit = st[core][L] === "M";
+          if (!hit) {
+            if (st[o][L] === "M") src = `core${o}`;
+            else if (st[core][L] !== "S") src = "mem";
+            if (st[o][L] !== "I") inv = o;
+            st[o][L] = "I";
+            st[core][L] = "M";
+          }
+        }
+        out.push({ core, v, line: L, hit, src, inv, st: st.map(s => s.slice()) });
+      }
+    }
+    return out;
+  }
+  function summary(steps) {
+    const hits = steps.filter(s => s.hit).length;
+    const moves = steps.filter(s => s.src && s.src.startsWith("core")).length;
+    return { access: steps.length, hits, misses: steps.length - hits, moves };
+  }
+  return { ROUNDS, simulate, summary };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CcLogic;
+  const $ = id => document.getElementById(id);
+  const NAME = { I: "없음", S: "읽기만 하는 중", M: "혼자 고치는 중" };
+  let layout = "same", op = "write", steps = [], at = 0;   // at: 지금까지 보여 준 접근 수
+
+  function render() {
+    const lines = layout === "same" ? [["x", "y"]] : [["x"], ["y"]];
+    $("mem").innerHTML = lines.map((vars, k) => {
+      const cells = Array.from({ length: 8 }, (_, i) => vars[i] ? `<span class="v">${vars[i]}</span>` : "<span></span>").join("");
+      return `<div class="memline">줄 ${k} <span class="cells">${cells}</span></div>`;
+    }).join("");
+    const last = at > 0 ? steps[at - 1] : null;
+    const st = last ? last.st : [["I", "I"], ["I", "I"]];
+    for (const c of [0, 1]) {
+      const slots = lines.map((_, k) => `<div class="slot"><span>줄 ${k} (${lines[k].join(", ")})</span><span class="st ${st[c][k]}">${NAME[st[c][k]]}</span></div>`).join("");
+      $(`c${c}`).innerHTML = `<h2>코어 ${c}의 캐시</h2><div class="sub">${c === 0 ? "x" : "y"}${op === "write" ? "에 쓴다" : "를 읽는다"}</div>${slots}`;
+      $(`c${c}`).classList.toggle("now", !!last && last.core === c);
+    }
+    if (!last) $("event").textContent = "'한 걸음'을 누르면 코어 0부터 차례로 접근한다.";
+    else {
+      const verb = op === "write" ? "에 쓴다" : "를 읽는다";   // x(엑스), y(와이)는 받침이 없다
+      let html = `${at}. 코어 ${last.core}이 ${last.v}${verb} → `;   // 코어 0(영), 1(일)은 받침이 있어 "이"
+      if (last.hit) html += `<span class="hit">적중</span>. 줄 ${last.line}이 이 코어의 캐시에 ${op === "write" ? "'혼자 고치는 중'으로 " : ""}있다.`;
+      else {
+        html += `<span class="miss">놓침</span>. `;
+        if (last.src === "mem") html += `줄 ${last.line}을 L3나 메모리에서 가져왔다.`;
+        else if (last.src) html += `줄 ${last.line}을 코어 ${last.src.slice(-1)}의 캐시에서 가져왔다.`;
+        else html += `줄 ${last.line}은 있지만 읽기만 하는 중이라 고치기 전에 허락을 받았다.`;
+        if (last.inv !== null) html += ` 코어 ${last.inv}의 복사본은 지웠다.`;
+      }
+      $("event").innerHTML = html;
+    }
+    const s = L.summary(steps.slice(0, at));
+    $("sAcc").textContent = `${s.access}번`;
+    $("sHit").textContent = `${s.hits}번`;
+    $("sMiss").textContent = `${s.misses}번`;
+    $("sMove").textContent = `${s.moves}번`;
+    $("step").disabled = $("end").disabled = at >= steps.length;
+    let note;
+    if (at < steps.length) note = "두 코어는 서로 다른 변수를 쓴다. 그래도 같은 줄에 있으면 어떻게 될지 예측하고 진행해 본다.";
+    else if (layout === "same" && op === "write") note = "모두 놓쳤다. 한 코어가 줄에 쓰면 다른 코어의 복사본을 지워야 해서, 줄이 두 코어 사이를 계속 오간다(거짓 공유). 이 PC에서 두 스레드가 각자 카운터를 InterlockedIncrement64로 1억 번 올리니 같은 줄은 1,092~1,510ms, 다른 줄은 318~325ms였다.";
+    else if (op === "write") note = "처음 한 번씩만 놓치고 나머지는 적중했다. 줄이 따로라서 각 코어가 자기 줄을 혼자 고치는 중으로 계속 가지고 있다.";
+    else note = "읽기만 하면 같은 줄이어도 두 코어가 복사본을 함께 가질 수 있어서, 처음 한 번씩만 놓친다. 줄이 오가는 것은 누군가 쓸 때다.";
+    $("note").textContent = note;
+    document.querySelectorAll("[data-layout]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.layout === layout)));
+    document.querySelectorAll("[data-op]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.op === op)));
+  }
+  function restart() { steps = L.simulate(layout, op); at = 0; render(); }
+  document.querySelectorAll("[data-layout]").forEach(b => b.addEventListener("click", () => { layout = b.dataset.layout; restart(); }));
+  document.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => { op = b.dataset.op; restart(); }));
+  $("step").addEventListener("click", () => { if (at < steps.length) { at++; render(); } });
+  $("end").addEventListener("click", () => { at = steps.length; render(); });
+  $("reset").addEventListener("click", restart);
+  const q = new URLSearchParams(location.search);
+  if (q.get("layout") === "apart") layout = "apart";
+  if (q.get("op") === "read") op = "read";
+  restart();
+})();
+</script>
+</body>
+</html>

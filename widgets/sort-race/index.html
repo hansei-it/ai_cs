@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>정렬 비교</title>
+<meta name="description" content="정렬 방법과 처음 데이터 모양을 골라 실행하며, 막대가 자리를 찾아가는 모습과 비교 횟수를 네 가지 정렬로 비교한다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --write: #c2410c;
+    --bar: #9aa5c4;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --write: #ffa94d;
+    --bar: #5c6787;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .bars { display: flex; align-items: flex-end; gap: 2px; height: 150px; margin-top: 6px; padding: 0 2px; border-bottom: 1px solid var(--line); }
+  .bars div { flex: 1; background: var(--bar); border-radius: 2px 2px 0 0; min-width: 4px; }
+  .bars div.cmp { background: var(--read); }
+  .bars div.set { background: var(--write); }
+  .bars div.done { background: var(--accent); }
+  .count { font-size: 14px; margin-top: 8px; }
+  .count b { font-size: 16px; }
+  .table { margin-top: 8px; font-size: 13px; border-collapse: collapse; }
+  .table th, .table td { border-bottom: 1px solid var(--line); padding: 2px 10px 2px 0; text-align: right; }
+  .table th:first-child, .table td:first-child { text-align: left; }
+  .table th { color: var(--muted); font-weight: 400; }
+  .table tr.on td { color: var(--accent); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .bars { height: 120px; } }
+</style>
+</head>
+<body>
+<h1>정렬 비교</h1>
+<p class="lead">값 24개를 정렬한다. <span style="color:var(--read)">파란 막대</span>는 지금 비교하는 두 값, <span style="color:var(--write)">주황 막대</span>는 방금 옮긴 값이다. 병합 정렬은 합치는 동안 아직 남은 왼쪽 값과 오른쪽 값을 합친 칸 뒤에 이어 그린다.</p>
+
+<div class="row" role="group" aria-label="정렬 방법">
+  <span class="label">방법</span>
+  <button class="btn" data-alg="insertion">삽입 정렬</button>
+  <button class="btn" data-alg="selection">선택 정렬</button>
+  <button class="btn" data-alg="merge">병합 정렬</button>
+  <button class="btn" data-alg="quick">퀵 정렬</button>
+</div>
+<div class="row" role="group" aria-label="처음 데이터">
+  <span class="label">데이터</span>
+  <button class="btn" data-data="random">무작위</button>
+  <button class="btn" data-data="nearly">거의 정렬됨</button>
+  <button class="btn" data-data="reversed">거꾸로</button>
+</div>
+<div class="row">
+  <button class="btn go" id="play">실행</button>
+  <button class="btn" id="step">한 단계</button>
+  <button class="btn" id="end">끝까지</button>
+</div>
+<div class="bars" id="bars" aria-hidden="true"></div>
+<div class="count" id="count"></div>
+<table class="table mono" id="table" aria-label="같은 데이터에서 네 방법의 비교 횟수"></table>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const SortLogic = (() => {
+  const N = 24;
+  // 데이터: 1~24를 정해진 씨앗으로 섞는다 (선형 합동 생성기)
+  function data(kind) {
+    const a = Array.from({ length: N }, (_, i) => i + 1);
+    let s = 2026;
+    const rnd = m => { s = (Math.imul(s, 1103515245) + 12345) >>> 0; return (s >>> 1) % m; };   // 32비트 나머지로 계산한다
+    if (kind === "random") for (let i = N - 1; i > 0; i--) { const j = rnd(i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+    if (kind === "nearly") for (const i of [3, 11, 19]) [a[i], a[i + 1]] = [a[i + 1], a[i]];   // 이웃 세 쌍만 바뀌었다
+    if (kind === "reversed") a.reverse();
+    return a;
+  }
+
+  // 정렬하며 일어난 일을 차례로 적는다: cmp(비교), swap(교환), set(한 칸 쓰기)
+  // cmp의 i, j는 화면에서 칠할 칸, v는 실제로 비교한 두 값이다. a는 그 일을 한 뒤 화면에 그릴 배열이다.
+  function events(alg, input) {
+    const a = [...input], ev = [];
+    const cmp = (i, j) => ev.push({ t: "cmp", i, j, v: [a[i], a[j]] });
+    const swap = (i, j) => { [a[i], a[j]] = [a[j], a[i]]; ev.push({ t: "swap", i, j, a: [...a] }); };
+    const set = (i, v) => { a[i] = v; ev.push({ t: "set", i, a: [...a] }); };
+    if (alg === "insertion") {
+      for (let i = 1; i < a.length; i++)
+        for (let j = i; j > 0; j--) {
+          cmp(j - 1, j);
+          if (a[j - 1] > a[j]) swap(j - 1, j); else break;
+        }
+    } else if (alg === "selection") {
+      for (let i = 0; i < a.length - 1; i++) {
+        let m = i;
+        for (let j = i + 1; j < a.length; j++) { cmp(j, m); if (a[j] < a[m]) m = j; }
+        if (m !== i) swap(i, m);
+      }
+    } else if (alg === "merge") {
+      const sort = (lo, hi) => {             // [lo, hi)
+        if (hi - lo <= 1) return;
+        const mid = Math.floor((lo + hi) / 2);
+        sort(lo, mid); sort(mid, hi);
+        const tmp = a.slice(lo, hi), nl = mid - lo, n = hi - lo;
+        let i = 0, j = nl, k = lo;
+        // 실제 배열의 왼쪽 칸은 합치는 동안 덮어써진다(값은 tmp에서 읽는다). 화면에는 합친 칸 [lo, k) 뒤에
+        // 아직 남은 왼쪽 값, 오른쪽 값을 차례로 그려서 비교하는 두 값이 늘 보이게 한다. 옮기기 횟수는 그대로다.
+        const view = () => [...a.slice(0, k), ...tmp.slice(i, nl), ...tmp.slice(j, n), ...a.slice(hi)];
+        const put = v => { a[k++] = v; ev.push({ t: "set", i: k - 1, a: view() }); };
+        while (i < nl && j < n) {
+          ev.push({ t: "cmp", i: k, j: k + nl - i, v: [tmp[i], tmp[j]] });   // 화면에서 왼쪽 후보는 k, 오른쪽 후보는 그 뒤
+          put(tmp[i] <= tmp[j] ? tmp[i++] : tmp[j++]);
+        }
+        while (i < nl) put(tmp[i++]);
+        while (j < n) put(tmp[j++]);
+      };
+      sort(0, a.length);
+    } else if (alg === "quick") {
+      const sort = (lo, hi) => {             // [lo, hi], 피벗은 마지막 값
+        if (lo >= hi) return;
+        const p = a[hi];
+        let i = lo;
+        for (let j = lo; j < hi; j++) { cmp(j, hi); if (a[j] < p) { if (i !== j) swap(i, j); i++; } }
+        if (i !== hi) swap(i, hi);
+        sort(lo, i - 1); sort(i + 1, hi);
+      };
+      sort(0, a.length - 1);
+    }
+    return { ev, result: a };
+  }
+
+  // 비교 횟수와 값을 옮긴 횟수 (교환은 두 칸을 옮긴다)
+  function counts(ev) {
+    let c = 0, w = 0;
+    for (const e of ev) { if (e.t === "cmp") c++; else if (e.t === "swap") w += 2; else w++; }
+    return { cmp: c, write: w };
+  }
+
+  return { N, data, events, counts };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = SortLogic;
+  const $ = id => document.getElementById(id);
+  const NAME = { insertion: "삽입 정렬", selection: "선택 정렬", merge: "병합 정렬", quick: "퀵 정렬" };
+  const DATA = { random: "무작위", nearly: "거의 정렬됨", reversed: "거꾸로" };
+  let alg = "insertion", kind = "random", input = [], run = null, k = 0, timer = null;
+
+  // 막대
+  for (let i = 0; i < L.N; i++) $("bars").append(document.createElement("div"));
+
+  function prepare() {
+    stop();
+    input = L.data(kind);
+    run = L.events(alg, input);
+    k = 0;
+    document.querySelectorAll("[data-alg]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.alg === alg)));
+    document.querySelectorAll("[data-data]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.data === kind)));
+    // 같은 데이터에서 네 방법의 비교 횟수
+    let h = `<tr><th>방법 (${DATA[kind]})</th><th>비교</th><th>옮기기</th></tr>`;
+    for (const x of Object.keys(NAME)) {
+      const c = L.counts(L.events(x, input).ev);
+      h += `<tr class="${x === alg ? "on" : ""}"><td>${NAME[x]}</td><td>${c.cmp}</td><td>${c.write}</td></tr>`;
+    }
+    $("table").innerHTML = h;
+    render();
+  }
+
+  function stateAt(k) {
+    // k번째 일까지 한 뒤의 배열과 강조할 칸
+    let a = input;
+    for (let i = k - 1; i >= 0; i--) if (run.ev[i].a) { a = run.ev[i].a; break; }
+    const e = k > 0 ? run.ev[k - 1] : null;
+    return { a, e };
+  }
+
+  function render() {
+    const { a, e } = stateAt(k);
+    const done = k >= run.ev.length;
+    [...$("bars").children].forEach((d, i) => {
+      d.style.height = `${(a[i] / L.N) * 100}%`;
+      let cls = "";
+      if (done) cls = "done";
+      else if (e && e.t === "cmp" && (i === e.i || i === e.j)) cls = "cmp";
+      else if (e && (e.t === "swap" ? i === e.i || i === e.j : e.t === "set" && i === e.i)) cls = "set";
+      d.className = cls;
+    });
+    const c = L.counts(run.ev.slice(0, k));
+    const total = L.counts(run.ev);
+    $("count").innerHTML = `${NAME[alg]}: 비교 <b class="mono">${c.cmp}</b> / ${total.cmp}번, 옮기기 <b class="mono">${c.write}</b> / ${total.write}번` +
+      (!done && e && e.t === "cmp" ? ` · 지금 비교: <b class="mono">${e.v[0]}, ${e.v[1]}</b>` : "");
+    let note = "";
+    if (done) {
+      note = `끝. ${NAME[alg]}로 ${DATA[kind]} 데이터를 정렬하는 데 비교 ${total.cmp}번이 들었다.`;
+      if (alg === "insertion" && kind === "nearly") note += " 거의 정렬된 데이터는 삽입 정렬이 가장 빠르다. 제자리에 있는 값은 비교 한 번으로 끝난다.";
+      if (alg === "quick" && kind !== "random") note += " 피벗을 늘 마지막 값으로 고르면, 정렬됐거나 거꾸로 정렬된 데이터에서는 피벗이 늘 가장 크거나 작은 값이라 한쪽이 텅 빈 채 나뉘어 O(n²)에 가까워진다.";
+      if (alg === "merge") note += " 병합 정렬은 데이터 모양과 상관없이 옮기기가 늘 112번이고, 비교도 n log₂n(약 110번)을 넘지 않는다.";
+      if (alg === "selection") note += " 선택 정렬은 데이터가 어떻든 비교가 늘 n(n−1)/2 = 276번이다.";
+    } else note = k === 0 ? "\"실행\"을 누르거나 \"한 단계\"씩 넘긴다. 아래 표는 같은 데이터에서 네 방법의 전체 횟수다." : "";
+    $("note").textContent = note;
+    $("play").textContent = timer ? "멈춤" : "실행";
+  }
+
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  $("play").addEventListener("click", () => {
+    if (timer) { stop(); render(); return; }
+    if (k >= run.ev.length) k = 0;
+    timer = setInterval(() => { if (k < run.ev.length) { k++; render(); } else { stop(); render(); } }, 30);
+    render();
+  });
+  $("step").addEventListener("click", () => { stop(); if (k < run.ev.length) k++; render(); });
+  $("end").addEventListener("click", () => { stop(); k = run.ev.length; render(); });
+  document.querySelectorAll("[data-alg]").forEach(b => b.addEventListener("click", () => { alg = b.dataset.alg; prepare(); }));
+  document.querySelectorAll("[data-data]").forEach(b => b.addEventListener("click", () => { kind = b.dataset.data; prepare(); }));
+  prepare();
+})();
+</script>
+</body>
+</html>

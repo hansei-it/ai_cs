@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로드밸런서가 요청을 나누는 방법</title>
+<meta name="description" content="나누는 방법(L4 연결 단위 라운드 로빈, L7 요청 단위 라운드 로빈, L7 최소 연결)과 느린 요청의 자리를 골라, 서버 셋이 요청을 언제 처리하는지와 평균 응답 시간을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .lanewrap { overflow-x: auto; overflow-y: hidden; }
+  .laneinner { min-width: 520px; }   /* 휴대폰에서 100ms 칸이 번호보다 좁아지지 않게, 줄이지 않고 옆으로 밀어 본다 */
+  .lanes { margin: 8px 0 4px; }
+  .lane { display: grid; grid-template-columns: 4.5em 1fr 3.5em; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 13px; }
+  .track { position: relative; height: 28px; background: var(--soft); border: 1px solid var(--line); border-radius: 5px; }
+  .job { position: absolute; top: 3px; height: 20px; border: 1px solid var(--read); background: var(--read-bg); border-radius: 3px;
+    font-size: 11px; line-height: 18px; text-align: center; overflow: hidden; }
+  .job.slow { border-color: var(--write); background: var(--write-bg); font-weight: 700; }
+  .wait { position: absolute; top: 12px; height: 2px; background: var(--write); opacity: .7; }
+  .axis { position: relative; height: 18px; margin-left: calc(4.5em + 6px); margin-right: calc(3.5em + 6px); font-size: 11px; color: var(--muted); }
+  .axis span { position: absolute; transform: translateX(-50%); }
+  .sum { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; margin-top: 4px; }
+  .sum b { font-size: 19px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .lane { grid-template-columns: 3.5em 1fr 2.8em; } .axis { margin-left: calc(3.5em + 6px); margin-right: calc(2.8em + 6px); } }
+</style>
+</head>
+<body>
+<h1>로드밸런서가 요청을 나누는 방법</h1>
+<p class="lead">손님 연결 둘이 요청 12개를 100ms마다 번갈아 보낸다(짝수 번호는 연결 1, 홀수는 연결 2). HTTP/2처럼 한 연결에 앞 응답을 기다리지 않고 요청을 겹쳐 보낸다. 느린 요청을 고르면 그 요청 하나는 1.5초 걸리는 보고서이고, 나머지는 100ms다. 서버는 한 번에 하나씩, 온 차례대로 처리한다.</p>
+<div class="row" role="group" aria-label="나누는 방법">
+  <span class="label">방법</span>
+  <button class="btn" data-mode="l4">L4 라운드 로빈 (연결마다)</button>
+  <button class="btn" data-mode="rr">L7 라운드 로빈 (요청마다)</button>
+  <button class="btn" data-mode="lc">L7 최소 연결</button>
+</div>
+<div class="row" role="group" aria-label="느린 요청">
+  <span class="label">느린 요청</span>
+  <button class="btn" data-slow="1">1번</button>
+  <button class="btn" data-slow="4">4번</button>
+  <button class="btn" data-slow="-1">없음</button>
+</div>
+
+<div class="lanewrap"><div class="laneinner">
+<div class="lanes" id="lanes"></div>
+<div class="axis" id="axis"></div>
+</div></div>
+<div class="sum" id="sum"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const LbLogic = (() => {
+  // 요청 i는 t = 100i ms에 온다. 짝수는 연결 1, 홀수는 연결 2. 느린 요청 하나는 1500ms, 나머지는 100ms
+  // 서버(A, B, C)는 한 번에 하나씩 온 차례대로 처리한다
+  // l4: 연결마다 서버를 한 번 고르고 그 연결의 요청은 모두 그 서버로 (연결 1 → A, 연결 2 → B)
+  // rr: 요청마다 차례로 A, B, C
+  // lc: 요청이 온 순간 맡고 있는(끝나지 않은) 요청이 가장 적은 서버, 같으면 앞의 서버
+  const N = 12, GAP = 100, FAST = 100, SLOW = 1500;
+  function run(mode, slow) {
+    const free = [0, 0, 0], jobs = [[], [], []], out = [];
+    for (let i = 0; i < N; i++) {
+      const t = i * GAP, conn = i % 2, dur = i === slow ? SLOW : FAST;
+      let s;
+      if (mode === "l4") s = conn;
+      else if (mode === "rr") s = i % 3;
+      else {
+        const busy = jobs.map(js => js.filter(j => j.end > t).length);
+        s = busy.indexOf(Math.min(...busy));
+      }
+      const start = Math.max(t, free[s]), end = start + dur;
+      free[s] = end;
+      jobs[s].push({ i, start, end });
+      out.push({ i, server: "ABC"[s], arrive: t, start, end, resp: end - t, slow: i === slow });
+    }
+    const resp = out.map(o => o.resp);
+    const count = { A: 0, B: 0, C: 0 };
+    for (const o of out) count[o.server]++;
+    return {
+      out, count,
+      avg: Math.round(resp.reduce((a, b) => a + b, 0) / N * 10) / 10,
+      max: Math.max(...resp),
+      last: Math.max(...out.map(o => o.end)),
+      servers: out.map(o => o.server).join(""),
+    };
+  }
+  return { N, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = LbLogic;
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  let mode = q.get("mode") || "l4", slow = q.has("slow") ? Number(q.get("slow")) : -1;   // 처음에는 느린 요청 없이(문제 3의 답을 먼저 보이지 않게)
+  const SPAN = 2400;                                   // 가로축: 0 ~ 2400ms
+  const pct = ms => `${(ms / SPAN * 100).toFixed(2)}%`;
+  function render() {
+    const r = L.run(mode, slow);
+    $("lanes").innerHTML = ["A", "B", "C"].map(s => {
+      const mine = r.out.filter(o => o.server === s);
+      const waits = mine.filter(o => o.start > o.arrive)      // 기다린 시간 선을 먼저 그려 처리 막대 아래에 깔리게 한다
+        .map(o => `<div class="wait" style="left:${pct(o.arrive)};width:${pct(o.start - o.arrive)}" title="${o.i}번이 기다린 시간"></div>`).join("");
+      const blocks = waits + mine.map(o => `<div class="job ${o.slow ? "slow" : ""}" style="left:${pct(o.start)};width:${pct(o.end - o.start)}" title="${o.i}번: ${o.arrive}ms에 와서 ${o.end}ms에 끝남">${o.i}</div>`).join("");
+      return `<div class="lane"><span>서버 ${s}</span><div class="track">${blocks}</div><span class="mono">${r.count[s]}개</span></div>`;
+    }).join("");
+    $("axis").innerHTML = [0, 500, 1000, 1500, 2000].map(ms => `<span style="left:${pct(ms)}">${ms}ms</span>`).join("");
+    $("sum").innerHTML = `<span>평균 응답 시간 <b class="mono">${r.avg}</b> ms</span><span>가장 긴 응답 <b class="mono">${r.max}</b> ms</span>`;
+    const notes = {
+      l4: "L4는 TCP 연결이 들어올 때 서버를 한 번 고르고, 그 연결의 요청은 내용을 보지 않고 모두 같은 서버로 보낸다. 연결이 둘뿐이라 서버 C는 논다."
+        + (slow < 0 ? "" : " 느린 요청이 있는 연결의 요청들은 그 뒤에 줄을 선다(주황 선이 기다린 시간)."),
+      rr: "L7은 HTTP 요청을 하나씩 열어 보고 요청마다 서버를 고른다. 라운드 로빈은 요청을 A, B, C 차례로 고르게 나눈다."
+        + (slow < 0 ? "" : " 다만 서버가 바쁜지 보지 않아 느린 요청을 맡은 서버에도 차례가 되면 보낸다."),
+      lc: "최소 연결은 지금 맡고 있는 요청이 가장 적은 서버로 보낸다."
+        + (slow < 0 ? "" : " 느린 요청을 맡은 서버를 피하므로 다른 요청이 그 뒤에 줄을 서지 않는다."),
+    };
+    $("note").textContent = notes[mode]
+      + (mode === "lc" && r.count.C === 0 ? ` 서버 ${r.count.B === 0 ? "B와 C가" : "C가"} 노는 것은 맡은 요청 수가 같으면 앞의 서버를 고르기 때문이다. 보통 요청은 100ms에 끝나서, 다음 요청이 올 때 앞의 서버가 벌써 비어 있다.` : "")
+      + (slow < 0 ? " 느린 요청이 없으면 세 방법 모두 기다림이 없다." : "");
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+    document.querySelectorAll("[data-slow]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.slow) === slow)));
+  }
+  document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { mode = b.dataset.mode; render(); }));
+  document.querySelectorAll("[data-slow]").forEach(b => b.addEventListener("click", () => { slow = Number(b.dataset.slow); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

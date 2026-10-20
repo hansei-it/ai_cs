@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 확신은 맞는 비율과 맞을까</title>
+<meta name="description" content="AI가 말한 출력 16개마다 맞을 확률을 고르고 실제 출력과 대조해, 내가 고른 확률과 실제로 맞은 비율이 얼마나 맞는지(보정) 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .prog { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .prog .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 3px; background: var(--soft); border: 1px solid var(--line); vertical-align: middle; }
+  .prog .dot.ok { background: var(--good); border-color: var(--good); }
+  .prog .dot.bad { background: var(--write); border-color: var(--write); }
+  .prog .dot.cur { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .code { margin: 0 0 8px; padding: 8px 10px; background: var(--soft); border-radius: 6px; font-size: 13.5px; white-space: pre; overflow-x: auto; }
+  .claim { margin: 0 0 8px; font-size: 14px; }
+  .claim b { font-size: 15px; }
+  .reveal { font-size: 14px; min-height: 2.6em; }
+  .reveal .ans b { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", monospace; }
+  .reveal .why { color: var(--muted); margin-top: 2px; }
+  table.t { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 6px; }
+  table.t th, table.t td { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: left; white-space: nowrap; }
+  table.t th { color: var(--muted); font-weight: 400; }
+  table.t td.bar { width: 45%; }
+  table.t td.bar i { display: inline-block; height: 10px; background: var(--read); border-radius: 2px; vertical-align: middle; }
+  table.t td.bar i.mark { width: 2px; height: 14px; background: var(--fg); margin-left: -2px; }
+  .sumline { font-size: 13px; margin-top: 6px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .code { font-size: 12.5px; } table.t th { white-space: normal; } table.t td.bar { width: 35%; } }
+</style>
+</head>
+<body>
+<h1>내 확신은 맞는 비율과 맞을까</h1>
+<p class="lead">코드와, AI가 그 코드의 출력이라고 말한 것이 나온다. AI의 말은 이 강의가 흔한 실수를 담아 쓴 예이고, 실제 출력은 이 PC의 Python 3.14.0에서 실행한 값이다. 코드를 실행하지 말고, AI의 말이 맞을 확률을 골라 본다.</p>
+<div class="prog" id="prog"></div>
+<div class="card">
+  <pre class="code mono" id="code"></pre>
+  <p class="claim">AI가 말한 출력: <b class="mono" id="claim"></b></p>
+  <div class="row" role="group" aria-label="AI가 말한 출력이 맞을 확률">
+    <span class="label">맞을 확률</span>
+    <span id="levels"></span>
+  </div>
+  <div class="reveal" id="reveal" aria-live="polite"></div>
+</div>
+<div class="row">
+  <button class="btn" id="prev">이전</button>
+  <button class="btn go" id="next">다음</button>
+  <button class="btn" id="restart">처음부터</button>
+</div>
+<div id="summary"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CalibLogic = (() => {
+  // AI의 설명 16개. claim은 "AI가 이 코드가 찍는다고 한 것"(이 강의가 흔한 실수를 담아 쓴 예),
+  // out은 이 PC의 Python 3.14.0에서 실제로 찍힌 것(tests/calib-lab.test.mjs가 python으로 다시 실행해 대조한다).
+  const ITEMS = [
+    { code: "print('10' < '9')", claim: "False", out: "True",
+      why: "문자열은 앞 글자부터 코드 값으로 견준다. '1'(49)이 '9'(57)보다 작으니 '10'이 앞이다." },
+    { code: "print(0.1 + 0.2 == 0.3)", claim: "False", out: "False",
+      why: "0.1과 0.2는 2진수로 딱 나타낼 수 없어 합이 0.30000000000000004다(4번)." },
+    { code: "print(sorted(['b', 'A', 'a']))", claim: "['a', 'A', 'b']", out: "['A', 'a', 'b']",
+      why: "글자의 코드 값 차례로 줄을 세운다. 대문자 A(65)가 소문자 a(97)보다 앞이다." },
+    { code: "def add(x, acc=[]):\n    acc.append(x)\n    return acc\nadd(1)\nprint(add(2))", claim: "[2]", out: "[1, 2]",
+      why: "기본값 리스트는 함수를 만들 때 한 번만 만들어져, 부를 때마다 같은 리스트를 쓴다." },
+    { code: "print(int('08'))", claim: "ValueError가 난다", out: "8",
+      why: "int()는 앞의 0을 받아 준다. 코드에 08이라고 쓰면 문법 오류지만, 문자열 '08'을 바꾸는 것은 된다." },
+    { code: "a = [[0] * 2] * 2\na[0][0] = 1\nprint(a)", claim: "[[1, 0], [0, 0]]", out: "[[1, 0], [1, 0]]",
+      why: "바깥의 * 2는 같은 안쪽 리스트를 두 번 가리키게 한다. 하나를 고치면 둘 다 바뀌어 보인다." },
+    { code: "print(len('한글'))", claim: "2", out: "2",
+      why: "str의 길이는 글자 수(정확히는 코드 포인트 수)다." },
+    { code: "print(len('한글'.encode()))", claim: "6", out: "6",
+      why: "UTF-8에서 한글 한 글자는 3바이트다(4번)." },
+    { code: "print(7 // -2)", claim: "-3", out: "-4",
+      why: "//는 바닥 나눗셈이라 -3.5보다 작거나 같은 가장 큰 정수 -4가 된다." },
+    { code: "print(bool('False'))", claim: "True", out: "True",
+      why: "빈 문자열만 False다. 'False'는 글자가 다섯 개 든 문자열이다." },
+    { code: "print({1: 'a', True: 'b'})", claim: "{1: 'b'}", out: "{1: 'b'}",
+      why: "True는 1과 같은 키로 친다(True == 1). 처음 넣은 키 1이 남고 값만 'b'로 바뀐다." },
+    { code: "print('a,b,,c'.split(','))", claim: "['a', 'b', '', 'c']", out: "['a', 'b', '', 'c']",
+      why: "쉼표 두 개 사이의 빈 문자열도 조각 하나다." },
+    { code: "print(max([], default=0))", claim: "0", out: "0",
+      why: "목록이 비면 default로 준 값을 돌려준다." },
+    { code: "print(sum([0.1] * 10) == 1.0)", claim: "False", out: "True",
+      why: "Python 3.12부터 sum()이 실수를 더할 때 오차를 줄이는 방법을 쓴다. 그 전 판에서는 False였다. 판에 따라 맞는 답이 다르다." },
+    { code: "print(f'{7:05.1f}')", claim: "007.0", out: "007.0",
+      why: "전체 폭 5칸, 소수 한 자리, 남는 앞자리를 0으로 채운다." },
+    { code: "print([1, 2, 3][10:])", claim: "IndexError가 난다", out: "[]",
+      why: "자르기(슬라이스)는 범위를 벗어나도 오류 없이 빈 리스트를 돌려준다. a[10]처럼 한 칸을 꺼낼 때만 IndexError가 난다." },
+  ];
+  const LEVELS = [0.1, 0.3, 0.5, 0.7, 0.9];          // "AI의 설명이 맞을 확률"로 고를 수 있는 값
+
+  const right = item => item.claim === item.out;
+
+  // answers: [{ p, right }] → 고른 확률마다 개수와 실제로 맞은 수, 브라이어 점수(낮을수록 좋다, 늘 0.5라고 하면 0.25)
+  function score(answers) {
+    const buckets = LEVELS.map(p => {
+      const xs = answers.filter(a => a.p === p);
+      return { p, n: xs.length, correct: xs.filter(a => a.right).length };
+    });
+    const brier = answers.length ? answers.reduce((s, a) => s + (a.p - (a.right ? 1 : 0)) ** 2, 0) / answers.length : null;
+    return { buckets, brier };
+  }
+
+  // 고른 확률과 실제로 맞은 비율의 차이로 본 경향. 3개 이상 모인 칸만 본다.
+  // over: 고른 확률보다 AI가 덜 맞은 칸이 있다(AI를 너무 믿었다), under: 더 맞은 칸이 있다(너무 의심했다)
+  // flat: 칸마다는 크게 어긋나지 않았지만 브라이어 점수가 늘 50%라고 한 것(0.25)보다 낮지 않다(맞을 답과 틀릴 답을 가리지 못했다)
+  function tendency(buckets, brier) {
+    const seen = buckets.filter(b => b.n >= 3);
+    if (!seen.length) return "few";
+    let over = 0, under = 0;
+    for (const b of seen) {
+      const rate = b.correct / b.n;
+      if (rate < b.p - 0.15) over++;
+      if (rate > b.p + 0.15) under++;
+    }
+    return over && under ? "mixed" : over ? "over" : under ? "under" : brier >= 0.25 ? "flat" : "fine";
+  }
+
+  return { ITEMS, LEVELS, right, score, tendency };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CalibLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const pct = p => `${Math.round(p * 100)}%`;
+  let i = 0;
+  let answers = L.ITEMS.map(() => null);                 // 고른 확률(고르기 전에는 null)
+
+  $("levels").innerHTML = L.LEVELS.map(p => `<button class="btn" data-p="${p}">${pct(p)}</button>`).join(" ");
+
+  function render() {
+    const item = L.ITEMS[i];
+    const p = answers[i];
+    $("prog").innerHTML = `<span>${i + 1} / ${L.ITEMS.length}</span> `
+      + L.ITEMS.map((it, k) => {
+        const state = answers[k] === null ? "아직 고르지 않았다" : L.right(it) ? "AI가 맞았다" : "AI가 틀렸다";
+        return `<span class="dot${answers[k] === null ? "" : L.right(it) ? " ok" : " bad"}${k === i ? " cur" : ""}" title="${k + 1}번: ${state}" role="img" aria-label="${k + 1}번: ${state}"></span>`;
+      }).join("");
+    $("code").textContent = item.code;
+    $("claim").textContent = item.claim;
+    document.querySelectorAll("[data-p]").forEach(b => {
+      b.setAttribute("aria-pressed", String(Number(b.dataset.p) === p));
+      b.disabled = p !== null;
+    });
+    $("reveal").innerHTML = p === null ? ""
+      : `<div class="ans">실제 출력: <b>${esc(item.out)}</b> → ${L.right(item) ? '<span class="fine">AI가 맞았다</span>' : '<span class="warn">AI가 틀렸다</span>'}</div><div class="why">${esc(item.why)}</div>`;
+    $("prev").disabled = i === 0;
+    $("next").disabled = i === L.ITEMS.length - 1;
+
+    const done = answers.map((q, k) => q === null ? null : { p: q, right: L.right(L.ITEMS[k]) }).filter(Boolean);
+    if (done.length) {
+      const s = L.score(done);
+      const rows = s.buckets.filter(b => b.n).map(b => {
+        const rate = b.correct / b.n;
+        return `<tr><td>${pct(b.p)}라고 한 것</td><td class="mono">${b.correct}/${b.n}</td><td class="mono">${pct(rate)}</td>`
+          + `<td class="bar"><i style="width:${(rate * 100).toFixed(0)}%"></i><i class="mark" style="margin-left:${(b.p * 100 - rate * 100).toFixed(0)}%"></i></td></tr>`;
+      }).join("");
+      $("summary").innerHTML = `<table class="t"><tr><th>내가 고른 확률</th><th>AI가 맞음</th><th>맞은 비율</th><th>막대: 맞은 비율, 세로선: 고른 확률</th></tr>${rows}</table>`
+        + `<div class="sumline">브라이어 점수 <b class="mono">${s.brier.toFixed(3)}</b>(${done.length}개, 0에 가까울수록 좋다. 늘 50%라고 하면 0.250)</div>`;
+    } else $("summary").innerHTML = "";
+
+    let note;
+    if (!done.length) note = "코드를 실행하지 말고, AI가 말한 출력이 맞을 확률을 골라 본다. 고르면 실제 출력이 나오고, 내 확신이 얼마나 맞았는지 아래 표에 쌓인다.";
+    else if (done.length < L.ITEMS.length) {
+      const left = answers.map((q, k) => q === null ? k + 1 : null).filter(k => k !== null);
+      note = p === null ? "AI가 말한 출력이 맞을 확률을 고른다."
+        : i === L.ITEMS.length - 1 ? `아직 고르지 않은 것이 ${left.length}개 있다(${left.join(", ")}번, 회색 점). 이전으로 돌아가 마저 고르면 경향을 알려 준다.`
+        : "다음으로 넘어간다. 표는 지금까지 고른 것으로 계산한다.";
+    }
+    else {
+      const s = L.score(done);
+      const t = L.tendency(s.buckets, s.brier);
+      const few = " 다만 칸마다 몇 개뿐이라 우연일 수 있으니, 실제 과제에서 계속 기록해 본다.";
+      note = t === "over" ? "고른 확률보다 AI가 덜 맞은 칸이 있다(AI를 너무 믿었다). 그럴듯한 설명일수록 실행해 확인한다." + few
+        : t === "under" ? "고른 확률보다 AI가 더 자주 맞은 칸이 있다(AI를 너무 의심했다). 낯선 결과라도 AI가 맞을 수 있으니, 의심도 실행으로 확인한다." + few
+        : t === "mixed" ? "어떤 칸에서는 AI를 너무 믿었고, 어떤 칸에서는 너무 의심했다. 표에서 막대(맞은 비율)와 세로선(고른 확률)이 먼 칸을 본다." + few
+        : t === "flat" ? "고른 확률과 맞은 비율은 크게 어긋나지 않았지만, 브라이어 점수가 늘 50%라고 한 것(0.250)보다 낮지 않다. 맞을 답과 틀릴 답을 가려 확신을 매기지 못한 것이다." + few
+        : t === "few" ? "칸마다 3개 이상 모여야 경향을 본다. 지금은 칸마다 몇 개뿐이라 판단하지 않는다. 실제 과제에서 계속 기록해 본다."
+        : "3개 이상 모인 칸에서는 고른 확률과 맞은 비율이 크게 어긋나지 않았다. 다만 16개는 적은 수라, 실제 과제에서 계속 기록해 본다.";
+    }
+    $("note").textContent = note;
+  }
+  document.querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => {
+    if (answers[i] !== null) return;
+    answers[i] = Number(b.dataset.p);
+    render();
+    $(i < L.ITEMS.length - 1 ? "next" : "prev").focus();          // 누른 버튼이 잠기므로 다음 차례의 버튼으로 옮긴다
+  }));
+  $("prev").addEventListener("click", () => { i = Math.max(0, i - 1); render(); });
+  $("next").addEventListener("click", () => { i = Math.min(L.ITEMS.length - 1, i + 1); render(); });
+  $("restart").addEventListener("click", () => { i = 0; answers = L.ITEMS.map(() => null); render(); });
+  render();
+})();
+</script>
+</body>
+</html>

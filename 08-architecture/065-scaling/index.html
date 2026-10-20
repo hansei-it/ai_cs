@@ -1,0 +1,5043 @@
+
+<!doctype html>
+<html lang="ko" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI 시대 컴퓨터공학 전공자가 4년간 익혀야 할 핵심 항목">
+      
+      
+      
+        <link rel="canonical" href="https://hansei-it.github.io/ai_cs/08-architecture/065-scaling/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../066-monolith-vs-microservices/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>65. 수직 확장 vs 수평 확장 - AI 시대 컴퓨터공학 전공 100</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans+KR:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Noto Sans KR";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="https://unpkg.com/katex@0.16.11/dist/katex.min.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#65-시스템-규모-확장-수직-확장scale-up-vs-수평-확장scale-out" class="md-skip">
+          콘텐츠로 이동
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="상단/헤더">
+    <a href="../.." title="AI 시대 컴퓨터공학 전공 100" class="md-header__button md-logo" aria-label="AI 시대 컴퓨터공학 전공 100" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            AI 시대 컴퓨터공학 전공 100
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              65. 수직 확장 vs 수평 확장
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="어두운 화면으로 전환"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="어두운 화면으로 전환" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="밝은 화면으로 전환"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="밝은 화면으로 전환" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="검색" placeholder="검색" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="검색">
+        
+        <button type="reset" class="md-search__icon md-icon" title="지우기" aria-label="지우기" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            검색 초기화
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="네비게이션" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="AI 시대 컴퓨터공학 전공 100" class="md-nav__button md-logo" aria-label="AI 시대 컴퓨터공학 전공 100" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    AI 시대 컴퓨터공학 전공 100
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    소개
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    실습 환경
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../01-foundations/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    컴퓨터 기초와 하드웨어 <span class="cs-nav-count">(5)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    컴퓨터 기초와 하드웨어 <span class="cs-nav-count">(5)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/001-why-cs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    1. AI 시대 컴퓨터 전공자는 무엇을 배우는가
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/002-von-neumann/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2. 소프트웨어 동작의 물리적 본질
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/003-computer-components/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3. 컴퓨터 핵심 구성 요소
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/004-data-representation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    4. 데이터 표현
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/005-memory-hierarchy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    5. 메모리 계층 구조
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../02-languages/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    프로그래밍 언어와 메모리 <span class="cs-nav-count">(13)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    프로그래밍 언어와 메모리 <span class="cs-nav-count">(13)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/006-language-execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    6. 언어의 추상화 계층과 실행 방식
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/007-compilation-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    7. 소스코드가 기계어가 되기까지
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/008-process-memory-layout/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    8. 프로세스의 메모리 레이아웃
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/009-call-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    9. 함수 호출과 메모리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/010-pointers-references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10. 메모리 참조의 본질
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/011-heap-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11. 힙 메모리 관리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/012-garbage-collection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12. 가비지 컬렉션
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/013-paradigms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    13. 프로그래밍 패러다임
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/014-oop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    14. 객체 지향 4대 특징과 인터페이스
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/015-solid-design-patterns/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    15. SOLID 원칙과 디자인 패턴
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/016-type-systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    16. 타입 시스템
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/017-package-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    17. 패키지 생태계와 의존성 관리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/018-library-vs-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    18. 라이브러리와 프레임워크의 차이
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../03-algorithms/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    자료구조와 알고리즘 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    자료구조와 알고리즘 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/019-complexity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    19. 알고리즘 효율성 분석
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/020-array-vs-linked-list/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    20. 자료구조의 필요성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/021-stack-queue-deque/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    21. 선형 자료구조
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/022-hash-table/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    22. 해시 테이블
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/023-bst/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    23. 트리와 이진 탐색 트리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/024-heap-priority-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    24. 힙과 우선순위 큐
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/025-graph-representation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    25. 그래프의 표현 방식
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/026-sorting-binary-search/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    26. 정렬 알고리즘과 이진 탐색
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/027-dfs-bfs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    27. 그래프 탐색 (DFS·BFS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/028-dp-greedy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    28. 최적화 기법 (DP·그리디)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../04-os/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    운영체제 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    운영체제 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/029-os-essence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    29. 운영체제의 본질
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/030-process-thread/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    30. 프로그램, 프로세스, 스레드
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/031-ipc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    31. 프로세스 간 통신(IPC)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/032-cpu-scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    32. CPU 스케줄링과 컨텍스트 스위칭
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/033-concurrency-vs-parallelism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    33. 동시성과 병렬성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/034-synchronization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    34. 스레드 동기화
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/035-deadlock/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    35. 교착 상태
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/036-io-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    36. I/O 모델
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/037-virtual-memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    37. 가상 메모리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/038-locality-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    38. 참조 지역성과 캐시 적중률
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../05-network/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    컴퓨터 네트워크 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    컴퓨터 네트워크 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/039-network-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    39. 네트워크 계층 모델
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/040-ip-nat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    40. IP 주소 체계와 NAT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/041-tcp-udp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    41. 전송 계층 (TCP·UDP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/042-dns/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    42. DNS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/043-http/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    43. HTTP
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/044-url-to-render/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    44. URL 입력부터 렌더링까지
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/045-https-tls/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    45. HTTPS와 TLS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/046-sop-cors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    46. 동일 출처 정책과 CORS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/047-cookie-session-jwt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    47. 쿠키, 세션, 토큰(JWT)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/048-realtime-communication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    48. 실시간 양방향 통신
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../06-database/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    데이터베이스 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    데이터베이스 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/049-rdbms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    49. RDBMS의 장점과 데이터 독립성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/050-data-modeling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    50. 데이터 모델링과 ERD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/051-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    51. 정규화와 반정규화
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/052-sql/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    52. SQL 작성과 검증
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/053-transactions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    53. 트랜잭션과 락
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/054-isolation-levels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    54. 트랜잭션 격리 수준
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/055-indexes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    55. 인덱스와 실행 계획
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/056-db-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    56. 애플리케이션과 DB 연동
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/057-nosql/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    57. NoSQL 데이터베이스
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/058-backup-recovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    58. 백업과 복구
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../07-web/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    웹과 애플리케이션 개발 <span class="cs-nav-count">(6)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9" id="__nav_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    웹과 애플리케이션 개발 <span class="cs-nav-count">(6)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/059-html-css-js/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    59. HTML, CSS, JavaScript
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/060-event-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    60. 이벤트 루프와 비동기
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/061-rendering-path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    61. 브라우저 렌더링 경로
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/062-components-rendering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    62. 컴포넌트 기반 UI와 렌더링
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/063-json-serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    63. JSON과 직렬화
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/064-rest-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    64. REST API 설계
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    아키텍처·분산 시스템·운영 <span class="cs-nav-count">(9)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10" id="__nav_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    아키텍처·분산 시스템·운영 <span class="cs-nav-count">(9)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    65. 수직 확장 vs 수평 확장
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    65. 수직 확장 vs 수평 확장
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="목차">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      목차
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#이-항목에서-배우는-것" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        이 항목에서 배우는 것
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-서버-한-대를-키우거나-같은-서버를-여러-대-둔다" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 서버 한 대를 키우거나, 같은 서버를 여러 대 둔다
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-기다림이-많은-서버는-동시-처리-수만큼-빨라지다가-함께-쓰는-곳에서-막힌다" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 기다림이 많은 서버는 동시 처리 수만큼 빨라지다가, 함께 쓰는 곳에서 막힌다
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-여러-대로-나누려면-상태를-서버-밖에-둔다" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 여러 대로 나누려면 상태를 서버 밖에 둔다
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#예측해-보기" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        예측해 보기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ai와-함께-확인하기" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI와 함께 확인하기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#더-알아보기" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        더 알아보기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#정리" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        정리
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#관련-항목" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        관련 항목
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#더-읽을거리" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        더 읽을거리
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../066-monolith-vs-microservices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    66. 모놀리식 vs 마이크로서비스
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../067-request-path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    67. 요청 경로의 구성 요소
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../068-caching/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    68. 캐싱 전략과 캐시 무효화
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../069-messaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    69. 비동기 메시징
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../070-distributed-systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    70. 분산 시스템의 근본 문제
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../071-high-availability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    71. 이중화와 무중단 배포
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../072-observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    72. 관측성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../073-incident-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    73. 장애 대응과 포스트모템
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../09-security/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    보안 <span class="cs-nav-count">(6)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11" id="__nav_11_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    보안 <span class="cs-nav-count">(6)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/074-web-vulnerabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    74. 웹 취약점과 방어
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/075-authn-authz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    75. 인증과 인가
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/076-secrets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    76. 비밀 정보 관리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/077-supply-chain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    77. 의존성 공급망 보안
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/078-threat-modeling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    78. 위협 모델링
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/079-ai-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    79. AI 시스템 고유의 보안 위협
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../10-engineering/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    소프트웨어 공학과 실천 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_12" id="__nav_12_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    소프트웨어 공학과 실천 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/080-sdlc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    80. 소프트웨어 개발 생명주기
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/081-requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    81. 요구사항과 명세
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/082-adr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    82. 설계 결정 기록(ADR)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/083-git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    83. Git 실천
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/084-testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    84. 테스트 설계
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/085-debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    85. 디버깅 방법론
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/086-reading-codebases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    86. 코드베이스 읽기
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/087-code-review-refactoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    87. 코드 리뷰와 리팩토링
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/088-profiling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    88. 성능 측정과 프로파일링
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../10-engineering/089-ci-cd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    89. CI/CD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_13" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../11-cloud/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    클라우드 인프라 <span class="cs-nav-count">(3)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_13" id="__nav_13_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    클라우드 인프라 <span class="cs-nav-count">(3)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../11-cloud/090-cloud-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    90. 클라우드 서비스 모델
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../11-cloud/091-vm-vs-container/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    91. 가상머신과 컨테이너
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../11-cloud/092-kubernetes-serverless/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    92. 쿠버네티스와 서버리스
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../12-ai/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI의 원리와 AI 기반 SW <span class="cs-nav-count">(3)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_14" id="__nav_14_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    AI의 원리와 AI 기반 SW <span class="cs-nav-count">(3)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../12-ai/093-llm-principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    93. LLM의 동작 원리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../12-ai/094-ai-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    94. AI를 소프트웨어에 결합하기
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../12-ai/095-ai-evals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    95. AI 기능의 평가
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../13-ai-engineering/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI와 함께하는 엔지니어링 <span class="cs-nav-count">(5)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_15" id="__nav_15_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_15_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    AI와 함께하는 엔지니어링 <span class="cs-nav-count">(5)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/096-task-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    96. 작업 분해와 맥락 제공
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/097-ai-output-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    97. AI 출력 검증
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/098-agent-supervision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    98. AI 에이전트 감독
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/099-responsibility-ethics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    99. 책임과 윤리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/100-continuous-growth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    100. 지속적인 성장
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../appendix/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    부록
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_16" id="__nav_16_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_16">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    부록
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendix/a-teaching-by-layer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    A. 유형별 수업·평가 방식
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendix/b-ai-policy-by-year/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    B. 학년별 AI 사용 정책
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    업데이트
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="65-시스템-규모-확장-수직-확장scale-up-vs-수평-확장scale-out">65. 시스템 규모 확장: 수직 확장(Scale-up) vs 수평 확장(Scale-out)<a class="headerlink" href="#65-시스템-규모-확장-수직-확장scale-up-vs-수평-확장scale-out" title="Permanent link">&para;</a></h1>
+<p class="item-meta"><span class="layer layer-principle">원리</span> <span class="layer-hint">동작을 예측하고 이상을 알아챌 수 있어야 하는 항목</span></p>
+
+<p>손님이 늘면 서버 한 대로는 감당하지 못한다. 서버를 더 큰 기계로 바꿀 수도 있고(수직 확장), 같은 서버를 여러 대 둘 수도 있다(수평 확장). 섹션 8은 작은 주문 서비스를 이 PC에서 띄워 항목마다 아키텍처와 운영의 문제 하나씩을 본다. 이 항목에서는 주문 서버와 DB를 따로 띄워, 서버를 늘릴 때 처리량이 어떻게 바뀌는지 잰다. 예제는 Python 표준 라이브러리만 쓴다(<a href="../../setup/">실습 환경</a>).</p>
+<h2 id="이-항목에서-배우는-것">이 항목에서 배우는 것<a class="headerlink" href="#이-항목에서-배우는-것" title="Permanent link">&para;</a></h2>
+<ul>
+<li>수직 확장과 수평 확장의 장단점을 설명할 수 있다.</li>
+<li>처리량이 어느 자원에서 막히는지(병목) 예측하고, 서버를 늘려도 빨라지지 않는 경우를 알아볼 수 있다.</li>
+<li>수평 확장을 하려면 상태를 서버 밖에 두어야 하는 까닭을 설명할 수 있다.</li>
+</ul>
+<h2 id="1-서버-한-대를-키우거나-같은-서버를-여러-대-둔다">1. 서버 한 대를 키우거나, 같은 서버를 여러 대 둔다<a class="headerlink" href="#1-서버-한-대를-키우거나-같은-서버를-여러-대-둔다" title="Permanent link">&para;</a></h2>
+<figure class="cs-figure">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 236" role="img" aria-labelledby="scale-up-out-title">
+<title id="scale-up-out-title">수직 확장과 수평 확장. 수직 확장은 4코어 서버를 32코어에 메모리 8배인 더 큰 서버로 바꾼다. 코드를 거의 고치지 않지만, 살 수 있는 가장 큰 기계가 상한이고, 아주 큰 기계는 값이 크기보다 빨리 오르며, 그 한 대가 멈추면 모두 멈춘다. 수평 확장은 로드밸런서(67번) 뒤에 같은 서버를 여러 대 두고, 서버들은 함께 쓰는 DB와 세션 저장소를 본다. 서버를 더하는 만큼 늘고 한 대가 죽어도 나머지가 받지만, 요청을 나눠 줄 장치가 있어야 하고, 상태(로그인, 장바구니)를 서버 밖에 두어야 하며, 함께 쓰는 DB가 다음 병목이 된다.</title>
+<defs><marker id="su-head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="f-head" d="M0 0 L8 4 L0 8 z"/></marker><marker id="su-head2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="f-head-accent" d="M0 0 L8 4 L0 8 z"/></marker></defs>
+<text x="10.0" y="18.0" text-anchor="start" class="f-small f-bold">수직 확장 (Scale-up): 한 대를 키운다</text>
+<rect class="f-box" x="20.0" y="44.0" width="70.0" height="56.0" rx="6"/>
+<text x="55.0" y="68.0" text-anchor="middle" class="f-small f-bold">서버</text>
+<text x="55.0" y="86.0" text-anchor="middle" class="f-small f-muted">4코어</text>
+<path class="f-arrow-accent" d="M96 72 H128" marker-end="url(#su-head2)"/>
+<rect class="f-box-accent" x="134.0" y="30.0" width="150.0" height="96.0" rx="6"/>
+<text x="209.0" y="62.0" text-anchor="middle" class="f-bold">더 큰 서버</text>
+<text x="209.0" y="82.0" text-anchor="middle" class="f-small f-muted">32코어, 메모리 8배</text>
+<text x="209.0" y="100.0" text-anchor="middle" class="f-small">코드는 거의 그대로</text>
+<text x="20.0" y="150.0" text-anchor="start" class="f-small">+ 코드를 거의 고치지 않는다</text>
+<text x="20.0" y="169.0" text-anchor="start" class="f-small f-muted">− 살 수 있는 가장 큰 기계가 상한이다</text>
+<text x="20.0" y="188.0" text-anchor="start" class="f-small f-muted">− 아주 큰 기계는 값이 더 빨리 오른다</text>
+<text x="20.0" y="207.0" text-anchor="start" class="f-small f-muted">− 그 한 대가 멈추면 모두 멈춘다</text>
+<line class="f-line" x1="320" y1="10" x2="320" y2="226"/>
+<text x="340.0" y="18.0" text-anchor="start" class="f-small f-bold">수평 확장 (Scale-out): 같은 서버를 여러 대 둔다</text>
+<rect class="f-box-read" x="340.0" y="64.0" width="92.0" height="40.0" rx="6"/>
+<text x="386.0" y="82.0" text-anchor="middle" class="f-small f-bold">로드밸런서</text>
+<text x="386.0" y="97.0" text-anchor="middle" class="f-small f-muted">67번</text>
+<rect class="f-box" x="470.0" y="34.0" width="76.0" height="28.0" rx="5"/>
+<text x="508.0" y="53.0" text-anchor="middle" class="f-small f-bold">서버 1</text>
+<path class="f-arrow" d="M434 84 L466 48" marker-end="url(#su-head)"/>
+<path class="f-arrow" d="M548 48 L582 84" marker-end="url(#su-head)"/>
+<rect class="f-box" x="470.0" y="70.0" width="76.0" height="28.0" rx="5"/>
+<text x="508.0" y="89.0" text-anchor="middle" class="f-small f-bold">서버 2</text>
+<path class="f-arrow" d="M434 84 L466 84" marker-end="url(#su-head)"/>
+<path class="f-arrow" d="M548 84 L582 84" marker-end="url(#su-head)"/>
+<rect class="f-box" x="470.0" y="106.0" width="76.0" height="28.0" rx="5"/>
+<text x="508.0" y="125.0" text-anchor="middle" class="f-small f-bold">서버 3</text>
+<path class="f-arrow" d="M434 84 L466 120" marker-end="url(#su-head)"/>
+<path class="f-arrow" d="M548 120 L582 84" marker-end="url(#su-head)"/>
+<rect class="f-box-green" x="586.0" y="58.0" width="86.0" height="52.0" rx="6"/>
+<text x="629.0" y="80.0" text-anchor="middle" class="f-small f-bold">함께 쓰는</text>
+<text x="629.0" y="97.0" text-anchor="middle" class="f-small">DB, 세션</text>
+<text x="340.0" y="150.0" text-anchor="start" class="f-small">+ 서버를 더하는 만큼 늘고, 한 대가 죽어도 나머지가 받는다</text>
+<text x="340.0" y="169.0" text-anchor="start" class="f-small f-muted">− 요청을 나눠 줄 장치가 있어야 한다</text>
+<text x="340.0" y="188.0" text-anchor="start" class="f-small f-muted">− 상태(로그인, 장바구니)를 서버 밖에 둔다</text>
+<text x="340.0" y="207.0" text-anchor="start" class="f-small f-muted">− 함께 쓰는 DB가 다음 병목이 된다</text>
+</svg>
+<figcaption>수직 확장과 수평 확장</figcaption></figure>
+
+<ul>
+<li><strong>수직 확장</strong>은 서버를 CPU와 메모리가 더 큰 기계로 바꾼다. 코드를 거의 고칠 필요가 없지만(늘어난 코어는 프로그램이 일을 나눠 써야 쓰인다), 살 수 있는 가장 큰 기계가 상한이고 그 한 대가 멈추면 서비스 전체가 멈춘다.</li>
+<li><strong>수평 확장</strong>은 같은 서버를 여러 대 두고 로드밸런서가 요청을 나눠 준다(<a href="../067-request-path/">67번(요청 경로의 구성 요소)</a>). 서버를 더하는 만큼 늘고 한 대가 죽어도 나머지가 받는다. 대신 서버들이 함께 쓰는 DB가 다음 병목이 되고, 상태를 서버 밖에 두어야 한다(3절).</li>
+<li>클라우드에서는 손님이 몰릴 때만 서버를 늘렸다 줄이는 자동 확장을 쓴다(<a href="../../11-cloud/092-kubernetes-serverless/">92번(쿠버네티스와 서버리스)</a>). 수평 확장이 되는 구조여야 쓸 수 있다.</li>
+</ul>
+<h2 id="2-기다림이-많은-서버는-동시-처리-수만큼-빨라지다가-함께-쓰는-곳에서-막힌다">2. 기다림이 많은 서버는 동시 처리 수만큼 빨라지다가, 함께 쓰는 곳에서 막힌다<a class="headerlink" href="#2-기다림이-많은-서버는-동시-처리-수만큼-빨라지다가-함께-쓰는-곳에서-막힌다" title="Permanent link">&para;</a></h2>
+<div class="cs-widget">
+<div class="cs-widget-label"><svg class="cs-widget-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.2V4.5a1.5 1.5 0 0 1 3 0v5.3l.6-.1a1.5 1.5 0 0 1 2.4.9l.5-.1a1.5 1.5 0 0 1 2.3 1.1l.4-.1a1.5 1.5 0 0 1 1.8 1.5V17a5 5 0 0 1-5 5h-1.6a5 5 0 0 1-4-2l-3.2-4.3a1.5 1.5 0 0 1 2.3-1.9z"/><path d="M6.2 6.6a4.6 4.6 0 0 1 8.6-2.2" fill="none" stroke-width="1.6" stroke-linecap="round"/></svg><strong>직접 해 보기</strong><span class="cs-widget-name">서버를 늘리면 얼마나 빨라지나</span><span class="cs-widget-hint">서버 수, 서버마다 동시에 처리하는 요청 수, DB가 동시에 처리하는 질의 수를 골라, 1초에 처리하는 주문 수와 막히는 곳(병목), 손님이 기다리는 시간을 본다</span></div>
+<iframe src="../../widgets/scale-lab/index.html" title="서버를 늘리면 얼마나 빨라지나" loading="lazy"></iframe>
+<a class="cs-widget-open" href="../../widgets/scale-lab/index.html" target="_blank" rel="noopener">새 창에서 크게 열기</a>
+</div>
+
+<ul>
+<li>주문 서버는 요청 하나에 52ms쯤 걸리는데, 그 가운데 50ms가 DB의 답을 기다리는 시간이다. 그래서 CPU의 빠르기보다 동시에 몇 개를 처리하느냐가 처리량을 정한다. 이 PC에서 서버 한 대가 동시에 1개씩 처리하면 1초에 19.1~19.2개, 16개씩 처리하면 305.9~313.6개였다.</li>
+<li>서버를 늘려도 마찬가지다. 동시 4개짜리 서버를 1대에서 2대로 늘리니 1초에 76.6~77.8개에서 154.6~156.8개로 두 배가 되었다(DB 동시 처리 100개). 4대, 8대로 더 늘리면 어떻게 될지는 문제 1에서 본다.</li>
+<li>병목은 옮겨 다닌다. 한 곳을 늘리면 다음으로 좁은 곳이 막힌다. 어디를 늘릴지는 추측하지 말고 재 보고 정한다(<a href="../../10-engineering/088-profiling/">88번(성능 측정과 프로파일링)</a>).</li>
+</ul>
+<h2 id="3-여러-대로-나누려면-상태를-서버-밖에-둔다">3. 여러 대로 나누려면 상태를 서버 밖에 둔다<a class="headerlink" href="#3-여러-대로-나누려면-상태를-서버-밖에-둔다" title="Permanent link">&para;</a></h2>
+<figure class="cs-figure">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 334" role="img" aria-labelledby="session-state-title">
+<title id="session-state-title">상태를 어디에 두나. 손님(쿠키 s1)의 요청을 로드밸런서가 서버 A와 B에 차례로 나눠 준다. 로그인 정보를 서버 메모리에 두면 ① 로그인을 받은 서버 A의 메모리에 s1이 들어간다. ② 다음 요청이 서버 B로 가면 어떻게 될지는 문제 2에서 예측한다. 함께 쓰는 세션 저장소에 두면 어느 서버로 가도 같은 로그인 정보를 본다. 같은 손님을 늘 같은 서버로 보내는 고정 세션도 있지만, 그 서버가 멈추면 로그인 정보도 함께 사라진다.</title>
+<defs><marker id="ss-head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="f-head" d="M0 0 L8 4 L0 8 z"/></marker><marker id="ss-head2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="f-head-write" d="M0 0 L8 4 L0 8 z"/></marker><marker id="ss-head3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="f-head-green" d="M0 0 L8 4 L0 8 z"/></marker></defs>
+<text x="10.0" y="18.0" text-anchor="start" class="f-small f-bold">서버 메모리에 둔다</text>
+<rect class="f-box" x="10.0" y="70.0" width="64.0" height="50.0" rx="6"/>
+<text x="42.0" y="92.0" text-anchor="middle" class="f-small f-bold">손님</text>
+<text x="42.0" y="109.0" text-anchor="middle" class="f-small f-mono f-muted">쿠키 s1</text>
+<rect class="f-box-read" x="94.0" y="74.0" width="74.0" height="42.0" rx="6"/>
+<text x="131.0" y="99.0" text-anchor="middle" class="f-small f-bold">로드밸런서</text>
+<path class="f-arrow" d="M76 95 H90" marker-end="url(#ss-head)"/>
+<rect class="f-box" x="196.0" y="34.0" width="104.0" height="50.0" rx="6"/>
+<text x="248.0" y="54.0" text-anchor="middle" class="f-small f-bold">서버 A</text>
+<text x="248.0" y="72.0" text-anchor="middle" class="f-small f-mono">s1: 김하나</text>
+<path class="f-arrow" d="M170 95 L192 59" marker-end="url(#ss-head)"/>
+<rect class="f-box" x="196.0" y="122.0" width="104.0" height="50.0" rx="6"/>
+<text x="248.0" y="142.0" text-anchor="middle" class="f-small f-bold">서버 B</text>
+<text x="248.0" y="160.0" text-anchor="middle" class="f-small f-mono f-write">s1: ?</text>
+<path class="f-arrow" d="M170 95 L192 147" marker-end="url(#ss-head)"/>
+<text x="174.0" y="64.0" text-anchor="middle" class="f-small f-bold">①</text>
+<text x="174.0" y="136.0" text-anchor="middle" class="f-small f-bold">②</text>
+<text x="10.0" y="252.0" text-anchor="start" class="f-small f-write">② 둘째 요청이 B로 가면</text>
+<text x="10.0" y="270.0" text-anchor="start" class="f-small f-write">어떻게 될까? (문제 2)</text>
+<text x="350.0" y="18.0" text-anchor="start" class="f-small f-bold">함께 쓰는 저장소에 둔다</text>
+<rect class="f-box" x="350.0" y="70.0" width="64.0" height="50.0" rx="6"/>
+<text x="382.0" y="92.0" text-anchor="middle" class="f-small f-bold">손님</text>
+<text x="382.0" y="109.0" text-anchor="middle" class="f-small f-mono f-muted">쿠키 s1</text>
+<rect class="f-box-read" x="434.0" y="74.0" width="74.0" height="42.0" rx="6"/>
+<text x="471.0" y="99.0" text-anchor="middle" class="f-small f-bold">로드밸런서</text>
+<path class="f-arrow" d="M416 95 H430" marker-end="url(#ss-head)"/>
+<rect class="f-box" x="536.0" y="34.0" width="104.0" height="50.0" rx="6"/>
+<text x="588.0" y="54.0" text-anchor="middle" class="f-small f-bold">서버 A</text>
+<path class="f-arrow" d="M510 95 L532 59" marker-end="url(#ss-head)"/>
+<rect class="f-box" x="536.0" y="122.0" width="104.0" height="50.0" rx="6"/>
+<text x="588.0" y="142.0" text-anchor="middle" class="f-small f-bold">서버 B</text>
+<path class="f-arrow" d="M510 95 L532 147" marker-end="url(#ss-head)"/>
+<text x="514.0" y="64.0" text-anchor="middle" class="f-small f-bold">①</text>
+<text x="514.0" y="136.0" text-anchor="middle" class="f-small f-bold">②</text>
+<rect class="f-box-green" x="536.0" y="196.0" width="104.0" height="40.0" rx="6"/>
+<text x="588.0" y="213.0" text-anchor="middle" class="f-small f-bold">세션 저장소</text>
+<text x="588.0" y="229.0" text-anchor="middle" class="f-small f-mono">s1: 김하나</text>
+<path class="f-arrow-green" d="M642 59 H658 V216 H646" marker-end="url(#ss-head3)"/>
+<path class="f-arrow-green" d="M588 174 V190" marker-end="url(#ss-head3)"/>
+<text x="350.0" y="252.0" text-anchor="start" class="f-small f-green">어느 서버로 가도</text>
+<text x="350.0" y="270.0" text-anchor="start" class="f-small f-green">같은 로그인 정보를 본다</text>
+<line class="f-line" x1="340" y1="10" x2="340" y2="276"/>
+<text x="10.0" y="304.0" text-anchor="start" class="f-small">① 로그인 요청은 서버 A가, ② 다음 요청은 서버 B가 받았다(로드밸런서가 차례로 나눠 준다).</text>
+<text x="10.0" y="324.0" text-anchor="start" class="f-small f-muted">같은 손님을 늘 같은 서버로 보내는 방법(고정 세션)도 있지만, 그 서버가 멈추면 로그인 정보도 함께 사라진다.</text>
+</svg>
+<figcaption>상태를 서버 메모리에 둘 때와 함께 쓰는 저장소에 둘 때</figcaption></figure>
+
+<ul>
+<li>로그인 정보나 장바구니를 서버 메모리에 두면, 다음 요청이 다른 서버로 갈 때 어떻게 될까(문제 2).</li>
+<li>수평 확장할 서버는 요청 사이에 기억하는 것이 없게(<strong>무상태</strong>) 만든다. 상태는 서버들이 함께 쓰는 저장소(DB, Redis 같은 캐시 서버)나 서명한 토큰(<a href="../../05-network/047-cookie-session-jwt/">47번(쿠키, 세션, 토큰(JWT))</a>)에 둔다.</li>
+</ul>
+<h2 id="예측해-보기">예측해 보기<a class="headerlink" href="#예측해-보기" title="Permanent link">&para;</a></h2>
+<p><strong>문제 1.</strong> 위젯에서 동시 4개짜리 서버, DB 동시 처리 10개로 놓고 서버를 1대, 2대, 4대, 8대로 늘린다. 1초에 처리하는 주문 수는 어떻게 바뀔까? 위젯을 누르기 전에 먼저 적어 본다.</p>
+<details class="success">
+<summary>정답과 해설</summary>
+<p><strong>2대까지는 두 배씩 늘지만, 4대부터는 1초에 196개 근처에서 멈춘다.</strong> 이 PC에서 잰 값은 1대 77.0~78.1개, 2대 153.2~156.7개, 4대 195.3~196.0개, 8대 195.5~195.9개였다. DB가 질의를 10개까지만 동시에 처리하고 질의마다 51ms쯤 걸리므로, DB가 1초에 받을 수 있는 질의는 10 ÷ 0.051 ≈ 196개다. 서버를 8대로 늘려도 처리량은 그대로이고, 늘린 서버의 값만 든다. 위젯에서 손님이 기다리는 시간도 4대와 8대가 같다. 줄이 서버 앞에서 DB 앞으로 옮겨 갔을 뿐이다. 이때는 DB가 동시에 더 처리하게 키우거나(더 큰 DB, 읽기 전용 복제본), DB에 묻는 일을 줄여야(캐시, <a href="../068-caching/">68번(캐싱 전략과 캐시 무효화)</a>) 빨라진다. 주문 서버가 DB 연결만 더 여는 것은 DB에 여력이 있을 때만 듣는다(<a href="../../06-database/056-db-integration/">56번(애플리케이션과 DB 연동)</a>).</p>
+</details>
+<p><strong>문제 2.</strong> 로드밸런서가 요청을 서버 A와 B에 차례로 나눠 준다. 서버는 로그인 정보를 자기 메모리에 둔다. 무엇이 출력될까?</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Server</span><span class="p">:</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">sessions</span> <span class="o">=</span> <span class="p">{}</span>                       <span class="c1"># 로그인 정보를 이 서버의 메모리에 둔다</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">handle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cookie</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>        <span class="k">if</span> <span class="n">path</span> <span class="o">==</span> <span class="s2">"/login"</span><span class="p">:</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">sessions</span><span class="p">[</span><span class="n">cookie</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"김하나"</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>            <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: 로그인했다"</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">sessions</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cookie</span><span class="p">,</span><span class="w"> </span><span class="s1">'로그인하세요'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">servers</span> <span class="o">=</span> <span class="p">[</span><span class="n">Server</span><span class="p">(</span><span class="s2">"A"</span><span class="p">),</span> <span class="n">Server</span><span class="p">(</span><span class="s2">"B"</span><span class="p">)]</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">([</span><span class="s2">"/login"</span><span class="p">,</span> <span class="s2">"/cart"</span><span class="p">,</span> <span class="s2">"/cart"</span><span class="p">,</span> <span class="s2">"/orders"</span><span class="p">]):</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">i</span> <span class="o">%</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">handle</span><span class="p">(</span><span class="s2">"s1"</span><span class="p">,</span> <span class="n">path</span><span class="p">))</span>     <span class="c1"># 로드밸런서가 요청을 차례로 나눠 준다</span>
+</code></pre></div>
+<details class="success">
+<summary>정답과 해설</summary>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>A: 로그인했다
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>B: 로그인하세요
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>A: 김하나
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>B: 로그인하세요
+</code></pre></div>
+<p>로그인을 받은 서버 A만 <code>s1</code>을 안다. B로 간 요청은 로그인하지 않은 손님으로 보인다. 손님에게는 화면이 한 번씩 로그인 창으로 바뀌는 버그다. 서버가 한 대일 때는 드러나지 않다가 서버를 늘리는 순간 나타난다. 두 서버가 같은 저장소를 보게 하면(아래처럼 <code>sessions</code>를 함께 쓰면) 로그인 뒤의 세 요청이 모두 <code>김하나</code>다.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">shared</span> <span class="o">=</span> <span class="p">{}</span>                                      <span class="c1"># 두 서버가 함께 쓰는 세션 저장소</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">servers</span> <span class="o">=</span> <span class="p">[</span><span class="n">Server</span><span class="p">(</span><span class="s2">"A"</span><span class="p">),</span> <span class="n">Server</span><span class="p">(</span><span class="s2">"B"</span><span class="p">)]</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">for</span> <span class="n">server</span> <span class="ow">in</span> <span class="n">servers</span><span class="p">:</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">server</span><span class="o">.</span><span class="n">sessions</span> <span class="o">=</span> <span class="n">shared</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">([</span><span class="s2">"/login"</span><span class="p">,</span> <span class="s2">"/cart"</span><span class="p">,</span> <span class="s2">"/cart"</span><span class="p">,</span> <span class="s2">"/orders"</span><span class="p">]):</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">servers</span><span class="p">[</span><span class="n">i</span> <span class="o">%</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">handle</span><span class="p">(</span><span class="s2">"s1"</span><span class="p">,</span> <span class="n">path</span><span class="p">))</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>A: 로그인했다
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>B: 김하나
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>A: 김하나
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>B: 김하나
+</code></pre></div>
+</details>
+<p><strong>문제 3.</strong> 동시 4개짜리 서버 한 대, DB 동시 처리 100개다. 서버를 CPU가 두 배 빠른 기계로 바꾸면(수직 확장) 1초에 처리하는 주문 수는 얼마나 늘까?</p>
+<details class="success">
+<summary>정답과 해설</summary>
+<p><strong>거의 늘지 않는다.</strong> 이 PC에서 주문 서버는 요청 하나에 CPU를 0.44~0.59ms 썼다(5번 잰 범위). 요청 하나에 걸리는 52ms의 1% 안팎이다. CPU가 두 배 빨라져도 요청 하나가 0.2~0.3ms 짧아질 뿐이라 처리량은 1% 안쪽으로 는다. 나머지 시간은 DB를 기다린다. 이런 서버는 큰 기계로 바꾸기보다 동시에 처리하는 수를 늘리거나(위젯의 동시 처리) 기다림 자체를 줄여야 빨라진다. 수직 확장이 효과가 있는지도 어디서 시간을 쓰는지 재 보고 정한다.</p>
+</details>
+<h2 id="ai와-함께-확인하기">AI와 함께 확인하기<a class="headerlink" href="#ai와-함께-확인하기" title="Permanent link">&para;</a></h2>
+<div class="admonition tip">
+<p class="admonition-title">AI 활용 과제: 확장 계획의 가정 검증하기</p>
+<ol>
+<li>AI에게 "주문 API가 1초에 150건을 넘으면 느려진다. 1초에 1,000건을 받으려면 서버를 몇 대로 늘려야 하나?"라고 묻는다.</li>
+<li>답이 무엇을 가정했는지 적는다. 서버 한 대의 처리량, 함께 쓰는 DB의 한계, 로그인 정보 같은 상태를 어디에 두는지.</li>
+<li>위젯이나 측정 프로그램으로 그 가정이 맞는지 확인하고, 빠진 병목을 AI에게 보여 주고 다시 계획하게 한다.</li>
+</ol>
+</div>
+<details class="success">
+<summary>확인할 점</summary>
+<ul>
+<li>"한 대가 150건이니 7대"처럼 서버 수만 곱하는 답이 흔하다. 서버 뒤에서 모두가 함께 쓰는 것(DB가 동시에 처리하는 질의 수, DB가 받는 연결 수, 외부 API의 한도)이 그보다 먼저 막히면 서버를 늘려도 소용없다(문제 1).</li>
+<li>서버를 늘리기 전에 그 서버가 무상태인지 묻는다. 로그인이나 장바구니를 메모리에 두는 서버는 늘리는 순간 고장 난다(문제 2).</li>
+<li>좋은 답은 "어디가 먼저 막히는지 재 보자"로 시작한다. 측정 없이 숫자를 정하는 답은 받아들이지 않는다.</li>
+</ul>
+</details>
+<h2 id="더-알아보기">더 알아보기<a class="headerlink" href="#더-알아보기" title="Permanent link">&para;</a></h2>
+<details class="note">
+<summary>손님이 기다리는 시간: 리틀의 법칙</summary>
+<p>시스템 안에 있는 요청 수(L)는 처리량(λ)과 요청 하나가 머무는 시간(W)의 곱이다(L = λW). 이 항목의 측정에서는 손님 64명이 늘 요청을 하나씩 보내 놓고 기다리므로 L = 64다. 그래서 한 사람이 기다리는 시간은 64 ÷ 처리량이다. 서버 한 대가 동시에 1개만 처리하면(1초에 19개) 손님 한 명이 3초 넘게 기다리고, 처리량이 늘수록 기다림이 준다. DB에서 막힌 뒤로는 서버를 늘려도 처리량이 그대로라 기다림도 그대로다.</p>
+</details>
+<details class="note">
+<summary>Python의 GIL과 이 실험</summary>
+<p>이 실험은 요청 처리 시간 대부분이 기다림이라, 한 프로세스 안에서 스레드로 동시 처리 수를 늘려도 처리량이 잘 늘었다. CPU 계산이 대부분인 일은 다르다. 이 PC에서 같은 계산 4개를 스레드 1개로 하면 1.05~1.07초, 스레드 4개로 나눠도 1.05~1.20초였고, 프로세스 4개로 나누면 0.28~0.29초였다(아래 프로그램으로 5번 잰 범위). 기본 Python은 한 프로세스에서 한 번에 한 스레드만 Python 코드를 실행하기 때문이다(GIL). Python 3.14부터 GIL을 없앤 빌드도 정식으로 지원하지만, 따로 골라 설치해야 한다. 기다림 4개(0.2초씩)는 스레드 1개로 0.80초, 4개로 0.20초였다. 그래서 CPU를 많이 쓰는 Python 서버는 프로세스를 여러 개 띄운다(<a href="../../04-os/033-concurrency-vs-parallelism/">33번(동시성과 병렬성)</a>).</p>
+<p><!-- py-check: skip -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># 65번 GIL 확인: CPU 계산을 스레드 4개와 프로세스 4개로 나눠 할 때, 기다림을 스레드 4개로 나눠 할 때</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProcessPoolExecutor</span><span class="p">,</span> <span class="n">ThreadPoolExecutor</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">work</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>                       <span class="c1"># CPU만 쓰는 계산</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">s</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10_000_000</span><span class="p">):</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>        <span class="n">s</span> <span class="o">+=</span> <span class="n">i</span> <span class="o">*</span> <span class="n">i</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="k">return</span> <span class="n">s</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="k">def</span><span class="w"> </span><span class="nf">wait</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>                       <span class="c1"># 기다리기만 하는 일</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="k">def</span><span class="w"> </span><span class="nf">timed</span><span class="p">(</span><span class="n">pool_cls</span><span class="p">,</span> <span class="n">fn</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>    <span class="k">with</span> <span class="n">pool_cls</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">n</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>        <span class="nb">list</span><span class="p">(</span><span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)))</span>          <span class="c1"># 데우기(스레드나 프로세스 n개를 미리 띄운다)</span>
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>        <span class="n">t</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>        <span class="nb">list</span><span class="p">(</span><span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="mi">4</span><span class="p">)))</span>
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>        <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t</span>
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"계산 4개, 스레드 1개: </span><span class="si">{</span><span class="n">timed</span><span class="p">(</span><span class="n">ThreadPoolExecutor</span><span class="p">,</span><span class="w"> </span><span class="n">work</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">초"</span><span class="p">)</span>
+<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"계산 4개, 스레드 4개: </span><span class="si">{</span><span class="n">timed</span><span class="p">(</span><span class="n">ThreadPoolExecutor</span><span class="p">,</span><span class="w"> </span><span class="n">work</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">초"</span><span class="p">)</span>
+<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"계산 4개, 프로세스 4개: </span><span class="si">{</span><span class="n">timed</span><span class="p">(</span><span class="n">ProcessPoolExecutor</span><span class="p">,</span><span class="w"> </span><span class="n">work</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">초"</span><span class="p">)</span>
+<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"기다림 4개, 스레드 1개: </span><span class="si">{</span><span class="n">timed</span><span class="p">(</span><span class="n">ThreadPoolExecutor</span><span class="p">,</span><span class="w"> </span><span class="n">wait</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">초"</span><span class="p">)</span>
+<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"기다림 4개, 스레드 4개: </span><span class="si">{</span><span class="n">timed</span><span class="p">(</span><span class="n">ThreadPoolExecutor</span><span class="p">,</span><span class="w"> </span><span class="n">wait</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">초"</span><span class="p">)</span>
+</code></pre></div></p>
+</details>
+<details class="note">
+<summary>이 항목의 측정 프로그램</summary>
+<p>2절과 문제 1의 값은 이 PC(Core i9-14900KF, DDR5 64GB, Windows 11, Python 3.14.0)에서 아래 프로그램을 5번 실행한 범위다. DB 서버, 주문 서버, 부하를 주는 쪽을 다른 프로세스로 띄워 127.0.0.1에서 HTTP로 주고받는다. 부하를 주는 쪽은 손님 64명이 쉬지 않고 요청하고, 서버가 여럿이면 차례로 고른다(로드밸런서 역할). 처음에는 Python 서버의 접속 대기열이 기본값(5)이라 손님 64명이 한꺼번에 접속할 때 연결이 끊겼다. 대기열을 128로 늘려 오류 없이 쟀다.</p>
+<p><!-- py-check: skip -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># 65번 측정: 주문 서버를 늘리면 처리량이 어떻게 바뀌나</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># DB 서버(동시에 처리하는 질의 수 한도가 있고, 질의마다 50ms를 기다린다), 주문 서버(동시에 처리하는 요청 수 한도),</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># 부하를 주는 쪽(스레드 여럿이 주문 서버들에 차례로 요청)을 따로 띄운다. 모두 이 PC(127.0.0.1)에서 돈다.</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># 실행: python scale_measure.py</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="kn">import</span><span class="w"> </span><span class="nn">http.client</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="kn">from</span><span class="w"> </span><span class="nn">http.server</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseHTTPRequestHandler</span><span class="p">,</span> <span class="n">ThreadingHTTPServer</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="k">def</span><span class="w"> </span><span class="nf">serve</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">handle</span><span class="p">):</span>                 <span class="c1"># 요청마다 handle()을 부르는 HTTP/1.1 서버(연결을 이어 쓴다)</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">H</span><span class="p">(</span><span class="n">BaseHTTPRequestHandler</span><span class="p">):</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>        <span class="n">protocol_version</span> <span class="o">=</span> <span class="s2">"HTTP/1.1"</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">do_GET</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>            <span class="n">body</span> <span class="o">=</span> <span class="n">handle</span><span class="p">()</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">send_response</span><span class="p">(</span><span class="mi">200</span><span class="p">)</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="s2">"Content-Length"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">body</span><span class="p">)))</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">wfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">body</span><span class="p">)</span>
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">log_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">a</span><span class="p">):</span>
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>            <span class="k">pass</span>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">S</span><span class="p">(</span><span class="n">ThreadingHTTPServer</span><span class="p">):</span>
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>        <span class="n">request_queue_size</span> <span class="o">=</span> <span class="mi">128</span>         <span class="c1"># 기본값 5면 손님 64명이 한꺼번에 접속할 때 넘친 연결이 끊긴다</span>
+<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>    <span class="n">S</span><span class="p">((</span><span class="s2">"127.0.0.1"</span><span class="p">,</span> <span class="n">port</span><span class="p">),</span> <span class="n">H</span><span class="p">)</span><span class="o">.</span><span class="n">serve_forever</span><span class="p">()</span>
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>
+<a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a>
+<a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="k">def</span><span class="w"> </span><span class="nf">db</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">limit</span><span class="p">):</span>                     <span class="c1"># DB: 질의를 limit개까지 동시에 처리하고, 질의마다 50ms</span>
+<a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a>    <span class="n">slots</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Semaphore</span><span class="p">(</span><span class="n">limit</span><span class="p">)</span>
+<a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">handle</span><span class="p">():</span>
+<a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a>        <span class="k">with</span> <span class="n">slots</span><span class="p">:</span>
+<a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a>            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
+<a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a>        <span class="k">return</span> <span class="s2">"row"</span>
+<a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a>    <span class="n">serve</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span>
+<a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a>
+<a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a>
+<a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a><span class="k">def</span><span class="w"> </span><span class="nf">app</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">db_port</span><span class="p">,</span> <span class="n">workers</span><span class="p">):</span>         <span class="c1"># 주문 서버: 요청을 workers개까지 동시에 처리하고, 처리마다 DB에 한 번 묻는다</span>
+<a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a>    <span class="n">slots</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Semaphore</span><span class="p">(</span><span class="n">workers</span><span class="p">)</span>
+<a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a>    <span class="n">local</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">local</span><span class="p">()</span>
+<a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">handle</span><span class="p">():</span>
+<a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a>        <span class="k">with</span> <span class="n">slots</span><span class="p">:</span>
+<a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">local</span><span class="p">,</span> <span class="s2">"c"</span><span class="p">):</span>
+<a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a>                <span class="n">local</span><span class="o">.</span><span class="n">c</span> <span class="o">=</span> <span class="n">http</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">HTTPConnection</span><span class="p">(</span><span class="s2">"127.0.0.1"</span><span class="p">,</span> <span class="n">db_port</span><span class="p">)</span>
+<a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a>            <span class="n">local</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="s2">"GET"</span><span class="p">,</span> <span class="s2">"/"</span><span class="p">)</span>
+<a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a>            <span class="n">local</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">getresponse</span><span class="p">()</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+<a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a>        <span class="k">return</span> <span class="s2">"ok"</span>
+<a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a>    <span class="n">serve</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span>
+<a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a>
+<a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a>
+<a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a><span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="n">ports</span><span class="p">,</span> <span class="n">seconds</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">clients</span><span class="o">=</span><span class="mi">64</span><span class="p">):</span>   <span class="c1"># 부하: 손님 64명이 쉬지 않고 요청한다. 서버는 차례로 고른다</span>
+<a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a>    <span class="n">done</span><span class="p">,</span> <span class="n">errors</span><span class="p">,</span> <span class="n">stop</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">+</span> <span class="n">seconds</span>
+<a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a>    <span class="n">lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+<a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">client</span><span class="p">(</span><span class="n">k</span><span class="p">):</span>
+<a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a>        <span class="n">conns</span> <span class="o">=</span> <span class="p">{</span><span class="n">p</span><span class="p">:</span> <span class="n">http</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">HTTPConnection</span><span class="p">(</span><span class="s2">"127.0.0.1"</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">ports</span><span class="p">}</span>
+<a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a>        <span class="n">i</span> <span class="o">=</span> <span class="n">k</span>
+<a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a>        <span class="k">while</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">stop</span><span class="p">:</span>
+<a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a>            <span class="n">p</span> <span class="o">=</span> <span class="n">ports</span><span class="p">[</span><span class="n">i</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">ports</span><span class="p">)]</span>
+<a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a>            <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a>            <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a>                <span class="n">conns</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="s2">"GET"</span><span class="p">,</span> <span class="s2">"/"</span><span class="p">)</span>
+<a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a>                <span class="n">conns</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="o">.</span><span class="n">getresponse</span><span class="p">()</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+<a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a>                <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a>                    <span class="n">done</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a>            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>                  <span class="c1"># 연결이 끊기면 세고 새로 잇는다</span>
+<a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a>                <span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
+<a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a>                    <span class="n">errors</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a>                <span class="n">conns</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">=</span> <span class="n">http</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">HTTPConnection</span><span class="p">(</span><span class="s2">"127.0.0.1"</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+<a id="__codelineno-5-69" name="__codelineno-5-69" href="#__codelineno-5-69"></a>    <span class="n">ts</span> <span class="o">=</span> <span class="p">[</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">client</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">k</span><span class="p">,))</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">clients</span><span class="p">)]</span>
+<a id="__codelineno-5-70" name="__codelineno-5-70" href="#__codelineno-5-70"></a>    <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+<a id="__codelineno-5-71" name="__codelineno-5-71" href="#__codelineno-5-71"></a>    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">ts</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<a id="__codelineno-5-72" name="__codelineno-5-72" href="#__codelineno-5-72"></a>    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">ts</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+<a id="__codelineno-5-73" name="__codelineno-5-73" href="#__codelineno-5-73"></a>    <span class="k">assert</span> <span class="n">errors</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"연결 오류 </span><span class="si">{</span><span class="n">errors</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">번"</span>
+<a id="__codelineno-5-74" name="__codelineno-5-74" href="#__codelineno-5-74"></a>    <span class="k">return</span> <span class="n">done</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span>
+<a id="__codelineno-5-75" name="__codelineno-5-75" href="#__codelineno-5-75"></a>
+<a id="__codelineno-5-76" name="__codelineno-5-76" href="#__codelineno-5-76"></a>
+<a id="__codelineno-5-77" name="__codelineno-5-77" href="#__codelineno-5-77"></a><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">servers</span><span class="p">,</span> <span class="n">workers</span><span class="p">,</span> <span class="n">limit</span><span class="p">):</span>
+<a id="__codelineno-5-78" name="__codelineno-5-78" href="#__codelineno-5-78"></a>    <span class="n">procs</span> <span class="o">=</span> <span class="p">[</span><span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">([</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="vm">__file__</span><span class="p">,</span> <span class="s2">"db"</span><span class="p">,</span> <span class="s2">"18600"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">limit</span><span class="p">)])]</span>
+<a id="__codelineno-5-79" name="__codelineno-5-79" href="#__codelineno-5-79"></a>    <span class="n">ports</span> <span class="o">=</span> <span class="p">[</span><span class="mi">18601</span> <span class="o">+</span> <span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">servers</span><span class="p">)]</span>
+<a id="__codelineno-5-80" name="__codelineno-5-80" href="#__codelineno-5-80"></a>    <span class="n">procs</span> <span class="o">+=</span> <span class="p">[</span><span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">([</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="vm">__file__</span><span class="p">,</span> <span class="s2">"app"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">),</span> <span class="s2">"18600"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">workers</span><span class="p">)])</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">ports</span><span class="p">]</span>
+<a id="__codelineno-5-81" name="__codelineno-5-81" href="#__codelineno-5-81"></a>    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>                      <span class="c1"># 서버가 뜰 때까지</span>
+<a id="__codelineno-5-82" name="__codelineno-5-82" href="#__codelineno-5-82"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-5-83" name="__codelineno-5-83" href="#__codelineno-5-83"></a>        <span class="n">load</span><span class="p">(</span><span class="n">ports</span><span class="p">,</span> <span class="n">seconds</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>         <span class="c1"># 데우기</span>
+<a id="__codelineno-5-84" name="__codelineno-5-84" href="#__codelineno-5-84"></a>        <span class="k">return</span> <span class="n">load</span><span class="p">(</span><span class="n">ports</span><span class="p">)</span>
+<a id="__codelineno-5-85" name="__codelineno-5-85" href="#__codelineno-5-85"></a>    <span class="k">finally</span><span class="p">:</span>
+<a id="__codelineno-5-86" name="__codelineno-5-86" href="#__codelineno-5-86"></a>        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+<a id="__codelineno-5-87" name="__codelineno-5-87" href="#__codelineno-5-87"></a>            <span class="n">p</span><span class="o">.</span><span class="n">kill</span><span class="p">()</span>
+<a id="__codelineno-5-88" name="__codelineno-5-88" href="#__codelineno-5-88"></a>            <span class="n">p</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+<a id="__codelineno-5-89" name="__codelineno-5-89" href="#__codelineno-5-89"></a>
+<a id="__codelineno-5-90" name="__codelineno-5-90" href="#__codelineno-5-90"></a>
+<a id="__codelineno-5-91" name="__codelineno-5-91" href="#__codelineno-5-91"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+<a id="__codelineno-5-92" name="__codelineno-5-92" href="#__codelineno-5-92"></a>    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="p">[</span><span class="s2">"db"</span><span class="p">]:</span>
+<a id="__codelineno-5-93" name="__codelineno-5-93" href="#__codelineno-5-93"></a>        <span class="n">db</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">3</span><span class="p">]))</span>
+<a id="__codelineno-5-94" name="__codelineno-5-94" href="#__codelineno-5-94"></a>    <span class="k">elif</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="p">[</span><span class="s2">"app"</span><span class="p">]:</span>
+<a id="__codelineno-5-95" name="__codelineno-5-95" href="#__codelineno-5-95"></a>        <span class="n">app</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">3</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">4</span><span class="p">]))</span>
+<a id="__codelineno-5-96" name="__codelineno-5-96" href="#__codelineno-5-96"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-5-97" name="__codelineno-5-97" href="#__codelineno-5-97"></a>        <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">]:</span>
+<a id="__codelineno-5-98" name="__codelineno-5-98" href="#__codelineno-5-98"></a>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"서버 1대, 동시 처리 </span><span class="si">{</span><span class="n">w</span><span class="si">:</span><span class="s2">2</span><span class="si">}</span><span class="s2">개, DB 동시 처리 100개: </span><span class="si">{</span><span class="n">run</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">w</span><span class="p">,</span><span class="w"> </span><span class="mi">100</span><span class="p">)</span><span class="si">:</span><span class="s2">6.1f</span><span class="si">}</span><span class="s2"> 요청/초"</span><span class="p">)</span>
+<a id="__codelineno-5-99" name="__codelineno-5-99" href="#__codelineno-5-99"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"서버 2대, 동시 처리  4개, DB 동시 처리 100개: </span><span class="si">{</span><span class="n">run</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">100</span><span class="p">)</span><span class="si">:</span><span class="s2">6.1f</span><span class="si">}</span><span class="s2"> 요청/초"</span><span class="p">)</span>
+<a id="__codelineno-5-100" name="__codelineno-5-100" href="#__codelineno-5-100"></a>        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">]:</span>
+<a id="__codelineno-5-101" name="__codelineno-5-101" href="#__codelineno-5-101"></a>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"서버 </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">대, 동시 처리  4개, DB 동시 처리  10개: </span><span class="si">{</span><span class="n">run</span><span class="p">(</span><span class="n">n</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="si">:</span><span class="s2">6.1f</span><span class="si">}</span><span class="s2"> 요청/초"</span><span class="p">)</span>
+</code></pre></div></p>
+<p>문제 3의 CPU 시간은 같은 폴더에 둔 아래 프로그램으로 쟀다. 주문 서버 프로세스가 6초 동안 쓴 CPU 시간을 그동안 처리한 요청 수로 나눈다.</p>
+<p><!-- py-check: skip -->
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># 65번 측정 2: 주문 서버가 요청 하나에 CPU를 얼마나 쓰나 (scale_measure.py와 같은 폴더에 둔다)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># 주문 서버(동시 16개)와 DB(동시 처리 100개)를 띄우고 부하를 준 뒤, 6초 동안 주문 서버 프로세스가 쓴 CPU 시간 ÷ 처리한 요청 수를 찍는다</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># (Windows는 프로세스의 CPU 시간을 15.6ms 눈금으로 세므로 요청을 많이 처리하게 해 눈금의 영향을 줄인다)</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="kn">import</span><span class="w"> </span><span class="nn">scale_measure</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">m</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="p">[</span><span class="s2">"app"</span><span class="p">]:</span>              <span class="c1"># 주문 서버: 2초 뒤부터 6초 동안의 CPU 시간과 요청 수를 잰다</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="n">count</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="n">original</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">serve</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">counting_serve</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">handle</span><span class="p">):</span>        <span class="c1"># 요청마다 수를 센 뒤 원래 서버로 띄운다</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">h</span><span class="p">():</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>            <span class="n">r</span> <span class="o">=</span> <span class="n">handle</span><span class="p">()</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>            <span class="n">count</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>            <span class="k">return</span> <span class="n">r</span>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>        <span class="n">original</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span>
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a>    <span class="n">m</span><span class="o">.</span><span class="n">serve</span> <span class="o">=</span> <span class="n">counting_serve</span>
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">report</span><span class="p">():</span>
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>        <span class="n">c0</span><span class="p">,</span> <span class="n">p0</span> <span class="o">=</span> <span class="n">count</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">time</span><span class="o">.</span><span class="n">process_time</span><span class="p">()</span>
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">6.0</span><span class="p">)</span>
+<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>        <span class="n">c1</span><span class="p">,</span> <span class="n">p1</span> <span class="o">=</span> <span class="n">count</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">time</span><span class="o">.</span><span class="n">process_time</span><span class="p">()</span>
+<a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"요청 </span><span class="si">{</span><span class="n">c1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">c0</span><span class="si">}</span><span class="s2">개, CPU </span><span class="si">{</span><span class="p">(</span><span class="n">p1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">p0</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1000</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2"> ms, 요청 하나에 </span><span class="si">{</span><span class="p">(</span><span class="n">p1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">p0</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1000</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">c0</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> ms"</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a>    <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">report</span><span class="p">,</span> <span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a>    <span class="n">m</span><span class="o">.</span><span class="n">app</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">3</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">4</span><span class="p">]))</span>
+<a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a><span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a>    <span class="n">db</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">([</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="vm">__file__</span><span class="p">,</span> <span class="s2">"db"</span><span class="p">,</span> <span class="s2">"18600"</span><span class="p">,</span> <span class="s2">"100"</span><span class="p">])</span>
+<a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a>    <span class="n">app</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">([</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="vm">__file__</span><span class="p">,</span> <span class="s2">"app"</span><span class="p">,</span> <span class="s2">"18601"</span><span class="p">,</span> <span class="s2">"18600"</span><span class="p">,</span> <span class="s2">"16"</span><span class="p">])</span>
+<a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a>    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+<a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-6-34" name="__codelineno-6-34" href="#__codelineno-6-34"></a>        <span class="n">m</span><span class="o">.</span><span class="n">load</span><span class="p">([</span><span class="mi">18601</span><span class="p">],</span> <span class="n">seconds</span><span class="o">=</span><span class="mf">8.5</span><span class="p">)</span>
+<a id="__codelineno-6-35" name="__codelineno-6-35" href="#__codelineno-6-35"></a>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+<a id="__codelineno-6-36" name="__codelineno-6-36" href="#__codelineno-6-36"></a>    <span class="k">finally</span><span class="p">:</span>
+<a id="__codelineno-6-37" name="__codelineno-6-37" href="#__codelineno-6-37"></a>        <span class="n">app</span><span class="o">.</span><span class="n">kill</span><span class="p">();</span> <span class="n">db</span><span class="o">.</span><span class="n">kill</span><span class="p">();</span> <span class="n">app</span><span class="o">.</span><span class="n">wait</span><span class="p">();</span> <span class="n">db</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+</code></pre></div></p>
+</details>
+<h2 id="정리">정리<a class="headerlink" href="#정리" title="Permanent link">&para;</a></h2>
+<ul>
+<li>수직 확장은 코드를 거의 그대로 두지만 상한과 단일 장애점이 있다. 수평 확장은 늘린 만큼 받지만 상태를 서버 밖에 두고 요청을 나눠 줄 장치가 있어야 한다.</li>
+<li>처리량은 가장 좁은 곳에서 정해진다. 기다림이 많은 서버는 동시 처리 수만큼 빨라지다가, 함께 쓰는 DB 같은 곳에서 막힌다. 막힌 뒤에는 서버를 늘려도 그대로다.</li>
+<li>서버를 늘리기 전에 어디가 먼저 막히는지 재고, 서버가 무상태인지 확인한다.</li>
+</ul>
+<h2 id="관련-항목">관련 항목<a class="headerlink" href="#관련-항목" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../04-os/033-concurrency-vs-parallelism/">33번(동시성과 병렬성)</a>: 동시에 여러 일을 처리하는 것과 정말로 함께 실행하는 것</li>
+<li><a href="../../05-network/047-cookie-session-jwt/">47번(쿠키, 세션, 토큰(JWT))</a>: 로그인 상태를 쿠키, 세션, 토큰으로 유지하기</li>
+<li><a href="../../06-database/056-db-integration/">56번(애플리케이션과 DB 연동)</a>: 서버와 DB 사이의 커넥션 풀</li>
+<li><a href="../067-request-path/">67번(요청 경로의 구성 요소)</a>: 요청을 여러 서버에 나눠 주는 로드밸런서</li>
+<li><a href="../068-caching/">68번(캐싱 전략과 캐시 무효화)</a>: DB에 묻는 일을 줄이는 캐시</li>
+<li><a href="../../10-engineering/088-profiling/">88번(성능 측정과 프로파일링)</a>: 추측 대신 측정으로 병목 찾기</li>
+</ul>
+<h2 id="더-읽을거리">더 읽을거리<a class="headerlink" href="#더-읽을거리" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://12factor.net/processes">The Twelve-Factor App: Processes (무상태 프로세스)</a></li>
+<li><a href="https://docs.python.org/ko/3/library/socketserver.html">Python: socketserver (request_queue_size)</a></li>
+<li><a href="https://docs.python.org/ko/3/library/http.server.html">Python: http.server</a></li>
+</ul>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  맨위로
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="하단/푸터" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="이전: 아키텍처·분산 시스템·운영">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                이전
+              </span>
+              <div class="md-ellipsis">
+                아키텍처·분산 시스템·운영
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../066-monolith-vs-microservices/" class="md-footer__link md-footer__link--next" aria-label="다음: 66. 모놀리식 vs 마이크로서비스">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                다음
+              </span>
+              <div class="md-ellipsis">
+                66. 모놀리식 vs 마이크로서비스
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      글·그림 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ko">CC BY-NC-SA 4.0</a> · 코드 MIT
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.highlight", "content.code.copy", "toc.follow", "toc.integrate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\ud074\ub9bd\ubcf4\ub4dc\uc5d0 \ubcf5\uc0ac\ub428", "clipboard.copy": "\ud074\ub9bd\ubcf4\ub4dc\ub85c \ubcf5\uc0ac", "search.result.more.one": "\uc774 \ubb38\uc11c\uc5d0\uc11c 1\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.more.other": "\uc774 \ubb38\uc11c\uc5d0\uc11c #\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.none": "\uac80\uc0c9\uc5b4\uc640 \uc77c\uce58\ud558\ub294 \ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4", "search.result.one": "1\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.other": "#\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.placeholder": "\uac80\uc0c9\uc5b4\ub97c \uc785\ub825\ud558\uc138\uc694", "search.result.term.missing": "\ud3ec\ud568\ub418\uc9c0 \uc54a\uc740 \uac80\uc0c9\uc5b4", "select.version": "\ubc84\uc804 \uc120\ud0dd"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/layout.js"></script>
+      
+        <script src="../../javascripts/katex.js"></script>
+      
+        <script src="https://unpkg.com/katex@0.16.11/dist/katex.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+      
+    
+  </body>
+</html>

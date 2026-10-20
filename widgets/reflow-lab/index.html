@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>읽기와 쓰기가 부르는 레이아웃</title>
+<meta name="description" content="상자 수와 코드의 모양(번갈아 읽고 쓰기, 모아서, style 읽기)을 골라, 어느 읽기에서 브라우저가 레이아웃을 다시 계산해야 하는지와 그 횟수를 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  pre.code { margin: 0 0 8px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); font-size: 12.5px; white-space: pre; overflow-x: auto; }   /* 줄바꿈하면 주석이 코드 줄처럼 보인다. 좁으면 옆으로 민다 */
+  .ops { display: flex; flex-wrap: wrap; gap: 4px; }
+  .op { font-size: 12px; border-radius: 4px; padding: 1px 6px; border: 1px solid var(--line); }
+  .op.read { border-color: var(--read); background: var(--read-bg); }
+  .op.write { border-color: var(--write); background: var(--write-bg); }
+  .op.forced { outline: 2px solid var(--write); font-weight: 700; }
+  .op.frame { border-color: var(--accent); background: var(--accent-bg); font-weight: 700; }
+  .stats { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; font-size: 14px; }
+  .stats b { color: var(--accent); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>읽기와 쓰기가 부르는 레이아웃</h1>
+<p class="lead">상자마다 너비를 읽고 1px 넓힌다. 너비를 바꾼(쓴) 뒤에 레이아웃이 필요한 값(offsetWidth)을 읽으면, 브라우저는 그 자리에서 레이아웃을 다시 계산해야 한다. 횟수는 이 PC의 Chrome에서 잰 LayoutCount와 같다.</p>
+<div class="row" role="group" aria-label="상자 수">
+  <span class="label">상자</span>
+  <button class="btn" data-n="3">3개</button>
+  <button class="btn" data-n="5">5개</button>
+  <button class="btn" data-n="10">10개</button>
+</div>
+<div class="row" role="group" aria-label="코드">
+  <span class="label">코드</span>
+  <button class="btn" data-mode="interleave">번갈아 읽고 쓰기</button>
+  <button class="btn" data-mode="batch">모두 읽은 뒤 모두 쓰기</button>
+  <button class="btn" data-mode="styleRead">style.width를 읽기</button>
+</div>
+<pre class="code mono" id="code"></pre>
+<div class="ops" id="ops"></div>
+<div class="stats" id="stats"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ReflowLogic = (() => {
+  const CODE = {
+    interleave: "for (const b of boxes) {\n  const w = b.offsetWidth;          // 읽기\n  b.style.width = (w + 1) + \"px\";   // 쓰기\n}",
+    batch: "const ws = boxes.map(b => b.offsetWidth);                  // 모두 읽기\nboxes.forEach((b, i) => { b.style.width = (ws[i] + 1) + \"px\"; });  // 모두 쓰기",
+    styleRead: "for (const b of boxes) {\n  const w = parseInt(b.style.width);  // style 속성에 적어 둔 값을 읽기\n  b.style.width = (w + 1) + \"px\";\n}",
+  };
+  // 처음에는 레이아웃이 깨끗하다(첫 화면을 다 그린 뒤). 쓰면 더러워지고, 더러울 때 offsetWidth를 읽으면 그 자리에서 다시 계산한다.
+  // 코드가 끝난 뒤 다음 화면을 그릴 때 더러우면 한 번 더 계산한다.
+  function run(mode, n) {
+    const ops = [];
+    let dirty = false, forced = 0;
+    const read = (i, needsLayout) => {
+      const f = needsLayout && dirty;
+      if (f) { forced++; dirty = false; }
+      ops.push({ kind: "read", i, forced: f });
+    };
+    const write = i => { dirty = true; ops.push({ kind: "write", i }); };
+    if (mode === "interleave") for (let i = 0; i < n; i++) { read(i, true); write(i); }
+    if (mode === "batch") { for (let i = 0; i < n; i++) read(i, true); for (let i = 0; i < n; i++) write(i); }
+    if (mode === "styleRead") for (let i = 0; i < n; i++) { read(i, false); write(i); }
+    const frame = dirty ? 1 : 0;
+    if (frame) ops.push({ kind: "frame" });
+    return { ops, forced, frame, total: forced + frame };
+  }
+  return { CODE, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ReflowLogic;
+  const $ = id => document.getElementById(id);
+  let n = 5, mode = "interleave";
+  const NOTE = {
+    interleave: "쓰고 나서 바로 offsetWidth를 읽을 때마다 레이아웃을 다시 계산한다. 이 PC의 Chrome에서 상자 1,000개를 이렇게 하니 레이아웃이 1,000번, 188~219ms가 걸렸다.",
+    batch: "읽기를 먼저 다 하면 레이아웃이 깨끗할 때 읽어서 다시 계산할 일이 없다. 다음 화면을 그릴 때 한 번만 계산한다. 상자 1,000개도 레이아웃 1번, 2.1~2.4ms였다.",
+    styleRead: "style.width는 style 속성에 적어 둔 값(상자마다 style='width: 100px'처럼 적어 두었다고 하자)을 읽을 뿐이라 레이아웃이 필요 없다. 실제 크기가 필요할 때(offsetWidth, getBoundingClientRect)만 계산을 부른다.",
+  };
+  function render() {
+    const r = L.run(mode, n);
+    $("code").textContent = L.CODE[mode];
+    $("ops").innerHTML = r.ops.map(o => o.kind === "frame"
+      ? `<span class="op frame">다음 화면을 그리며 레이아웃</span>`
+      : `<span class="op ${o.kind}${o.forced ? " forced" : ""}">${o.i + 1}번 ${o.kind === "read" ? "읽기" : "쓰기"}${o.forced ? ": 레이아웃 다시" : ""}</span>`).join("");
+    $("stats").innerHTML = `<span>코드 안에서 강제 레이아웃 <b>${r.forced}</b>번</span><span>화면 그릴 때 <b>${r.frame}</b>번</span><span>합계 <b>${r.total}</b>번</span>`;
+    $("note").textContent = NOTE[mode];
+    document.querySelectorAll("[data-n]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.n) === n)));
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  }
+  document.querySelectorAll("[data-n]").forEach(b => b.addEventListener("click", () => { n = Number(b.dataset.n); render(); }));
+  document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { mode = b.dataset.mode; render(); }));
+  const q = new URLSearchParams(location.search).get("mode");
+  if (L.CODE[q]) mode = q;
+  render();
+})();
+</script>
+</body>
+</html>

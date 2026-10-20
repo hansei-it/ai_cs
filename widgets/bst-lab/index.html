@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이진 탐색 트리 실험실</title>
+<meta name="description" content="넣을 차례를 골라 키를 하나씩 넣으며 트리 모양과 높이가 어떻게 달라지는지 보고, 키를 찾아 몇 번 비교하는지 센다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3044;
+    --write: #ffa94d;
+    --write-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=text] { font: inherit; font-size: 14px; width: 5em; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .queue { font-size: 14px; margin: 4px 0 6px; }
+  .queue .done { color: var(--muted); text-decoration: line-through; }
+  .queue .next { color: var(--write); font-weight: 700; }
+  svg { display: block; width: 100%; height: auto; }
+  svg .edge { stroke: var(--line); stroke-width: 2; }
+  svg .edge.on { stroke: var(--read); stroke-width: 3; }
+  svg circle { fill: var(--soft); stroke: var(--muted); stroke-width: 1.5; }
+  svg circle.path { fill: var(--read-bg); stroke: var(--read); stroke-width: 2.5; }
+  svg circle.hit { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 3; }
+  svg circle.new { fill: var(--write-bg); stroke: var(--write); stroke-width: 2.5; }
+  svg text { fill: var(--fg); font-size: 13px; text-anchor: middle; font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; }
+  svg text.lv { fill: var(--muted); font-size: 11px; text-anchor: end; }
+  .stats { font-size: 14px; margin-top: 4px; }
+  .stats b { color: var(--accent); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>이진 탐색 트리 실험실</h1>
+<p class="lead">작으면 왼쪽, 크거나 같으면 오른쪽으로 내려가 빈자리에 넣는다. 앞의 두 차례는 같은 키 7개인데, 넣는 차례에 따라 트리 모양이 달라진다.</p>
+
+<div class="row" role="group" aria-label="넣을 차례">
+  <span class="label">차례</span>
+  <button class="btn mono" data-preset="0">50 30 70 20 40 60 80</button>
+  <button class="btn mono" data-preset="1">20 30 40 50 60 70 80</button>
+  <button class="btn mono" data-preset="2">40 20 60 10 30 50 70 25 55</button>
+</div>
+<div class="queue mono" id="queue"></div>
+<div class="row">
+  <button class="btn" id="step">하나 넣기</button>
+  <button class="btn" id="all">모두 넣기</button>
+  <span class="label" style="margin-left:6px">찾기</span>
+  <input type="text" id="key" inputmode="numeric" aria-label="찾을 키">
+  <button class="btn" id="find">찾기</button>
+</div>
+<svg id="tree" viewBox="0 0 600 120" role="img" aria-label="이진 탐색 트리"></svg>
+<div class="stats" id="stats"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const BstLogic = (() => {
+  const PRESETS = [[50, 30, 70, 20, 40, 60, 80], [20, 30, 40, 50, 60, 70, 80], [40, 20, 60, 10, 30, 50, 70, 25, 55]];
+
+  // 트리: nodes[i] = { key, left, right } (left/right는 nodes의 번호, 없으면 -1), root = 0 (비었으면 nodes가 빈 배열)
+  const empty = () => ({ nodes: [] });
+  function insert(tree, key) {
+    const nodes = tree.nodes.map(n => ({ ...n }));
+    const path = [];
+    nodes.push({ key, left: -1, right: -1 });
+    const id = nodes.length - 1;
+    if (id > 0) {
+      let p = 0;
+      for (;;) {
+        path.push(nodes[p].key);
+        const side = key < nodes[p].key ? "left" : "right";
+        if (nodes[p][side] === -1) { nodes[p][side] = id; break; }
+        p = nodes[p][side];
+      }
+    }
+    return { tree: { nodes }, path, id };
+  }
+  const build = keys => keys.reduce((t, k) => insert(t, k).tree, empty());
+
+  // 찾기: 비교한 키들 (찾은 키까지)
+  function find(tree, key) {
+    const path = [];
+    let p = tree.nodes.length ? 0 : -1;
+    while (p !== -1) {
+      const n = tree.nodes[p];
+      path.push(n.key);
+      if (key === n.key) return { found: true, path };
+      p = key < n.key ? n.left : n.right;
+    }
+    return { found: false, path };
+  }
+
+  // 높이 = 층 수 (뿌리에서 가장 깊은 잎까지 거치는 노드 수), 깊이 = 뿌리가 0
+  function depths(tree) {
+    const d = new Array(tree.nodes.length).fill(0);
+    const order = tree.nodes.length ? [0] : [];
+    for (let i = 0; i < order.length; i++) {
+      const n = tree.nodes[order[i]];
+      for (const c of [n.left, n.right]) if (c !== -1) { d[c] = d[order[i]] + 1; order.push(c); }
+    }
+    return d;
+  }
+  const height = tree => (tree.nodes.length ? Math.max(...depths(tree)) + 1 : 0);
+
+  function inorder(tree) {
+    const out = [], stack = [];
+    let p = tree.nodes.length ? 0 : -1;
+    while (p !== -1 || stack.length) {
+      while (p !== -1) { stack.push(p); p = tree.nodes[p].left; }
+      p = stack.pop();
+      out.push(tree.nodes[p].key);
+      p = tree.nodes[p].right;
+    }
+    return out;
+  }
+
+  // 그리기 자리: x는 중위 순회 차례, y는 깊이
+  function layout(tree) {
+    const d = depths(tree);
+    // 같은 키가 여럿이면 노드 번호로 차례를 구분한다
+    const rank = new Array(tree.nodes.length);
+    const stack = [];
+    let p = tree.nodes.length ? 0 : -1, r = 0;
+    while (p !== -1 || stack.length) {
+      while (p !== -1) { stack.push(p); p = tree.nodes[p].left; }
+      p = stack.pop(); rank[p] = r++; p = tree.nodes[p].right;
+    }
+    return tree.nodes.map((n, i) => ({ key: n.key, x: rank[i], y: d[i] }));
+  }
+
+  return { PRESETS, empty, insert, build, find, height, inorder, layout, depths };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = BstLogic;
+  const $ = id => document.getElementById(id);
+  const NS = "http://www.w3.org/2000/svg";
+  let preset = 0, keys = [], pos = 0, tree = L.empty(), hl = null, lastMsg = "";
+
+  function load(i) {
+    preset = i; keys = L.PRESETS[i]; pos = 0; tree = L.empty(); hl = null;
+    document.querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.preset) === i)));
+    render(i === 1 ? "이미 정렬된 차례다. 하나씩 넣으며 트리가 어느 쪽으로 자라는지 본다." : "\"하나 넣기\"를 눌러 차례대로 넣는다. 넣을 때마다 뿌리에서 출발해 작으면 왼쪽, 크면 오른쪽으로 간다.");
+  }
+
+  function render(msg) {
+    lastMsg = msg;
+    $("queue").innerHTML = "넣을 키: " + keys.map((k, i) => `<span class="${i < pos ? "done" : i === pos ? "next" : ""}">${k}</span>`).join(" ");
+    $("step").disabled = pos >= keys.length;
+    $("all").disabled = pos >= keys.length;
+    const svg = $("tree");
+    svg.textContent = "";
+    const lay = L.layout(tree), n = lay.length, h = L.height(tree);
+    // 화면 폭에 맞춰 그려 글자가 줄지 않게 한다 (휴대폰에서 600으로 그리면 글자가 절반 크기로 준다)
+    const W = Math.round(Math.min(600, Math.max(320, svg.clientWidth || 600)));
+    const DX = Math.min(64, (W - 60) / Math.max(1, n)), DY = 46, R = Math.min(16, DX / 2 - 1.5);
+    const X = x => 40 + DX / 2 + x * DX, Y = y => 26 + y * DY;
+    svg.setAttribute("viewBox", `0 0 ${W} ${Math.max(70, 26 + Math.max(0, h - 1) * DY + 30)}`);
+    const pathSet = hl ? hl.path : [];
+    // 선
+    tree.nodes.forEach((nd, i) => {
+      for (const c of [nd.left, nd.right]) if (c !== -1) {
+        const e = document.createElementNS(NS, "line");
+        const on = hl && hl.kind === "find" && pathSet.includes(nd.key) && pathSet.includes(tree.nodes[c].key);
+        e.setAttribute("class", "edge" + (on ? " on" : ""));
+        e.setAttribute("x1", X(lay[i].x)); e.setAttribute("y1", Y(lay[i].y)); e.setAttribute("x2", X(lay[c].x)); e.setAttribute("y2", Y(lay[c].y));
+        svg.append(e);
+      }
+    });
+    // 층 번호
+    for (let d = 0; d < h; d++) {
+      const t = document.createElementNS(NS, "text");
+      t.setAttribute("class", "lv"); t.setAttribute("x", 26); t.setAttribute("y", Y(d) + 4); t.textContent = `${d + 1}층`;
+      svg.append(t);
+    }
+    // 노드
+    lay.forEach((p, i) => {
+      const c = document.createElementNS(NS, "circle");
+      let cls = "";
+      if (hl && hl.kind === "insert" && hl.id === i) cls = "new";
+      else if (hl && hl.kind === "find" && hl.found && p.key === hl.key) cls = "hit";
+      else if (hl && pathSet.includes(p.key)) cls = "path";
+      c.setAttribute("class", cls); c.setAttribute("cx", X(p.x)); c.setAttribute("cy", Y(p.y)); c.setAttribute("r", R);
+      const t = document.createElementNS(NS, "text");
+      t.setAttribute("x", X(p.x)); t.setAttribute("y", Y(p.y) + 4.5); t.textContent = p.key;
+      svg.append(c, t);
+    });
+    $("stats").innerHTML = n ? `노드 ${n}개, 높이 <b>${h}층</b>. 중위 순회: <span class="mono">${L.inorder(tree).join(" ")}</span>` : "트리가 비었다.";
+    $("note").textContent = msg;
+  }
+
+  function step() {
+    if (pos >= keys.length) return;
+    const k = keys[pos++];
+    const r = L.insert(tree, k);
+    tree = r.tree;
+    hl = { kind: "insert", id: r.id, path: r.path };
+    render(r.path.length ? `${k}: ${r.path.join(" → ")} 차례로 비교하며 내려가 빈자리에 넣었다 (비교 ${r.path.length}번).` : `${k}: 트리가 비어 있어 뿌리가 되었다.`);
+  }
+
+  $("step").addEventListener("click", step);
+  $("all").addEventListener("click", () => { while (pos < keys.length) step(); render(`모두 넣었다. 높이는 ${L.height(tree)}층이다. 찾기는 많아야 높이만큼 비교한다.` + (preset === 1 ? " 정렬된 차례로 넣으면 한쪽으로만 자라 연결 리스트와 같아진다." : "")); });
+  $("find").addEventListener("click", () => {
+    const k = Number($("key").value.trim());
+    if (!Number.isInteger(k) || $("key").value.trim() === "") { render("찾을 키를 정수로 쓴다."); return; }
+    const r = L.find(tree, k);
+    hl = { kind: "find", key: k, path: r.path, found: r.found };
+    if (!r.path.length) render(`${k}: 트리가 비어 있어 비교할 노드가 없다. 없는 키다.`);
+    else render(r.found ? `${k}: ${r.path.join(" → ")}, ${r.path.length}번 비교해 찾았다.` : `${k}: ${r.path.join(" → ")}까지 ${r.path.length}번 비교하고 빈자리에 닿았다. 없는 키다.`);
+  });
+  $("key").addEventListener("keydown", e => { if (e.key === "Enter") $("find").click(); });
+  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => load(Number(b.dataset.preset))));
+  let resizeTimer = 0;
+  addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => render(lastMsg), 100); });
+  load(0);
+})();
+</script>
+</body>
+</html>

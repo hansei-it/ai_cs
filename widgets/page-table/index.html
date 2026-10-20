@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>페이지 표로 주소 바꾸기</title>
+<meta name="description" content="프로세스와 읽기·쓰기를 고르고 주소를 누르면, 페이지 표를 거쳐 실제 주소로 바뀌는 과정과 페이지 폴트, 디스크로 내보내기, 접근 위반을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --bad: #c92a2a;
+    --bad-bg: #fdecec;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --bad: #ff8787;
+    --bad-bg: #3d1f22;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.addr { font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input.hex { width: 6.5em; font: 13px "JetBrains Mono", Consolas, "Malgun Gothic", monospace; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+  .trans { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px; background: var(--soft); border-radius: 8px; min-height: 52px; }
+  .addrbox { display: inline-flex; border-radius: 5px; overflow: hidden; border: 1px solid var(--line); font-size: 16px; font-weight: 700; }
+  .addrbox span { padding: 2px 7px; }
+  .addrbox .pg { background: var(--write-bg); color: var(--write); }
+  .addrbox .off { background: var(--read-bg); color: var(--read); }
+  .arrow { color: var(--muted); }
+  .cap { font-size: 12px; color: var(--muted); }
+  .badge { display: inline-block; margin-top: 8px; padding: 2px 9px; border-radius: 12px; font-size: 13px; font-weight: 700; }
+  .badge.hit { background: var(--accent-bg); color: var(--accent); }
+  .badge.soft { background: var(--write-bg); color: var(--write); }
+  .badge.hard { background: var(--write); color: var(--bg); }
+  .badge.violation { background: var(--bad-bg); color: var(--bad); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .panel h2 { font-size: 13px; margin: 0 0 4px; color: var(--muted); font-weight: 700; }
+  .panel.on h2 { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 3px 4px; text-align: left; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 400; }
+  tr.sel td { background: var(--accent-bg); }
+  td.where.mem { color: var(--accent); font-weight: 700; }
+  td.where.disk { color: var(--write); font-weight: 700; }
+  td.where.new, td.where.none { color: var(--muted); }
+  .frames { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 4px; }
+  .frame { border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font-size: 12px; min-height: 46px; background: var(--bg); }
+  .frame .fn { color: var(--muted); }
+  .frame .who { font-weight: 700; }
+  .frame.sel { border-color: var(--accent); background: var(--accent-bg); }
+  .frame.out { border-color: var(--write); border-style: dashed; }
+  .disk { margin-top: 6px; font-size: 13px; }
+  .disk b { color: var(--write); }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+  .stat { background: var(--soft); border-radius: 6px; padding: 6px 8px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 17px; font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+  @media (max-width: 520px) {
+    body { padding: 10px; font-size: 14px; }
+    .grid { grid-template-columns: 1fr; }
+    .frames, .stats { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>페이지 표로 주소 바꾸기</h1>
+<p class="lead">주소의 첫 자리가 페이지 번호, 나머지 세 자리가 페이지 안 위치(오프셋)다. 페이지는 실제 PC처럼 4KiB(0x1000)이고, 실제 메모리는 프레임 4개뿐이다.</p>
+
+<div class="row" role="group" aria-label="프로세스">
+  <span class="label">프로세스</span>
+  <button class="btn" data-proc="A">A</button>
+  <button class="btn" data-proc="B">B</button>
+  <span class="label" style="margin-left:8px">동작</span>
+  <button class="btn" data-op="read">읽기</button>
+  <button class="btn" data-op="write">쓰기</button>
+</div>
+<div class="row" role="group" aria-label="주소">
+  <span class="label">주소</span>
+  <button class="btn addr" data-addr="2C08">0x2C08</button>
+  <button class="btn addr" data-addr="1A20">0x1A20</button>
+  <button class="btn addr" data-addr="3004">0x3004</button>
+  <button class="btn addr" data-addr="4100">0x4100</button>
+  <button class="btn addr" data-addr="0000">0x0000</button>
+  <span><input class="hex" id="hex" value="0x" aria-label="주소 직접 입력 (16진수 네 자리)" maxlength="6"> <button class="btn" id="go">실행</button></span>
+</div>
+
+<div class="trans" id="trans" aria-live="polite"></div>
+
+<div class="grid">
+  <div class="panel" id="pA"><h2>프로세스 A의 페이지 표</h2><div id="tA"></div></div>
+  <div class="panel" id="pB"><h2>프로세스 B의 페이지 표</h2><div id="tB"></div></div>
+</div>
+<div class="panel" style="margin-top:10px"><h2>실제 메모리 (프레임 4개)</h2><div class="frames" id="frames"></div>
+  <div class="disk" id="disk"></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="k">접근</div><div class="v mono" id="sAcc"></div></div>
+  <div class="stat"><div class="k">페이지 폴트</div><div class="v mono" id="sFault"></div></div>
+  <div class="stat"><div class="k">그중 디스크에서</div><div class="v mono" id="sHard"></div></div>
+  <div class="stat"><div class="k">어림 시간</div><div class="v mono" id="sTime"></div></div>
+</div>
+<p class="note" id="note"></p>
+<div class="foot"><span class="cap">어림 시간은 이 PC에서 잰 값으로 셌다: 이어진 페이지 0.01µs, 새 페이지 0.5µs, 디스크에서 100µs.</span><button class="btn" id="reset">처음부터</button></div>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const PtLogic = (() => {
+  const PAGE = 0x1000;
+  // 한 번 접근에 드는 어림 시간(µs). 이 PC에서 잰 값: 이어진 페이지 0.011~0.013µs, 새 페이지 0.33~0.54µs, SSD에서 91~115µs
+  const COST = { hit: 0.01, soft: 0.5, hard: 100, violation: 0 };
+  // st: mem(프레임에 있다), new(받았지만 아직 안 씀), disk(디스크로 내보냄)
+  function initial() {
+    return {
+      tables: {
+        A: { 1: { use: "코드", w: false, st: "mem", frame: 0 }, 2: { use: "전역 변수", w: true, st: "mem", frame: 1 },
+             3: { use: "힙", w: true, st: "new", frame: null }, 4: { use: "힙", w: true, st: "new", frame: null } },
+        B: { 1: { use: "코드", w: false, st: "mem", frame: 0 }, 2: { use: "전역 변수", w: true, st: "mem", frame: 3 },
+             3: { use: "힙", w: true, st: "new", frame: null } },
+      },
+      // 프레임마다 이 프레임을 쓰는 [프로세스, 페이지]와 마지막으로 쓴 때. 프레임 0은 A와 B가 함께 쓰는 코드다
+      frames: [{ owners: [["A", 1], ["B", 1]], last: 1 }, { owners: [["A", 2]], last: 2 }, null, { owners: [["B", 2]], last: 3 }],
+      disk: [],
+      clock: 3,
+      stats: { access: 0, hit: 0, soft: 0, hard: 0, violation: 0, time: 0 },
+    };
+  }
+  const split = addr => ({ page: Math.floor(addr / PAGE), offset: addr % PAGE });
+  // 읽기/쓰기 한 번. 새 상태와 결과를 돌려준다 (받은 상태는 바꾸지 않는다)
+  function access(state, proc, addr, write) {
+    const s = structuredClone(state);
+    const { page, offset } = split(addr);
+    const r = { page, offset, kind: null, reason: null, frame: null, phys: null, evicted: null };
+    s.stats.access++;
+    const e = s.tables[proc][page];
+    if (!e || (write && !e.w)) {
+      r.kind = "violation";
+      r.reason = e ? "readonly" : "unmapped";
+      s.stats.violation++;
+      return { state: s, result: r };
+    }
+    let kind = "hit";
+    if (e.st !== "mem") {
+      kind = e.st === "new" ? "soft" : "hard";
+      let f = s.frames.indexOf(null);
+      if (f < 0) {
+        // 빈 프레임이 없으면 가장 오래 안 쓴 프레임을 디스크로 내보낸다 (함께 쓰는 프레임은 내보내지 않는다)
+        let best = -1;
+        s.frames.forEach((fr, i) => { if (fr.owners.length === 1 && (best < 0 || fr.last < s.frames[best].last)) best = i; });
+        f = best;
+        const [vp, vpg] = s.frames[f].owners[0];
+        Object.assign(s.tables[vp][vpg], { st: "disk", frame: null });
+        s.disk.push([vp, vpg]);
+        r.evicted = { proc: vp, page: vpg, frame: f };
+      }
+      if (kind === "hard") s.disk = s.disk.filter(([p, g]) => !(p === proc && g === page));
+      s.frames[f] = { owners: [[proc, page]], last: 0 };
+      Object.assign(e, { st: "mem", frame: f });
+    }
+    s.clock++;
+    s.frames[e.frame].last = s.clock;
+    s.stats[kind]++;
+    s.stats.time = Math.round((s.stats.time + COST[kind]) * 100) / 100;
+    Object.assign(r, { kind, frame: e.frame, phys: e.frame * PAGE + offset });
+    return { state: s, result: r };
+  }
+  // "0x2C08", "2c08" 같은 입력을 0~0xFFFF의 수로. 잘못되면 null
+  function parse(text) {
+    const m = /^\s*(?:0x)?([0-9a-f]{1,4})\s*$/i.exec(text);
+    return m ? parseInt(m[1], 16) : null;
+  }
+  const hex = (v, n = 4) => v.toString(16).toUpperCase().padStart(n, "0");
+  return { PAGE, COST, initial, split, access, parse, hex };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = PtLogic;
+  const $ = id => document.getElementById(id);
+  let state = L.initial(), proc = "A", write = false, last = null;   // last: 마지막 접근 {proc, addr, write, result}
+
+  // 조사: 16진수 한 자리를 읽은 끝소리로 고른다 (0 영, 1 일, 3 삼, 6 육, 7 칠, 8 팔은 받침이 있고 2, 4, 5, 9, A~F는 없다)
+  const hasB = v => "013678".includes(String(v).slice(-1));
+  const eul = v => `${v}${hasB(v) ? "을" : "를"}`;
+  const eun = v => `${v}${hasB(v) ? "은" : "는"}`;
+  const iga = v => `${v}${hasB(v) ? "이" : "가"}`;
+  const ro = v => `${v}${"036".includes(String(v).slice(-1)) ? "으로" : "로"}`;   // ㄹ 받침(1, 7, 8)은 "로"
+  const where = e => e.st === "mem" ? `프레임 ${e.frame}` : e.st === "new" ? "아직 안 씀" : "디스크";
+  function table(p) {
+    const t = state.tables[p];
+    const sel = last && last.proc === p ? last.result.page : -1;
+    let html = "<table><thead><tr><th>페이지</th><th>용도</th><th>권한</th><th>어디에</th></tr></thead><tbody>";
+    for (const pg of Object.keys(t).map(Number).sort((a, b) => a - b)) {
+      const e = t[pg];
+      html += `<tr${pg === sel ? ' class="sel"' : ""}><td class="mono">${pg}</td><td>${e.use}</td><td>${e.w ? "읽기·쓰기" : "읽기만"}</td><td class="where ${e.st}">${where(e)}</td></tr>`;
+    }
+    const other = sel >= 0 && !t[sel];
+    html += `<tr${other ? ' class="sel"' : ""}>${other ? `<td class="mono">${sel.toString(16).toUpperCase()}</td>` : "<td>그 밖</td>"}<td colspan="2">받지 않은 주소</td><td class="where none">없음</td></tr>`;
+    return html + "</tbody></table>";
+  }
+  function render() {
+    $("tA").innerHTML = table("A");
+    $("tB").innerHTML = table("B");
+    $("pA").classList.toggle("on", proc === "A");
+    $("pB").classList.toggle("on", proc === "B");
+    const r = last && last.result;
+    $("frames").innerHTML = state.frames.map((f, i) => {
+      const cls = ["frame"];
+      if (r && r.frame === i) cls.push("sel");
+      if (r && r.evicted && r.evicted.frame === i) cls.push("out");
+      const who = f ? f.owners.map(([p, g]) => `${p}의 ${g}`).join(", ") : "빈칸";
+      const what = f ? state.tables[f.owners[0][0]][f.owners[0][1]].use : "";
+      return `<div class="${cls.join(" ")}"><div class="fn mono">프레임 ${i} · 0x${L.hex(i * L.PAGE)}</div><div class="who">${who}</div><div class="cap">${what}</div></div>`;
+    }).join("");
+    $("disk").innerHTML = `디스크(페이징 파일): ${state.disk.length ? state.disk.map(([p, g]) => `<b>${p}의 ${g}</b>`).join(", ") : "비어 있음"} <span class="cap">· 함께 쓰는 프레임 0은 이 위젯에서 내보내지 않는다</span>`;
+    const st = state.stats;
+    $("sAcc").textContent = `${st.access}번`;
+    $("sFault").textContent = `${st.soft + st.hard}번`;
+    $("sHard").textContent = `${st.hard}번`;
+    $("sTime").textContent = `${st.time.toFixed(2)}µs`;
+    document.querySelectorAll("[data-proc]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.proc === proc)));
+    document.querySelectorAll("[data-op]").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.op === "write") === write)));
+
+    if (!last) {
+      $("trans").innerHTML = `<span class="cap">주소를 누르면 여기서 바뀌는 과정을 보여 준다. 먼저 A와 B에서 같은 0x2C08을 읽어 본다.</span>`;
+      $("note").textContent = "A와 B는 같은 프로그램이라 쓰는 주소도 같다. 페이지 표가 따로 있어서 같은 주소가 다른 프레임으로 갈 수 있다.";
+      return;
+    }
+    const { page, offset, kind, reason, frame, phys, evicted } = r;
+    const op = last.write ? "쓰기" : "읽기";
+    let html = `<span class="cap">${last.proc} ${op}</span><span class="addrbox mono"><span class="pg">${L.hex(page, 1)}</span><span class="off">${L.hex(offset, 3)}</span></span>`;
+    html += `<span class="arrow">→</span><span class="cap">${last.proc}의 페이지 표 ${L.hex(page, 1)}번 칸</span><span class="arrow">→</span>`;
+    if (kind === "violation") html += `<span class="cap">${reason === "unmapped" ? "칸이 없다" : "읽기만 되는 페이지"}</span>`;
+    else html += `<span class="cap">프레임 ${frame}</span><span class="arrow">→</span><span class="addrbox mono"><span class="pg">${L.hex(frame, 1)}</span><span class="off">${L.hex(offset, 3)}</span></span>`;
+    const label = { hit: "바로 바꿨다", soft: "페이지 폴트: 새 프레임을 받았다", hard: "페이지 폴트: 디스크에서 읽어 왔다", violation: "접근 위반 (0xC0000005)" }[kind];
+    html += `<div style="flex-basis:100%"><span class="badge ${kind}">${label}</span></div>`;
+    $("trans").innerHTML = html;
+
+    const pg = L.hex(page, 1), off = L.hex(offset, 3);
+    const out = evicted ? ` 빈 프레임이 없어서 가장 오래 안 쓴 ${evicted.proc}의 페이지 ${eul(evicted.page)} 디스크로 내보내 프레임 ${eul(evicted.frame)} 비웠다.` : "";
+    let note;
+    if (kind === "hit") note = `페이지 ${eun(pg)} 프레임 ${frame}에 있다. 오프셋 ${eun(off)} 그대로 두고 앞자리만 ${pg}에서 ${ro(frame)} 바꿔 실제 주소 ${iga("0x" + L.hex(phys))} 됐다.`;
+    else if (kind === "soft") note = `페이지 ${eun(pg)} 받아 두었지만 처음 쓰는 것이라 아직 프레임이 없다.${out} 운영체제가 프레임 ${eul(frame)} 0으로 채워 이어 주고 같은 명령을 다시 실행했다.`;
+    else if (kind === "hard") note = `페이지 ${eun(pg)} 디스크로 내보냈던 것이다.${out} 운영체제가 디스크에서 읽어 와 프레임 ${frame}에 놓았다. 이어진 페이지보다 약 1만 배 느리다.`;
+    else if (reason === "unmapped") note = `페이지 ${eun(pg)} 이 프로세스가 받은 적이 없는 페이지다. 운영체제가 프로그램을 멈춘다. 실제 프로그램은 여기서 0xC0000005로 끝난다.`;
+    else note = `페이지 ${eun(pg)} ${state.tables[last.proc][page].use}라서 읽기만 된다. 쓰려고 하면 운영체제가 프로그램을 멈춘다(0xC0000005).`;
+    $("note").textContent = note;
+  }
+  function run(addr) {
+    const { state: s, result } = L.access(state, proc, addr, write);
+    state = s;
+    last = { proc, addr, write, result };
+    render();
+  }
+  document.querySelectorAll("[data-proc]").forEach(b => b.addEventListener("click", () => { proc = b.dataset.proc; render(); }));
+  document.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => { write = b.dataset.op === "write"; render(); }));
+  document.querySelectorAll("[data-addr]").forEach(b => b.addEventListener("click", () => run(parseInt(b.dataset.addr, 16))));
+  const goInput = () => {
+    const v = L.parse($("hex").value);
+    if (v === null) { $("note").textContent = "주소는 16진수 네 자리까지 쓴다. 예: 0x2C08"; return; }
+    run(v);
+  };
+  $("go").addEventListener("click", goInput);
+  $("hex").addEventListener("keydown", e => { if (e.key === "Enter") goInput(); });
+  $("reset").addEventListener("click", () => { state = L.initial(); last = null; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

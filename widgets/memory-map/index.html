@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>변수는 메모리 어디에 있을까</title>
+<meta name="description" content="‘다시 실행’과 32·64비트를 바꿔 가며, 이 PC에서 실제로 찍힌 변수 주소가 어느 영역에 어떤 순서로 놓이는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --c-code: #3f51b5;
+    --c-data: #1971c2;
+    --c-heap: #c2410c;
+    --c-stack: #237032;
+    --changed: #fff3bf;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --c-code: #8c9eff;
+    --c-data: #74c0fc;
+    --c-heap: #ffa94d;
+    --c-stack: #69db7c;
+    --changed: #4a4220;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .runno { font-size: 13px; color: var(--muted); }
+
+  .main { display: flex; flex-wrap: wrap; gap: 14px 22px; margin-top: 6px; }
+  .panel h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
+  .code { font-size: 13px; line-height: 1.7; background: var(--soft); border-radius: 6px; padding: 8px 10px; white-space: pre; }
+  .code .v { border-radius: 3px; padding: 0 2px; cursor: pointer; font-weight: 700; }
+  .code .v:hover, .code .v.sel { outline: 2px solid var(--accent); }
+
+  .map { min-width: 280px; }
+  .edge { font-size: 12px; color: var(--muted); }
+  .entry { display: grid; grid-template-columns: 12px auto 1fr; gap: 0 8px; align-items: center; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .entry.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .entry.changed .addr { background: var(--changed); border-radius: 3px; }
+  .chip { width: 12px; height: 12px; border-radius: 3px; }
+  .entry .name { font-weight: 700; font-size: 14px; white-space: nowrap; }
+  .entry .name small { font-weight: 400; color: var(--muted); }
+  .entry .addr { font-size: 14px; justify-self: end; padding: 0 3px; }
+  .gap { font-size: 12px; color: var(--muted); padding: 2px 0 2px 26px; }
+  .gap.big { color: var(--fg); }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .code { font-size: 12px; }
+    .map { min-width: 0; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<h1>변수는 메모리 어디에 있을까</h1>
+
+<div class="row" role="group" aria-label="빌드">
+  <span class="label">빌드</span>
+  <button class="btn" data-arch="x64" aria-pressed="true">64비트 (x64)</button>
+  <button class="btn" data-arch="x86" aria-pressed="false">32비트 (x86)</button>
+</div>
+<div class="row">
+  <span class="label">실행</span>
+  <button class="btn primary" id="rerun">다시 실행</button>
+  <span class="runno" id="runno"></span>
+</div>
+
+<div class="main">
+  <div class="panel">
+    <h2>프로그램 (변수 이름을 누르면 지도에 표시된다)</h2>
+    <div class="code mono" id="code"></div>
+  </div>
+  <div class="panel map">
+    <h2>찍힌 주소를 큰 것부터 (간격은 실제 비율이 아니다)</h2>
+    <div class="edge">↑ 높은 주소</div>
+    <div id="map"></div>
+    <div class="edge">↓ 낮은 주소 (0)</div>
+  </div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const MapLogic = (() => {
+  // 이 PC(Windows 11, VS 2026 cl /W3)에서 같은 프로그램을 세 번씩 실행해 찍힌 주소 그대로.
+  const VARS = [
+    { key: "main", region: "코드", color: "code", what: "함수의 기계어. 읽고 실행만 할 수 있다." },
+    { key: "count", region: "데이터", color: "data", what: "전역 데이터 중 초기값이 있는 변수. 프로그램이 끝날 때까지 있다." },
+    { key: "total", region: "BSS", color: "data", what: "전역 데이터 중 초기값이 없는 변수. 0으로 시작하고, 실행 파일에는 자리를 차지하지 않는다." },
+    { key: "heap", region: "힙", color: "heap", what: "malloc으로 받은 메모리. free할 때까지 있다." },
+    { key: "local", region: "스택", color: "stack", what: "지역 변수. 함수가 끝나면 사라진다." },
+  ];
+  const ARCH = {
+    x64: {
+      ptr: 8, max: "00007FFFFFFEFFFF",
+      runs: [
+        { main: "00007FF6976E1000", count: "00007FF697701000", total: "00007FF697702648", heap: "000001F94C6BBFB0", local: "00000013216FF9D0" },
+        { main: "00007FF6976E1000", count: "00007FF697701000", total: "00007FF697702648", heap: "000001D9ED162400", local: "000000D6ECB1F890" },
+        { main: "00007FF6976E1000", count: "00007FF697701000", total: "00007FF697702648", heap: "000001F112732400", local: "00000036DDFAFC00" },
+      ],
+    },
+    x86: {
+      ptr: 4, max: "7FFEFFFF",
+      runs: [
+        { main: "007D1000", count: "007EC000", total: "007ED020", heap: "00F47968", local: "00CFF9B8" },
+        { main: "007D1000", count: "007EC000", total: "007ED020", heap: "00965F70", local: "0073F918" },
+        { main: "007D1000", count: "007EC000", total: "007ED020", heap: "01625F70", local: "012FFD10" },
+      ],
+    },
+  };
+
+  const val = hex => BigInt("0x" + hex);
+
+  // 주소가 큰 것부터 차례로: [{ key, addr }]
+  function sorted(arch, run) {
+    const r = ARCH[arch].runs[run];
+    return VARS.map(v => ({ key: v.key, addr: r[v.key] })).sort((a, b) => (val(b.addr) > val(a.addr) ? 1 : -1));
+  }
+
+  // 바이트 수를 읽기 좋게: 1024배 단위, 유효 숫자 두 자리
+  function size(bytes) {
+    const units = ["바이트", "KiB", "MiB", "GiB", "TiB"];
+    let v = Number(bytes), u = 0;
+    while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
+    const s = v >= 10 ? Math.round(v).toString() : (Math.round(v * 10) / 10).toString();
+    return u === 0 ? `${s}바이트` : `${s}${units[u]}`;
+  }
+
+  // 이웃한 두 주소 사이의 거리
+  const gap = (hi, lo) => size(val(hi) - val(lo));
+
+  // 이전 실행과 비교해 주소가 바뀐 변수
+  function changed(arch, run, prev) {
+    if (prev == null) return [];
+    const a = ARCH[arch].runs[run], b = ARCH[arch].runs[prev];
+    return VARS.map(v => v.key).filter(k => a[k] !== b[k]);
+  }
+
+  return { VARS, ARCH, sorted, size, gap, changed };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = MapLogic;
+  const $ = id => document.getElementById(id);
+  const V = Object.fromEntries(L.VARS.map(v => [v.key, v]));
+  let arch = "x64", run = 0, prev = null, sel = "local";
+
+  const CODE = [
+    ["int ", ["count"], " = 7;    /* 초기값이 있는 전역 */"],
+    ["int ", ["total"], ";        /* 초기값이 없는 전역 */"],
+    [""],
+    ["int ", ["main"], "(void) {"],
+    ["    int ", ["local"], " = 1;"],
+    ["    int *p = ", ["heap", "malloc(sizeof(int))"], ";"],
+    ["    printf(\"%p\\n\", &count); …"],
+    ["}"],
+  ];
+  const code = $("code");
+  for (const line of CODE) {
+    for (const part of line) {
+      if (typeof part === "string") code.append(part);
+      else {
+        const s = document.createElement("span");
+        s.className = "v";
+        s.dataset.key = part[0];
+        s.textContent = part[1] || part[0];
+        s.style.color = `var(--c-${V[part[0]].color})`;
+        s.addEventListener("click", () => { sel = part[0]; render(); });
+        code.append(s);
+      }
+    }
+    code.append("\n");
+  }
+
+  function render() {
+    const list = L.sorted(arch, run);
+    const changed = L.changed(arch, run, prev);
+    const map = $("map");
+    map.textContent = "";
+    list.forEach((e, i) => {
+      if (i > 0) {
+        const g = document.createElement("div");
+        const bytes = BigInt("0x" + list[i - 1].addr) - BigInt("0x" + e.addr);
+        g.className = "gap" + (bytes >= 1n << 30n ? " big" : "");
+        g.textContent = `↕ ${L.gap(list[i - 1].addr, e.addr)} 떨어져 있다`;
+        map.append(g);
+      }
+      const v = V[e.key];
+      const d = document.createElement("div");
+      d.className = "entry" + (e.key === sel ? " sel" : "") + (changed.includes(e.key) ? " changed" : "");
+      d.innerHTML = `<span class="chip" style="background:var(--c-${v.color})"></span><span class="name">${v.region} <small class="mono">${e.key === "heap" ? "p" : e.key}</small></span><span class="addr mono">${e.addr}</span>`;
+      d.addEventListener("click", () => { sel = e.key; render(); });
+      map.append(d);
+    });
+    code.querySelectorAll(".v").forEach(s => s.classList.toggle("sel", s.dataset.key === sel));
+    const a = L.ARCH[arch];
+    $("runno").textContent = `${run + 1}번째 실행 (기록 3번 중) · 포인터 ${a.ptr}바이트 · 프로그램이 쓸 수 있는 가장 큰 주소 ${a.max}`;
+    let note = `${V[sel].region}: ${V[sel].what}`;
+    if (changed.length) note += ` 방금 다시 실행해서 ${changed.map(k => V[k].region).join("과 ")}의 주소가 바뀌었다(노란색). 코드와 전역 변수는 그대로다.`;
+    $("note").textContent = note;
+    document.querySelectorAll("[data-arch]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.arch === arch)));
+  }
+
+  $("rerun").addEventListener("click", () => { prev = run; run = (run + 1) % L.ARCH[arch].runs.length; render(); });
+  document.querySelectorAll("[data-arch]").forEach(b => b.addEventListener("click", () => { arch = b.dataset.arch; run = 0; prev = null; render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

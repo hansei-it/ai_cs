@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>커밋한 키는 어디에 남을까</title>
+<meta name="description" content="가짜 키를 커밋하고, 지우고, push하고, 기록을 다시 쓰고, 폐기하는 버튼을 눌러 키가 어디에 남고 아직 통하는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .places { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 4px 0 8px; }
+  .place { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; text-align: center; }
+  .place .name { color: var(--muted); }
+  .place .v { font-weight: 700; }
+  .place.has { border-color: var(--write); background: var(--write-bg); }
+  .place.has .v { color: var(--write); }
+  .place .v.none { color: var(--good); }
+  .key { font-size: 14px; margin-bottom: 6px; }
+  .log { margin: 0; padding-left: 22px; font-size: 13px; color: var(--muted); }
+  @media (max-width: 560px) { .places { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>커밋한 키는 어디에 남을까</h1>
+<p class="lead">가짜 API 키를 코드에 적어 커밋한 뒤에 할 수 있는 일들이다(이 강의가 만든 흉내). 버튼을 누를 때마다 키가 남은 곳과 키가 아직 통하는지가 바뀐다.</p>
+<div class="row" role="group" aria-label="할 일">
+  <button class="btn" data-a="write">키를 코드에 적어 커밋</button>
+  <button class="btn" data-a="remove">키를 지우고 커밋</button>
+  <button class="btn" data-a="push">push</button>
+  <button class="btn" data-a="clone">누군가 원격을 복제</button>
+  <button class="btn" data-a="rewrite">기록을 다시 쓰고 강제 push</button>
+  <button class="btn" data-a="rotate">키 폐기하고 새로 발급</button>
+  <button class="btn" id="reset">처음부터</button>
+</div>
+<div class="places" id="places"></div>
+<div class="key" id="key"></div>
+<ol class="log" id="log"></ol>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const LeakLogic = (() => {
+  // 키가 있을 수 있는 곳. 키를 지운 커밋은 코드에서만 지우고, 기록에는 키를 적은 커밋이 그대로 남는다.
+  const PLACES = [["code", "작업 폴더의 코드"], ["history", "내 저장소의 기록"], ["remote", "원격 저장소"], ["clone", "남이 복제한 저장소"]];
+  const LABELS = {
+    write: "키를 코드에 적어 커밋했다.", remove: "키를 지우고 커밋했다.", push: "push했다.", clone: "누군가 원격을 복제했다.",
+    rewrite: "기록을 다시 써서 키를 빼고 강제 push했다.", rotate: "키를 폐기하고 새 키를 발급해 환경 변수에 넣었다.",
+  };
+  // old: 기록을 다시 쓰고 강제 push한 뒤에도 원격(GitHub)에 해시로 남은 옛 커밋(키를 바꿔 막을 수 있으면 지원팀도 지워 주지 않는다)
+  // ahead: 아직 push하지 않은 커밋이 있다
+  const start = () => ({ code: false, history: false, remote: false, old: false, clone: false, valid: true, written: false, ahead: false });
+
+  // 할 수 있는 일인지(키를 적는 것은 처음 한 번, 지우는 것은 코드에 있을 때, 다시 쓰는 것은 기록에 있을 때)
+  function can(s, a) {
+    return a === "write" ? !s.written : a === "remove" ? s.code : a === "push" ? s.history && s.ahead
+      : a === "clone" ? s.remote && !s.clone : a === "rewrite" ? s.history || s.remote : a === "rotate" ? s.valid && s.written : true;
+  }
+  function act(s, a) {
+    if (!can(s, a)) return s;
+    const n = { ...s };
+    if (a === "write") Object.assign(n, { code: true, history: true, written: true, ahead: true });
+    if (a === "remove") Object.assign(n, { code: false, ahead: true });
+    if (a === "push") Object.assign(n, { remote: n.remote || n.history, ahead: false });   // push는 기록(커밋)을 보낸다
+    if (a === "clone") n.clone = n.clone || n.remote;
+    if (a === "rewrite") Object.assign(n, { code: false, history: false, old: n.old || n.remote, remote: false, ahead: false }); // 복제본과 원격의 옛 커밋은 못 지운다
+    if (a === "rotate") n.valid = false;                                     // 새 키는 코드 밖에 두므로 기록에 없다
+    return n;
+  }
+  function run(actions) { return actions.reduce(act, start()); }
+  const at = (s, k) => k === "remote" ? s.remote || s.old : s[k];
+  function places(s) { return PLACES.filter(([k]) => at(s, k)).map(([, name]) => name); }
+
+  // 지금 상태를 한 문장으로
+  function verdict(s) {
+    const where = places(s);
+    if (!s.written) return "start";
+    if (!s.valid) return "dead";
+    if (s.remote || s.old || s.clone) return "exposed";
+    if (where.length) return "local";
+    return "gone";
+  }
+  return { PLACES, LABELS, start, can, act, run, at, places, verdict };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = LeakLogic;
+  const $ = id => document.getElementById(id);
+  let s = L.start(), log = [];
+
+  function render() {
+    // 폐기한 키는 남아 있어도 위험하지 않으므로 경고색을 거두고 "폐기된 키"로 적는다
+    $("places").innerHTML = L.PLACES.map(([k, name]) => {
+      const here = L.at(s, k), oldOnly = k === "remote" && !s.remote && s.old;
+      const text = !here ? "없음" : !s.valid ? (oldOnly ? "옛 커밋에 폐기된 키" : "폐기된 키") : oldOnly ? "옛 커밋에 남음" : "키 있음";
+      return `<div class="place${here && s.valid ? " has" : ""}"><div class="name">${name}</div><div class="v${here && s.valid ? "" : " none"}">${text}</div></div>`;
+    }).join("");
+    $("key").innerHTML = !s.written ? "아직 키를 커밋하지 않았다."
+      : s.valid ? '커밋한 키: <span class="warn">아직 통한다</span>' : '커밋한 키: <span class="fine">폐기되어 통하지 않는다</span>';
+    $("log").innerHTML = log.map(a => `<li>${L.LABELS[a]}</li>`).join("");
+    document.querySelectorAll("[data-a]").forEach(b => { b.disabled = !L.can(s, b.dataset.a); });
+    const last = log[log.length - 1];
+    const v = L.verdict(s);
+    let note = v === "start" ? "'키를 코드에 적어 커밋'부터 누른다. 키는 이 강의가 만든 가짜다."
+      : v === "dead" ? "키가 폐기되어, 어디에 남아 있든 이제 쓸모없는 글자다. 새어 나간 키는 이것이 먼저다. 새 키는 코드 밖(환경 변수)에 둔다."
+      : v === "exposed" ? `키가 아직 통하고, ${L.places(s).filter(p => p !== "작업 폴더의 코드" && p !== "내 저장소의 기록").join("와 ")}에 있다. 내 손을 떠났다. 먼저 키를 폐기한다.`
+      : v === "local" ? "키가 아직 내 PC 안에만 있다. push하기 전이면 그 커밋을 고쳐 기록에서 빼도 되지만, 키를 바꾸는 것이 가장 확실하다."
+      : "키가 남은 곳이 없다. push하기 전에 뺐으니 밖으로 나가지 않았다. 다른 곳(채팅, 로그)에 붙여 넣은 적이 있으면 키를 바꾼다.";
+    if (last === "remove" && s.history && s.valid) note = "코드에서는 지웠지만, 키를 적은 커밋이 기록에 남았다(어떤 명령으로 찾는지는 문제 1에서 본다). " + note;
+    if (last === "push" && !s.code && s.valid) note = "코드에서 지운 뒤에 push해도 원격 기록에는 키를 적은 커밋이 그대로 있다. " + note;
+    if (last === "rewrite" && s.valid && (s.old || s.clone))
+      note = "기록을 다시 써도 " + [s.old && "GitHub에는 옛 커밋이 남아 커밋 번호(해시)로 열 수 있다(키를 바꿔 막을 수 있으면 지원팀도 지워 주지 않는다)",
+        s.clone && "이미 복제한 저장소에는 그대로 남는다"].filter(Boolean).join(". 또 ") + ". " + note;
+    $("note").textContent = note;
+  }
+  document.querySelectorAll("[data-a]").forEach(b => b.addEventListener("click", () => {
+    if (!L.can(s, b.dataset.a)) return;
+    s = L.act(s, b.dataset.a); log.push(b.dataset.a); render();
+    if (b.disabled) (document.querySelector("[data-a]:not(:disabled)") || $("reset")).focus();   // 누른 버튼이 잠기면 다음 버튼으로
+  }));
+  $("reset").addEventListener("click", () => { s = L.start(); log = []; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

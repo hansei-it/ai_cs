@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>되돌리기 연습</title>
+<meta name="description" content="실수한 커밋 C를 이미 push했는지 고르고 git 명령(restore, add, commit, revert, reset --soft, reset --hard, push)을 눌러, 원격, 내 기록, 스테이지, 작업 폴더가 어떻게 바뀌고 무엇이 사라지는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .cmds { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+  .cmds .btn { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", monospace; font-size: 12px; }
+  .board { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 6px 10px; align-items: center; font-size: 14px; }
+  .board .k { color: var(--muted); font-size: 13px; }
+  .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .cm { border: 1px solid var(--line); background: var(--soft); border-radius: 12px; padding: 1px 9px; font-size: 13px; }
+  .cm.new { border-color: var(--accent); background: var(--accent-bg); }
+  .cm.head { font-weight: 700; }
+  .cm.bad { border-color: var(--write); background: var(--write-bg); }
+  .link { color: var(--muted); font-size: 12px; }
+  .tag { font-size: 11px; color: var(--accent); font-weight: 700; margin-left: 4px; }
+  .file { border: 1px dashed var(--line); border-radius: 5px; padding: 1px 7px; font-size: 13px; margin-right: 4px; }
+  .none { color: var(--muted); font-size: 13px; }
+  .log { list-style: none; padding: 0; margin: 10px 0 0; font-size: 13px; }
+  .log li { padding: 1px 0; }
+  .log .ok { color: var(--good); font-weight: 700; }
+  .log .no { color: var(--write); font-weight: 700; }
+  .log .msg { color: var(--write); }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .board { grid-template-columns: 6em minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<h1>되돌리기 연습</h1>
+<p class="lead">커밋 A, B 다음에 실수한 커밋 C(할인 상한 6000원)를 만들었다. 작업 폴더에서는 README.md를 고치는 중이다(아직 add 안 함). 결과는 실제 git으로 같은 명령을 실행해 얻은 것과 같다.</p>
+<div class="row" role="group" aria-label="상황">
+  <span class="label">상황</span>
+  <button class="btn" data-p="1">C를 이미 push했다</button>
+  <button class="btn" data-p="0">C는 아직 내 컴퓨터에만 있다</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+<div class="cmds" role="group" aria-label="git 명령">
+  <button class="btn" data-op="restore">git restore README.md</button>
+  <button class="btn" data-op="add">git add README.md</button>
+  <button class="btn" data-op="unstage">git restore --staged README.md</button>
+  <button class="btn" data-op="commit">git commit -m "…"</button>
+  <button class="btn" data-op="revert">git revert --no-edit HEAD</button>
+  <button class="btn" data-op="reset-soft">git reset --soft HEAD~1</button>
+  <button class="btn" data-op="reset-hard">git reset --hard HEAD~1</button>
+  <button class="btn" data-op="push">git push</button>
+</div>
+
+<div class="board" id="board"></div>
+<ol class="log" id="log"></ol>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const UndoLogic = (() => {
+  // 83번의 되돌리기 실험을 그대로 흉내 낸다. 기대값은 실제 git(원격은 bare 저장소)으로 같은 명령을 차례로 실행해 구했다.
+  // 커밋 A: order.py "5000", README "v1" / B: order.py "5000+FS" / C: order.py "6000+FS"(실수) / 작업 폴더에서 README를 "v2"로 고치는 중
+  // 상태: 커밋들(id → {label, parent, tree}), 내 main(HEAD), 원격 main, 스테이지(index)와 작업 폴더의 파일 내용
+  const FILES = ["README.md", "order.py"];
+  function start(pushed) {
+    const commits = {
+      A: { label: "A", parent: null, tree: { "README.md": "v1", "order.py": "5000" } },
+      B: { label: "B", parent: "A", tree: { "README.md": "v1", "order.py": "5000+FS" } },
+      C: { label: "C", parent: "B", tree: { "README.md": "v1", "order.py": "6000+FS" } },
+    };
+    return { commits, head: "C", remote: pushed ? "C" : "B", index: { ...commits.C.tree }, work: { ...commits.C.tree, "README.md": "v2" }, next: 0 };
+  }
+  const clone = s => JSON.parse(JSON.stringify(s));
+  const chain = (s, id) => { const out = []; for (let c = id; c; c = s.commits[c].parent) out.unshift(c); return out; };
+  const same = (a, b) => FILES.every(f => a[f] === b[f]);
+  const NEW = ["D", "E", "F", "G", "H", "I", "J", "K"];
+  function newCommit(s, label, tree) {
+    const id = `n${s.next++}`;
+    s.commits[id] = { label, parent: s.head, tree: { ...tree } };
+    s.head = id;
+  }
+  // 명령 하나를 실행한다. { ok, msg }와 바뀐 상태를 돌려준다(실패하면 상태는 그대로)
+  function apply(s0, op) {
+    const s = clone(s0);
+    const head = s.commits[s.head];
+    if (op === "restore") { s.work["README.md"] = s.index["README.md"]; return { s, ok: true }; }
+    if (op === "add") { s.index["README.md"] = s.work["README.md"]; return { s, ok: true }; }
+    if (op === "unstage") { s.index["README.md"] = head.tree["README.md"]; return { s, ok: true }; }
+    if (op === "commit") {
+      if (same(s.index, head.tree)) return { s: s0, ok: false, msg: same(s.work, s.index) ? "nothing to commit, working tree clean" : 'no changes added to commit (use "git add" and/or "git commit -a")' };
+      const n = Object.values(s.commits).filter(c => NEW.includes(c.label)).length;
+      newCommit(s, NEW[n], s.index);
+      return { s, ok: true };
+    }
+    if (op === "revert") {
+      if (!head.parent) return { s: s0, ok: false, msg: "이 위젯에서는 첫 커밋 A는 되돌리지 않는다" };
+      const parent = s.commits[head.parent].tree;
+      const changed = FILES.filter(f => head.tree[f] !== parent[f]);
+      if (!same(s.index, head.tree) || changed.some(f => s.work[f] !== s.index[f])) return { s: s0, ok: false, msg: "error: your local changes would be overwritten by revert." };
+      const tree = { ...head.tree };
+      changed.forEach(f => { tree[f] = parent[f]; });
+      const m = /^Revert "(.*)"$/.exec(head.label);
+      newCommit(s, m ? `Reapply "${m[1]}"` : `Revert "${head.label}"`, tree);
+      changed.forEach(f => { s.index[f] = tree[f]; s.work[f] = tree[f]; });
+      return { s, ok: true };
+    }
+    if (op === "reset-soft" || op === "reset-hard") {
+      if (!head.parent) return { s: s0, ok: false, msg: "fatal: ambiguous argument 'HEAD~1': unknown revision or path not in the working tree." };
+      s.head = head.parent;
+      if (op === "reset-hard") { s.index = { ...s.commits[s.head].tree }; s.work = { ...s.commits[s.head].tree }; }
+      return { s, ok: true };
+    }
+    if (op === "push") {
+      const local = chain(s, s.head), remote = chain(s, s.remote);
+      if (remote.every((c, i) => local[i] === c)) { s.remote = s.head; return { s, ok: true }; }
+      return { s: s0, ok: false, msg: "! [rejected]        main -> main (non-fast-forward)" };
+    }
+    throw new Error(op);
+  }
+  // 화면과 테스트가 함께 쓰는 요약: 실제 git의 log, status --porcelain, 파일 내용과 같은 꼴
+  function view(s) {
+    const labels = id => chain(s, id).map(c => s.commits[c].label);
+    const head = s.commits[s.head].tree;
+    return {
+      local: labels(s.head), remote: labels(s.remote),
+      staged: FILES.filter(f => s.index[f] !== head[f]), work: FILES.filter(f => s.work[f] !== s.index[f]),
+      readme_edit: s.work["README.md"] === "v2", cap: s.work["order.py"].startsWith("6000") ? "cap = 6000" : "cap = 5000",
+    };
+  }
+  function run(pushed, ops) {
+    let s = start(pushed);
+    return ops.map(op => { const r = apply(s, op); s = r.s; return { op, ok: r.ok, msg: r.msg, ...view(s) }; });
+  }
+  return { start, apply, view, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = UndoLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const CMD = { restore: "git restore README.md", add: "git add README.md", unstage: "git restore --staged README.md", commit: 'git commit -m "…"',
+    revert: "git revert --no-edit HEAD", "reset-soft": "git reset --soft HEAD~1", "reset-hard": "git reset --hard HEAD~1", push: "git push" };
+  let pushed = true, state = L.start(pushed), history = [], last = null;
+  function chainHtml(labels, isLocal) {
+    if (!labels.length) return '<span class="none">(없음)</span>';
+    return labels.map((x, i) => `<span class="cm ${x === "C" ? "bad" : /^[A-C]$/.test(x) ? "" : "new"} ${isLocal && i === labels.length - 1 ? "head" : ""}">${esc(x)}</span>`).join('<span class="link">─</span>')
+      + (isLocal ? '<span class="tag">HEAD</span>' : "");
+  }
+  function explain(r, before) {
+    if (!r) return "명령을 눌러 본다. 같은 실수(C)를 되돌리는 방법이 여럿인데, 무엇이 남고 무엇이 사라지는지가 다르다.";
+    const v = L.view(r.s);
+    if (r.op === "restore") return before.work.includes("README.md") ? "작업 폴더의 README.md 고친 내용을 버렸다. git이 저장한 적이 없는 내용이라 되찾을 수 없다."
+      : before.staged.includes("README.md") ? "작업 폴더에는 버릴 바뀜이 없다. 스테이지에 올린 README.md는 그대로다(내리려면 git restore --staged)." : "작업 폴더에서 버릴 바뀜이 없다.";
+    if (r.op === "add") return "README.md의 고친 내용을 스테이지에 올렸다. 다음 커밋에 들어간다.";
+    if (r.op === "unstage") return "스테이지에서 내렸다. 고친 내용은 작업 폴더에 그대로 있다.";
+    if (r.op === "commit") return r.ok ? "스테이지에 올린 내용으로 새 커밋을 만들었다."
+      : r.msg.startsWith("nothing to commit") ? "고친 것이 없어 커밋할 것이 없다." : "스테이지가 비어 있어 커밋할 것이 없다. 먼저 git add로 올린다.";
+    if (r.op === "revert") return r.ok ? `마지막 커밋의 바뀜을 거꾸로 적용한 새 커밋을 더했다(order.py의 상한 ${v.cap.slice(6)}). 기록을 지우지 않으므로 이미 공유한 커밋도 안전하게 되돌린다.`
+      : r.msg.startsWith("error") ? "스테이지에 올린 것이 있어 되돌리기를 멈췄다. 커밋하거나 스테이지에서 내린 뒤 다시 한다." : r.msg;
+    if (r.op === "reset-soft" || r.op === "reset-hard") {
+      if (!r.ok) return "더 거슬러 갈 커밋이 없다.";
+      const shared = v.remote.length > v.local.length && v.remote.slice(0, v.local.length).every((x, i) => x === v.local[i]);
+      const tail = shared ? " 뺀 커밋은 원격에 그대로 남아 있어, 이대로 push하면 거절된다." : "";
+      return (r.op === "reset-soft"
+        ? "내 기록에서 마지막 커밋을 뺐다. 그 커밋의 바뀜은 스테이지에 남아 고쳐서 다시 커밋할 수 있다."
+        : `내 기록에서 마지막 커밋을 빼고 스테이지와 작업 폴더도 그 앞으로 돌렸다.${before.work.includes("README.md") || before.staged.includes("README.md") ? " 커밋하지 않은 README.md의 고친 내용도 사라졌다(되찾을 수 없다)." : ""}${shared ? "" : " 뺀 커밋은 이제 git reflog로만 찾을 수 있다."}`) + tail;
+    }
+    if (r.op === "push") return r.ok ? "원격이 내 기록과 같아졌다." : "원격에는 내 기록에 없는 커밋이 있어 거절되었다. 공유한 커밋을 reset으로 지웠기 때문이다. 이미 공유한 커밋은 revert로 되돌린다.";
+    return "";
+  }
+  function render() {
+    const v = L.view(state);
+    $("board").innerHTML = `<span class="k">원격 origin/main</span><span class="chain">${chainHtml(v.remote, false)}</span>`
+      + `<span class="k">내 기록 main</span><span class="chain">${chainHtml(v.local, true)}</span>`
+      + `<span class="k">스테이지</span><span>${v.staged.length ? v.staged.map(f => `<span class="file">${f}</span>`).join("") : '<span class="none">비었다</span>'}</span>`
+      + `<span class="k">작업 폴더</span><span>${v.work.length ? v.work.map(f => `<span class="file">${f} 고침</span>`).join("") : '<span class="none">고친 것 없음</span>'}`
+      + ` <span class="none">· order.py의 할인 상한 <b class="mono">${v.cap.slice(6)}</b></span></span>`;
+    $("log").innerHTML = history.map(h => `<li><span class="${h.ok ? "ok" : "no"}">${h.ok ? "✓" : "✗"}</span> <span class="mono">${esc(CMD[h.op])}</span>${h.msg && !h.ok ? ` <span class="msg mono">${esc(h.msg)}</span>` : ""}</li>`).join("");
+    $("note").textContent = explain(last, last && last.before);
+    document.querySelectorAll("[data-p]").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.p === "1") === pushed)));
+  }
+  document.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => {
+    const before = L.view(state);
+    const r = L.apply(state, b.dataset.op);
+    state = r.s;
+    history.push({ op: b.dataset.op, ok: r.ok, msg: r.msg });
+    last = { ...r, op: b.dataset.op, before };
+    render();
+  }));
+  const restart = () => { state = L.start(pushed); history = []; last = null; render(); };
+  document.querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => { pushed = b.dataset.p === "1"; restart(); }));
+  $("reset").addEventListener("click", restart);
+  render();
+})();
+</script>
+</body>
+</html>

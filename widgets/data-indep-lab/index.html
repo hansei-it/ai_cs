@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>저장 방식을 바꾸면 어느 프로그램이 멈출까</title>
+<meta name="description" content="저장 방식 바꾸기(열 추가, 저장 형식, 표 나누기)를 골라, CSV를 위치로 읽는 프로그램과 SQL 프로그램을 실제로 돌린 결과를 견준다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --ok: #2b8a3e;
+    --ok-bg: #e6f4ea;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --bad: #c92a2a;
+    --bad-bg: #fdecec;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --ok: #69db7c;
+    --ok-bg: #1f3a27;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --bad: #ff8787;
+    --bad-bg: #3f2224;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 10px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .what { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .what div { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font-size: 13px; }
+  .what .k { color: var(--muted); font-size: 12px; }
+  .what pre { margin: 2px 0 0; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+  .gridwrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 5px 7px; vertical-align: top; text-align: left; }
+  th { background: var(--soft); font-weight: 700; }
+  th .how { display: block; font-weight: 400; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  td.prog { font-weight: 700; width: 7.5em; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 4px; padding: 0 6px; margin-bottom: 3px; }
+  .badge.ok { color: var(--ok); background: var(--ok-bg); }
+  .badge.wrong { color: var(--write); background: var(--write-bg); }
+  .badge.error { color: var(--bad); background: var(--bad-bg); }
+  .out { display: block; font-size: 11.5px; color: var(--muted); word-break: break-all; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .what { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>저장 방식을 바꾸면 어느 프로그램이 멈출까</h1>
+<p class="lead">학생 세 명을 CSV 파일과 SQLite에 똑같이 두고, 저장 방식을 바꾼 뒤 세 프로그램을 실제로 돌린 결과다(이 PC, Python 3.14). 프로그램은 바꾸지 않았다.</p>
+
+<div class="row" role="group" aria-label="저장 방식 바꾸기">
+  <span class="label">바꾸기</span>
+  <button class="btn" data-change="none">처음 그대로</button>
+  <button class="btn" data-change="addcol">이메일 열 더하기</button>
+  <button class="btn" data-change="format">저장 형식 바꾸기</button>
+  <button class="btn" data-change="split">학과를 따로 된 표로</button>
+</div>
+<div class="what" id="what"></div>
+<div class="gridwrap"><table id="grid"></table></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const IndepLogic = (() => {
+  // 49번 측정(이 PC)에서 프로그램을 실제로 돌린 결과. kind: ok(맞는 값), wrong(틀린 값), error(멈춤)
+  // 쪽: csv(줄을 쉼표로 나눠 위치로 읽는다), sql(열 이름을 쓴다), star(SELECT *를 풀어 받고, INSERT에 열 이름을 안 쓴다)
+  const SIDES = ["csv", "sql", "star"];
+  const PROGRAMS = ["학과별 인원", "이름으로 학년 찾기", "학생 추가 뒤 인원"];
+  const CHANGES = ["none", "addcol", "format", "split"];
+  const OK_COUNT = "{'컴퓨터공학': 2, '경영': 1}", OK_ADD = "{'컴퓨터공학': 2, '경영': 2}";
+  const R = {
+    "csv/none": [["ok", OK_COUNT], ["ok", "1"], ["ok", OK_ADD]],
+    "sql/none": [["ok", "{'경영': 1, '컴퓨터공학': 2}"], ["ok", "1"], ["ok", "{'경영': 2, '컴퓨터공학': 2}"]],
+    "star/none": [["ok", OK_COUNT], ["ok", "1"], ["ok", OK_ADD]],
+    "csv/addcol": [["wrong", "{'김하나@school.example': 1, '이두리@school.example': 1, '박세나@school.example': 1}"],
+      ["error", "ValueError: invalid literal for int() with base 10: '경영'"],
+      ["wrong", "{'김하나@school.example': 1, '이두리@school.example': 1, '박세나@school.example': 1, '경영': 1}"]],
+    "sql/addcol": [["ok", "{'경영': 1, '컴퓨터공학': 2}"], ["ok", "1"], ["ok", "{'경영': 2, '컴퓨터공학': 2}"]],
+    "star/addcol": [["error", "ValueError: too many values to unpack (expected 4, got 5)"],
+      ["error", "ValueError: too many values to unpack (expected 4, got 5)"],
+      ["error", "OperationalError: table student has 5 columns but 4 values were supplied"]],
+    "csv/format": [["error", "IndexError: list index out of range"], ["error", "IndexError: list index out of range"],
+      ["error", "IndexError: list index out of range"]],
+    "sql/format": [["ok", "{'경영': 1, '컴퓨터공학': 2}"], ["ok", "1"], ["ok", "{'경영': 2, '컴퓨터공학': 2}"]],
+    "star/format": [["ok", OK_COUNT], ["ok", "1"], ["ok", OK_ADD]],
+    "csv/split": [["wrong", "{'1': 2, '2': 1}"], ["ok", "1"], ["wrong", "{'1': 2, '2': 1, '경영': 1}"]],
+    "sql/split": [["ok", "{'경영': 1, '컴퓨터공학': 2}"], ["ok", "1"], ["ok", "{'경영': 2, '컴퓨터공학': 2}"]],
+    "star/split": [["ok", OK_COUNT], ["ok", "1"], ["ok", OK_ADD]],
+  };
+  const cell = (side, change, prog) => { const [kind, out] = R[`${side}/${change}`][prog]; return { kind, out }; };
+  // 바꾸기 하나에서 쪽마다 멀쩡히 돈 프로그램 수
+  const okCount = change => Object.fromEntries(SIDES.map(s => [s, R[`${s}/${change}`].filter(([k]) => k === "ok").length]));
+  return { SIDES, PROGRAMS, CHANGES, cell, okCount };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = IndepLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const HEAD = {
+    csv: ["CSV를 위치로 읽는 프로그램", "line.split(\",\")[2]"],
+    sql: ["SQL, 열 이름을 쓴다", "SELECT dept, COUNT(*) …"],
+    star: ["SQL, SELECT *를 풀어 받는다", "for sid, name, dept, year in …"],
+  };
+  const WHAT = {
+    none: ["1,김하나,컴퓨터공학,2", "CREATE TABLE student (id, name, dept, year)"],
+    addcol: ["1,김하나,김하나@school.example,컴퓨터공학,2", "ALTER TABLE student ADD COLUMN email TEXT"],
+    format: ["1\\t김하나\\t컴퓨터공학\\t2   (쉼표 대신 탭)", "PRAGMA page_size = 8192; VACUUM;   (파일 안의 배치를 다시 짠다)"],
+    split: ["1,김하나,1,2   (학과는 dept.csv로, 여기는 번호만)", "학과 표를 따로 두고, student는 옛 모양의 뷰로 남긴다(쓰기는 트리거가 나눠 넣는다)"],
+  };
+  const BADGE = { ok: "맞는 값", wrong: "틀린 값", error: "멈춤" };
+  const NOTE = {
+    none: "처음에는 세 쪽 모두 맞게 돈다. 위의 바꾸기를 하나씩 눌러 본다.",
+    addcol: "CSV 파일은 이름 뒤에 이메일 칸을 끼웠고, SQLite의 ALTER TABLE은 열을 맨 끝에 붙였다. CSV 프로그램은 셋째 칸을 학과라고 믿어 이메일을 셌다. 열 이름으로 묻는 SQL은 그대로다. SQL이라도 SELECT *를 넷으로 풀거나 열 이름 없이 넣으면 열이 늘자 멈췄다.",
+    format: "구분자처럼 저장하는 모양이 바뀌면 그 모양을 아는 CSV 프로그램은 모두 멈춘다. SQLite는 파일 안을 다시 짜도 SQL이 그대로 돈다(물리적 독립성).",
+    split: "학과를 따로 빼면 CSV 프로그램은 학과 이름 대신 번호를 셌다. SQL은 옛 모양의 뷰를 남겨 두니 프로그램을 고치지 않아도 됐다(논리적 독립성).",
+  };
+  let change = "none";
+  function render() {
+    const [csvLine, sqlDo] = WHAT[change];
+    $("what").innerHTML = `<div><span class="k">CSV 파일의 첫 줄</span><pre class="mono">${esc(csvLine)}</pre></div><div><span class="k">SQLite에 한 일</span><pre class="mono">${esc(sqlDo)}</pre></div>`;
+    const head = `<tr><th>프로그램</th>${L.SIDES.map(s => `<th>${HEAD[s][0]}<span class="how mono">${esc(HEAD[s][1])}</span></th>`).join("")}</tr>`;
+    const rows = L.PROGRAMS.map((p, i) => `<tr><td class="prog">${p}</td>${L.SIDES.map(s => {
+      const c = L.cell(s, change, i);
+      return `<td><span class="badge ${c.kind}">${BADGE[c.kind]}</span><span class="out mono">${esc(c.out)}</span></td>`;
+    }).join("")}</tr>`).join("");
+    $("grid").innerHTML = `<thead>${head}</thead><tbody>${rows}</tbody>`;
+    $("note").textContent = NOTE[change];
+    document.querySelectorAll("[data-change]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.change === change)));
+  }
+  document.querySelectorAll("[data-change]").forEach(b => b.addEventListener("click", () => { change = b.dataset.change; render(); }));
+  const q = new URLSearchParams(location.search).get("change");
+  if (L.CHANGES.includes(q)) change = q;
+  render();
+})();
+</script>
+</body>
+</html>

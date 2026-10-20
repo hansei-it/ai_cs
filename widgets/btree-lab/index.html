@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B-Tree에 키를 넣고 찾기</title>
+<meta name="description" content="키를 하나씩 넣으며 노드가 넘쳐 나뉘고 층이 늘어나는 것을 보고, 키를 골라 찾을 때 읽는 노드와 키 수를 처음부터 훑을 때와 견준다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .seq { font-size: 13px; color: var(--muted); }
+  .seq b { color: var(--fg); }
+  .seq .next { color: var(--accent); font-weight: 700; text-decoration: underline; }
+  .tree { overflow-x: auto; }
+  .tree svg { display: block; width: 100%; min-width: 540px; height: auto; }
+  svg text { fill: var(--fg); font-size: 13px; text-anchor: middle; font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; }
+  svg .node { fill: var(--soft); stroke: var(--line); stroke-width: 1.5; }
+  svg .node.leaf { fill: var(--read-bg); stroke: var(--read); }
+  svg .node.on { stroke: var(--write); stroke-width: 3; }
+  svg .node.new { fill: var(--accent-bg); }
+  svg .edge { stroke: var(--line); stroke-width: 1.5; }
+  svg .edge.on { stroke: var(--write); stroke-width: 3; }
+  svg .lv { fill: var(--muted); font-size: 11px; text-anchor: start; font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif; }
+  .stat { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13.5px; margin-top: 6px; }
+  .stat b { font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>B-Tree에 키를 넣고 찾기</h1>
+<p class="lead">노드 하나에 키를 셋까지 둔다(실제 SQLite는 한 페이지 4KB에 이름 키가 150~190개 든다). DBMS가 흔히 쓰는 B+Tree 방식이라, 모든 키를 잎에 두고 잎이 나뉠 때 위 노드에 길잡이로 복사한다. 그래서 같은 키가 위와 잎에 두 번 보이기도 한다. 키는 아래 차례로 넣는다. 파랑은 잎 노드, 남색은 방금 바뀐 노드다.</p>
+<div class="row">
+  <button class="btn go" id="next">다음 키 넣기</button>
+  <button class="btn" id="all">모두 넣기</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+<p class="seq" id="seq"></p>
+<div class="row" role="group" aria-label="찾을 키">
+  <span class="label">찾기</span>
+  <button class="btn" data-find="3">3</button>
+  <button class="btn" data-find="37">37</button>
+  <button class="btn" data-find="58">58</button>
+  <button class="btn" data-find="96">96</button>
+  <button class="btn" data-find="50">50 (없는 키)</button>
+</div>
+<div class="tree"><svg id="svg" viewBox="0 0 600 220" role="img" aria-label="B-Tree"></svg></div>
+<div class="stat" id="stat"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const BTreeLogic = (() => {
+  const MAX = 3;                                   // 노드 하나의 키 수 한도
+  const KEYS = [41, 7, 63, 18, 85, 29, 52, 3, 96, 74, 12, 58, 37, 90, 24];
+  const node = leaf => ({ leaf, keys: [], kids: [] });
+  // 넣는다. 넘치면 둘로 나누고 (위로 올릴 키, 오른쪽 노드)를 돌려준다
+  function insert(n, k) {
+    if (n.leaf) {
+      n.keys = [...n.keys, k].sort((a, b) => a - b);
+      if (n.keys.length <= MAX) return null;
+      const r = node(true);
+      r.keys = n.keys.slice(2);
+      n.keys = n.keys.slice(0, 2);
+      return [r.keys[0], r];                         // 잎은 오른쪽의 첫 키를 위로 복사한다(잎에도 남는다)
+    }
+    const i = n.keys.filter(x => x <= k).length;
+    const up = insert(n.kids[i], k);
+    if (!up) return null;
+    n.keys.splice(i, 0, up[0]);
+    n.kids.splice(i + 1, 0, up[1]);
+    if (n.keys.length <= MAX) return null;
+    const r = node(false), mid = n.keys[2];
+    r.keys = n.keys.slice(3);
+    r.kids = n.kids.slice(3);
+    n.keys = n.keys.slice(0, 2);
+    n.kids = n.kids.slice(0, 3);
+    return [mid, r];                                 // 가운데 노드는 가운데 키를 위로 올린다
+  }
+  function add(root, k) {
+    const up = insert(root, k);
+    if (!up) return root;
+    const top = node(false);
+    top.keys = [up[0]];
+    top.kids = [root, up[1]];
+    return top;
+  }
+  function build(n) {
+    let root = node(true);
+    for (const k of KEYS.slice(0, n)) root = add(root, k);
+    return root;
+  }
+  function shape(root) {
+    const levels = [];
+    let cur = [root];
+    while (cur.length) { levels.push(cur.map(x => [...x.keys])); cur = cur.flatMap(x => x.kids); }
+    return levels;
+  }
+  // 찾을 때 거치는 노드(키 목록)와 찾았는지
+  function path(root, k) {
+    const out = [];
+    let n = root;
+    for (;;) {
+      out.push([...n.keys]);
+      if (n.leaf) return [out, n.keys.includes(k)];
+      n = n.kids[n.keys.filter(x => x <= k).length];
+    }
+  }
+  // 처음부터 차례로 훑으면 몇 개를 봐야 하나(정렬하지 않은 채 넣은 차례로 둔다)
+  const scanCount = (n, k) => { const i = KEYS.slice(0, n).indexOf(k); return i < 0 ? n : i + 1; };
+  return { MAX, KEYS, build, shape, path, scanCount };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = BTreeLogic;
+  const $ = id => document.getElementById(id);
+  let n = 0, find = null;
+  const NW = 26;                                    // 키 한 칸의 폭
+  // 조사: 숫자를 읽은 끝소리로 고른다(끝자리 2 이, 4 사, 5 오, 9 구는 받침이 없다)
+  const eul = k => `${k}${[2, 4, 5, 9].includes(k % 10) ? "를" : "을"}`;
+  function render() {
+    const root = L.build(n), prev = n ? L.shape(L.build(n - 1)) : [];
+    $("seq").innerHTML = "넣을 차례: " + L.KEYS.map((k, i) => i < n ? `<b>${k}</b>` : i === n ? `<span class="next">${k}</span>` : `${k}`).join(", ");
+    // 잎을 고르게 늘어놓고, 가운데 노드는 자식들의 가운데에 둔다
+    const leaves = [];
+    (function walk(x) { if (x.leaf) leaves.push(x); else x.kids.forEach(walk); })(root);
+    const total = leaves.reduce((s, x) => s + Math.max(1, x.keys.length) * NW + 18, 0);
+    let cx = Math.max(60, (600 - total) / 2 + 30);
+    const pos = new Map();
+    leaves.forEach(x => { const w = Math.max(1, x.keys.length) * NW; pos.set(x, cx + w / 2); cx += w + 18; });
+    const levels = [];
+    (function depth(x, d) { (levels[d] = levels[d] || []).push(x); x.kids.forEach(c => depth(c, d + 1)); })(root, 0);
+    for (let d = levels.length - 1; d >= 0; d--) for (const x of levels[d]) if (!x.leaf) pos.set(x, (pos.get(x.kids[0]) + pos.get(x.kids[x.kids.length - 1])) / 2);
+    const H = 64, top = 18;
+    const onPath = new Set();
+    let found = null;
+    if (find !== null && n) {
+      let x = root;
+      for (;;) { onPath.add(x); if (x.leaf) { found = x.keys.includes(find); break; } x = x.kids[x.keys.filter(k => k <= find).length]; }
+    }
+    const seen = [...onPath].reduce((a, x) => a + x.keys.length, 0);   // 거친 노드에 든 키 수(훑기와 같은 단위로 견준다)
+    let g = "";
+    levels.forEach((row, d) => {
+      g += `<text class="lv" x="4" y="${top + d * H + 18}">${d === levels.length - 1 ? "잎" : d === 0 ? "뿌리" : "가운데"}</text>`;
+      for (const x of row) for (const c of x.kids) {
+        const on = onPath.has(x) && onPath.has(c);
+        g += `<line class="edge ${on ? "on" : ""}" x1="${pos.get(x)}" y1="${top + d * H + 26}" x2="${pos.get(c)}" y2="${top + (d + 1) * H}"/>`;
+      }
+    });
+    const prevKeys = new Set((prev[0] ? prev.flat() : []).map(k => JSON.stringify(k)));
+    levels.forEach((row, d) => {
+      for (const x of row) {
+        const w = Math.max(1, x.keys.length) * NW, x0 = pos.get(x) - w / 2, y0 = top + d * H;
+        const isNew = n && !prevKeys.has(JSON.stringify(x.keys));
+        g += `<rect class="node ${x.leaf ? "leaf" : ""} ${onPath.has(x) ? "on" : ""} ${isNew ? "new" : ""}" x="${x0}" y="${y0}" width="${w}" height="26" rx="4"/>`;
+        x.keys.forEach((k, i) => { g += `<text x="${x0 + NW * i + NW / 2}" y="${y0 + 18}">${k}</text>`; });
+        if (!x.keys.length) g += `<text x="${pos.get(x)}" y="${y0 + 18}" style="fill:var(--muted)">비었음</text>`;
+      }
+    });
+    const height = top + levels.length * H;
+    $("svg").setAttribute("viewBox", `0 0 600 ${Math.max(90, height)}`);
+    $("svg").innerHTML = g;
+    const sh = L.shape(root);
+    $("stat").innerHTML = `<span>키 <b>${n}</b>개</span><span>층 <b>${sh.length}</b></span><span>노드 <b>${sh.flat().length}</b>개</span>`
+      + (find !== null && n ? `<span>${find} 찾기: 노드 <b>${onPath.size}</b>개(그 안의 키 <b>${seen}</b>개)를 읽어 ${found ? "찾았다" : "없다는 것을 알았다"}. 넣은 차례대로 훑으면 키 <b>${L.scanCount(n, find)}</b>개를 읽는다</span>` : "");
+    let msg;
+    if (!n) msg = "\"다음 키 넣기\"를 누른다. 노드에 키가 넷이 되면 둘로 나뉜다.";
+    else if (sh.length > (n > 1 ? L.shape(L.build(n - 1)).length : 1)) msg = `${eul(L.KEYS[n - 1])} 넣자 뿌리까지 넘쳐 층이 하나 늘었다. B-Tree는 아래로 자라지 않고 위로 자라서, 모든 잎이 늘 같은 깊이에 있다.`;
+    else if (sh.flat().length > (n > 1 ? L.shape(L.build(n - 1)).flat().length : 1)) msg = `${eul(L.KEYS[n - 1])} 넣자 잎이 넘쳐 둘로 나뉘고, 오른쪽 잎의 첫 키를 위 노드에 길잡이로 복사했다(잎에도 남는다).`;
+    else msg = `${eul(L.KEYS[n - 1])} 잎의 제자리에 넣었다. 키는 늘 정렬된 차례로 놓인다.`;
+    if (find !== null && n) msg = `${eul(find)} 찾는다. 노드마다 "이 키보다 작은가"를 견주어 내려갈 자식 하나만 고른다. 층 수만큼만 노드를 읽으면 된다.`;
+    $("note").textContent = msg;
+    $("next").disabled = $("all").disabled = n >= L.KEYS.length;
+    document.querySelectorAll("[data-find]").forEach(b => { b.setAttribute("aria-pressed", String(Number(b.dataset.find) === find)); b.disabled = !n; });
+  }
+  $("next").addEventListener("click", () => { n++; find = null; render(); });
+  $("all").addEventListener("click", () => { n = L.KEYS.length; find = null; render(); });
+  $("reset").addEventListener("click", () => { n = 0; find = null; render(); });
+  document.querySelectorAll("[data-find]").forEach(b => b.addEventListener("click", () => { find = Number(b.dataset.find); render(); }));
+  const q = new URLSearchParams(location.search).get("n");
+  if (q && Number.isInteger(Number(q)) && Number(q) >= 0 && Number(q) <= L.KEYS.length) n = Number(q);
+  render();
+})();
+</script>
+</body>
+</html>

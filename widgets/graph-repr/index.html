@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>인접 행렬과 인접 리스트</title>
+<meta name="description" content="행렬 칸을 눌러 간선을 넣고 빼며 그림·행렬·리스트가 함께 바뀌는 것을 보고, 꼭짓점을 골라 '이웃은?'과 '이어졌나?'에 두 표현이 몇 칸을 보는지 비교한다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3044;
+    --write: #ffa94d;
+    --write-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .main { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-start; }
+  svg { width: 200px; height: 200px; }
+  svg line { stroke: var(--muted); stroke-width: 2; }
+  svg line.on { stroke: var(--read); stroke-width: 3.5; }
+  svg circle { fill: var(--soft); stroke: var(--muted); stroke-width: 1.5; cursor: pointer; }
+  svg circle.sel { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 3; }
+  svg circle.nb { fill: var(--read-bg); stroke: var(--read); stroke-width: 2.5; }
+  svg text { fill: var(--fg); font-size: 14px; text-anchor: middle; pointer-events: none; font-family: "JetBrains Mono", Consolas, monospace; }
+  table { border-collapse: collapse; font-size: 13px; }
+  th { font-weight: 400; color: var(--muted); width: 26px; height: 22px; font-size: 12px; }
+  td { width: 26px; height: 26px; text-align: center; border: 1px solid var(--line); cursor: pointer; }
+  td.one { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+  td.diag { background: var(--soft); color: var(--muted); cursor: default; }
+  td.look { outline: 2px solid var(--write); outline-offset: -2px; }
+  .adj div { font-size: 13px; padding: 1px 4px; border-radius: 4px; }
+  .adj div.look { background: var(--write-bg); }
+  .adj span.hit { color: var(--write); font-weight: 700; }
+  .cost { font-size: 14px; margin-top: 8px; }
+  .cost b.m { color: var(--accent); }
+  .cost b.l { color: var(--read); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } svg { width: 170px; height: 170px; } }
+</style>
+</head>
+<body>
+<h1>인접 행렬과 인접 리스트</h1>
+<p class="lead">꼭짓점 6개짜리 무향 그래프다. 행렬 칸을 누르면 간선을 넣고 뺀다(무향이라 대칭인 칸도 함께 바뀐다). 그림의 꼭짓점을 누르면 그 꼭짓점을 고른다.</p>
+
+<div class="row" role="group" aria-label="질문">
+  <span class="label">질문</span>
+  <button class="btn" data-q="nb">고른 꼭짓점의 이웃은?</button>
+  <button class="btn" data-q="edge">고른 두 꼭짓점이 이어졌나?</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+
+<div class="main">
+  <div><h2>그림</h2><svg id="pic" viewBox="0 0 200 200" role="img" aria-label="그래프"></svg></div>
+  <div><h2>인접 행렬 (V × V칸)</h2><table class="mono" id="mat"></table></div>
+  <div><h2>인접 리스트 (이웃만 적는다)</h2><div class="adj mono" id="adj"></div></div>
+</div>
+<div class="cost" id="cost"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const GraphLogic = (() => {
+  const V = 6;
+  const START = [[0, 1], [0, 2], [1, 2], [1, 3], [3, 4], [4, 5]];
+  const key = (u, v) => (u < v ? `${u}-${v}` : `${v}-${u}`);
+  const initial = () => ({ edges: START.map(([u, v]) => key(u, v)) });
+  // 간선을 넣고 뺀다. 넣은 차례를 지켜 둔다 (리스트에 붙는 차례)
+  function toggle(state, u, v) {
+    if (u === v) return state;
+    const k = key(u, v);
+    return { edges: state.edges.includes(k) ? state.edges.filter(e => e !== k) : [...state.edges, k] };
+  }
+  const pairs = state => state.edges.map(k => k.split("-").map(Number));
+  function matrix(state) {
+    const m = Array.from({ length: V }, () => Array(V).fill(0));
+    for (const [u, v] of pairs(state)) m[u][v] = m[v][u] = 1;
+    return m;
+  }
+  // 리스트는 간선을 넣은 차례대로 양쪽에 붙인다 (Python 코드의 append와 같다)
+  function adjList(state) {
+    const a = Array.from({ length: V }, () => []);
+    for (const [u, v] of pairs(state)) { a[u].push(v); a[v].push(u); }
+    return a;
+  }
+  // 이웃 찾기: 행렬은 그 행 V칸을 모두 본다. 리스트는 이웃 수만큼 본다
+  function neighbors(state, u) {
+    const a = adjList(state)[u];
+    return { list: a, matrixLooks: V, listLooks: a.length };
+  }
+  // 이어졌나: 행렬은 한 칸, 리스트는 u의 이웃을 앞에서부터 v가 나올 때까지
+  function hasEdge(state, u, v) {
+    const a = adjList(state)[u];
+    const p = a.indexOf(v);
+    return { yes: p >= 0, matrixLooks: 1, listLooks: p >= 0 ? p + 1 : a.length };
+  }
+  const memory = state => ({ matrixCells: V * V, listEntries: 2 * state.edges.length });
+  return { V, START, initial, toggle, matrix, adjList, neighbors, hasEdge, memory };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = GraphLogic;
+  const $ = id => document.getElementById(id);
+  const NS = "http://www.w3.org/2000/svg";
+  const P = Array.from({ length: L.V }, (_, i) => [100 + 72 * Math.cos(-Math.PI / 2 + i * 2 * Math.PI / L.V), 100 + 72 * Math.sin(-Math.PI / 2 + i * 2 * Math.PI / L.V)]);
+  let state = L.initial(), q = "nb", sel = [0], msg = "";
+
+  function render() {
+    const m = L.matrix(state), adj = L.adjList(state);
+    // 질문에 따른 강조
+    let lookRow = null, lookCell = null, lookList = null, hitVal = null, cost = "";
+    if (q === "nb" && sel.length) {
+      const u = sel[0], r = L.neighbors(state, u);
+      lookRow = u; lookList = u;
+      cost = `이웃 찾기 — 행렬: ${u}번 행 <b class="m">${r.matrixLooks}칸</b>을 모두 본다. 리스트: ${u}번 줄의 <b class="l">${r.listLooks}칸</b>만 본다. 이웃은 ${r.list.join(", ") || "없다"}.`;
+    } else if (q === "edge" && sel.length === 2) {
+      const [u, v] = sel, r = L.hasEdge(state, u, v);
+      lookCell = [u, v]; lookList = u; hitVal = v;
+      cost = `${u}–${v} 이어졌나 — 행렬: [${u}][${v}] <b class="m">1칸</b>. 리스트: ${u}번 줄을 앞에서부터 <b class="l">${r.listLooks}칸</b> 본다. 답: ${r.yes ? "이어졌다" : "아니다"}.`;
+    } else if (q === "edge") cost = "그림에서 꼭짓점을 두 개 고른다.";
+    // 그림
+    const svg = $("pic");
+    svg.textContent = "";
+    const nb = q === "nb" && sel.length ? adj[sel[0]] : [];
+    for (const [u, row] of m.entries()) row.forEach((x, v) => {
+      if (!x || v <= u) return;
+      const e = document.createElementNS(NS, "line");
+      const on = (q === "nb" && sel[0] === u && nb.includes(v)) || (q === "nb" && sel[0] === v && nb.includes(u)) || (q === "edge" && sel.length === 2 && ((sel[0] === u && sel[1] === v) || (sel[0] === v && sel[1] === u)));
+      e.setAttribute("class", on ? "on" : "");
+      e.setAttribute("x1", P[u][0]); e.setAttribute("y1", P[u][1]); e.setAttribute("x2", P[v][0]); e.setAttribute("y2", P[v][1]);
+      svg.append(e);
+    });
+    P.forEach(([x, y], i) => {
+      const c = document.createElementNS(NS, "circle");
+      c.setAttribute("class", sel.includes(i) ? "sel" : nb.includes(i) ? "nb" : "");
+      c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 15);
+      c.addEventListener("click", () => pick(i));
+      const t = document.createElementNS(NS, "text");
+      t.setAttribute("x", x); t.setAttribute("y", y + 5); t.textContent = i;
+      svg.append(c, t);
+    });
+    // 행렬
+    let h = `<tr><th></th>${m.map((_, j) => `<th>${j}</th>`).join("")}</tr>`;
+    m.forEach((row, i) => {
+      h += `<tr><th>${i}</th>` + row.map((x, j) => {
+        const cls = [i === j ? "diag" : x ? "one" : "", lookRow === i || (lookCell && lookCell[0] === i && lookCell[1] === j) ? "look" : ""].join(" ").trim();
+        return `<td class="${cls}" data-i="${i}" data-j="${j}">${x}</td>`;
+      }).join("") + "</tr>";
+    });
+    $("mat").innerHTML = h;
+    $("mat").querySelectorAll("td").forEach(td => td.addEventListener("click", () => {
+      const i = Number(td.dataset.i), j = Number(td.dataset.j);
+      if (i === j) return;
+      const had = m[i][j];
+      // 조사: 숫자를 읽은 끝소리로 고른다 (2 이, 4 사, 5 오, 9 구는 받침 없음)
+      const gwa = n => ("2459".includes(String(n).slice(-1)) ? "와" : "과");
+      state = L.toggle(state, i, j);
+      msg = had ? `${i}–${j} 간선을 뺐다. 행렬은 [${i}][${j}]${gwa(j)} [${j}][${i}] 두 칸, 리스트는 두 줄에서 하나씩 지운다.` : `${i}–${j} 간선을 넣었다. 행렬은 두 칸을 1로, 리스트는 ${i}번 줄과 ${j}번 줄 끝에 하나씩 붙인다.`;
+      render();
+    }));
+    // 리스트
+    $("adj").innerHTML = adj.map((a, i) => `<div class="${lookList === i ? "look" : ""}">${i}: [${a.map(v => `<span class="${hitVal !== null && lookList === i && v === hitVal ? "hit" : ""}">${v}</span>`).join(", ")}]</div>`).join("");
+    const mem = L.memory(state);
+    $("cost").innerHTML = cost + `<br><span style="color:var(--muted)">크기 — 행렬 ${mem.matrixCells}칸(간선 수와 상관없이 V²), 리스트 ${L.V}줄에 ${mem.listEntries}칸(간선 ${state.edges.length}개 × 2, 모두 V + 2E)</span>`;
+    $("note").textContent = msg;
+    document.querySelectorAll("[data-q]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.q === q)));
+  }
+
+  function pick(i) {
+    if (q === "nb") sel = [i];
+    else sel = sel.length >= 2 || sel.includes(i) ? [i] : [...sel, i];
+    msg = q === "nb" ? `${i}번 꼭짓점을 골랐다.` : sel.length === 2 ? `${sel[0]}번과 ${sel[1]}번을 골랐다.` : `${i}번을 골랐다. 하나 더 고른다.`;
+    render();
+  }
+
+  document.querySelectorAll("[data-q]").forEach(b => b.addEventListener("click", () => {
+    q = b.dataset.q; sel = q === "nb" ? [0] : [1, 4];
+    msg = q === "nb" ? "그림에서 꼭짓점을 눌러 바꿔 본다. 이웃이 많든 적든 행렬은 한 행 전체를 본다." : "그림에서 꼭짓점 두 개를 눌러 바꿔 본다. 행렬은 늘 한 칸이다.";
+    render();
+  }));
+  $("reset").addEventListener("click", () => { state = L.initial(); sel = q === "nb" ? [0] : [1, 4]; msg = "처음 그래프로 돌렸다."; render(); });
+  msg = "그림에서 꼭짓점을 눌러 바꿔 본다. 이웃이 많든 적든 행렬은 한 행 전체를 본다.";
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>요청 하나의 길 따라가기</title>
+<meta name="description" content="HTTPServer와 ThreadingHTTPServer를 골라, GET 요청 하나가 do_GET에 닿기까지 지나는 함수를 한 칸씩 따라가고, 칸을 눌러 파일 이름, 줄 번호, 하는 일을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .frames { list-style: none; padding: 0; margin: 8px 0 4px; }
+  .frames li { display: grid; grid-template-columns: 1.6em minmax(0, 1fr); gap: 6px; align-items: baseline; padding: 4px 6px; border-left: 3px solid var(--line); margin-bottom: 3px; font-size: 14px; }
+  .frames li.cur { border-left-color: var(--accent); background: var(--accent-bg); }
+  .frames li.mine { border-left-color: var(--good); }
+  .frames .d { color: var(--muted); font-size: 12px; text-align: right; }
+  .frames .loc { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .frames .lib { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+  .why { margin: 6px 0 0; font-size: 14px; }
+  .hidden { color: var(--muted); font-size: 13px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>요청 하나의 길 따라가기</h1>
+<p class="lead">http.server로 띄운 서버에 GET 요청을 보내고 do_GET 안에서 호출 스택을 찍었다(Python 3.14.0). 바깥부터 한 칸씩 들어간다. 3.14.8에서는 server.py의 줄이 15줄, threading.py의 줄이 1줄 뒤다.</p>
+<div class="row" role="group" aria-label="서버 클래스">
+  <span class="label">서버</span>
+  <button class="btn" data-k="HTTPServer">HTTPServer</button>
+  <button class="btn" data-k="ThreadingHTTPServer">ThreadingHTTPServer</button>
+</div>
+<div class="row">
+  <button class="btn go" id="next">한 칸 들어가기</button>
+  <button class="btn" id="all">끝까지</button>
+  <button class="btn" id="restart">처음부터</button>
+</div>
+
+<ol class="frames" id="frames"></ol>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CodemapLogic = (() => {
+  // http.server로 띄운 서버에 GET 요청을 하나 보냈을 때, do_GET 안에서 찍은 호출 스택(Python 3.14.0, traceback.extract_stack).
+  // 바깥(스레드의 시작)부터 안쪽(do_GET)까지의 차례다. 설명은 이 강의가 쓴 것이다.
+  const T = [
+    ["threading.py", 1043, "_bootstrap", "스레드가 시작한다."],
+    ["threading.py", 1081, "_bootstrap_inner", "스레드가 할 일을 준비한다."],
+  ];
+  const TAIL = [
+    ["socketserver.py", 362, "finish_request", "요청 처리기 클래스(내가 만든 Handler)로 객체를 하나 만든다."],
+    ["socketserver.py", 766, "__init__", "처리기 객체는 만들어지자마자 setup, handle, finish를 차례로 부른다."],
+    ["server.py", 485, "handle", "연결 하나에서 요청을 처리한다. 연결을 이어 쓰면 요청을 여럿 처리한다."],
+    ["server.py", 473, "handle_one_request", "요청 줄을 읽어 메서드 이름을 얻고, 'do_'를 붙인 이름의 메서드를 찾아 부른다. 그래서 \"do_GET\"이라는 글자로는 이 줄을 찾을 수 없다."],
+    ["내 코드", null, "do_GET", "내가 덮어쓴 메서드다. 여기서 응답을 만든다."],
+  ];
+  const PATHS = {
+    HTTPServer: [
+      [...T[0]], [...T[1]], ["threading.py", 1023, "run", "스레드가 맡은 함수(이 예에서는 serve_forever)를 부른다."],
+      ["socketserver.py", 240, "serve_forever", "요청이 올 때까지 기다리다가, 오면 처리를 넘기는 것을 되풀이한다."],
+      ["socketserver.py", 318, "_handle_request_noblock", "들어온 연결을 받아들이고(accept) 처리를 넘긴다."],
+      ["socketserver.py", 349, "process_request", "받은 연결을 이 스레드에서 바로 처리한다. 그동안 다음 요청은 기다린다."],
+      ...TAIL.map(x => [...x]),
+    ],
+    ThreadingHTTPServer: [
+      [...T[0]], [...T[1]], ["threading.py", 1023, "run", "스레드가 맡은 함수(process_request_thread)를 부른다. 요청마다 새로 만든 스레드다."],
+      ["socketserver.py", 697, "process_request_thread", "ThreadingMixIn의 process_request가 요청마다 만든 새 스레드에서 처리를 시작한다. serve_forever는 다른 스레드에 있어 이 스택에 없다."],
+      ...TAIL.map(x => [...x]),
+    ],
+  };
+  const path = kind => PATHS[kind].map(([file, line, name, why]) => ({ file, line, name, why }));
+  return { PATHS, path };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CodemapLogic;
+  const $ = id => document.getElementById(id);
+  let kind = "HTTPServer", shown = 1, sel = 0;   // sel: 설명을 보이는 칸
+  function render() {
+    const p = L.path(kind);
+    $("frames").innerHTML = p.slice(0, shown).map((f, i) => {
+      const lib = f.file === "threading.py" || f.file === "socketserver.py" || f.file === "server.py";
+      const loc = f.line ? `${f.file}:${f.line}` : f.file;
+      return `<li class="${i === sel ? "cur" : ""} ${f.file === "내 코드" ? "mine" : ""}" data-i="${i}" tabindex="0" role="button" aria-expanded="${String(i === sel)}"><span class="d">${i + 1}</span>`
+        + `<span><b class="mono">${f.name}</b><span class="loc mono">${loc}</span>${lib ? '<span class="lib">표준 라이브러리</span>' : ""}`
+        + (i === sel ? `<div class="why">${f.why}</div>` : "") + "</span></li>";
+    }).join("") + (shown < p.length ? `<li><span class="d">…</span><span class="hidden">아직 ${p.length - shown}칸 더 들어간다</span></li>` : "");
+    document.querySelectorAll("[data-i]").forEach(li => {
+      const pick = () => { sel = Number(li.dataset.i); render(); };
+      li.addEventListener("click", pick);
+      li.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+    });
+    $("next").disabled = shown >= p.length;
+    $("all").disabled = shown >= p.length;
+    let note;
+    if (shown < p.length) note = "바깥 칸이 안쪽 칸을 부른다. 다음 칸으로 들어가기 전에, 지금 함수가 무엇을 부를지 짐작해 본다.";
+    else if (kind === "HTTPServer") note = `do_GET까지 ${p.length}칸이다. 칸을 누르면 그 칸이 하는 일을 다시 본다. 서버를 ThreadingHTTPServer로 바꾸면 이 길이 어떻게 달라질지 짐작한 뒤 눌러 본다.`;
+    else note = `do_GET까지 ${p.length}칸이다. 칸을 누르면 그 칸이 하는 일을 다시 본다. serve_forever가 보이지 않는다. 요청을 받은 스레드와 처리하는 스레드가 다르기 때문이다.`;
+    $("note").textContent = note;
+    document.querySelectorAll("[data-k]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.k === kind)));
+  }
+  document.querySelectorAll("[data-k]").forEach(b => b.addEventListener("click", () => { kind = b.dataset.k; shown = 1; sel = 0; render(); }));
+  $("next").addEventListener("click", () => { shown++; sel = shown - 1; render(); });
+  $("all").addEventListener("click", () => { shown = L.path(kind).length; sel = shown - 1; render(); });
+  $("restart").addEventListener("click", () => { shown = 1; sel = 0; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

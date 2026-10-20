@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPU 스케줄링 시뮬레이터</title>
+<meta name="description" content="작업 묶음과 스케줄링 방법(FCFS, SJF, 라운드 로빈), 바꿀 때 드는 시간을 골라 가며, 코어 하나의 실행 차례와 평균 기다린 시간, 바뀐 횟수를 비교한다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --p1: #3f51b5;
+    --p2: #1971c2;
+    --p3: #c2410c;
+    --p4: #237032;
+    --sw: #9aa0aa;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --p1: #8c9eff;
+    --p2: #74c0fc;
+    --p3: #ffa94d;
+    --p4: #69db7c;
+    --sw: #6b7280;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 5.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .gantt { position: relative; height: 34px; margin: 12px 0 2px; border-radius: 4px; background: var(--soft); }
+  .seg { position: absolute; top: 0; height: 100%; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; overflow: hidden; border-right: 1px solid var(--bg); }
+  :root[data-theme="dark"] .seg { color: #1e2129; }
+  .seg.switch { background: repeating-linear-gradient(45deg, var(--sw) 0 3px, transparent 3px 6px); }
+  .seg.idle { background: transparent; }
+  .ticks { position: relative; height: 16px; font-size: 11px; color: var(--muted); }
+  .ticks span { position: absolute; transform: translateX(-50%); }
+  table { border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+  th, td { padding: 3px 10px 3px 0; text-align: right; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 400; }
+  td:first-child, th:first-child { text-align: left; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+  .stat { background: var(--soft); border-radius: 6px; padding: 6px 8px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 17px; font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .stats { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>CPU 스케줄링 시뮬레이터</h1>
+<p class="lead">코어 하나에 작업 몇 개가 차례로 도착한다. 시간 단위는 "칸"이다. 줄무늬는 작업을 바꾸는 데 드는 시간(컨텍스트 스위칭)이다.</p>
+
+<div class="row" role="group" aria-label="작업 묶음">
+  <span class="label">작업</span>
+  <button class="btn" data-set="basic">기본 (P1 8칸, P2 4칸, P3 2칸)</button>
+  <button class="btn" data-set="convoy">긴 작업이 먼저 (P1 10칸, 짧은 셋)</button>
+</div>
+<div class="row" role="group" aria-label="스케줄링 방법">
+  <span class="label">방법</span>
+  <button class="btn" data-alg="FCFS">FCFS (비선점)</button>
+  <button class="btn" data-alg="SJF">SJF (비선점)</button>
+  <button class="btn" data-alg="RR1">RR q=1</button>
+  <button class="btn" data-alg="RR2">RR q=2</button>
+  <button class="btn" data-alg="RR4">RR q=4</button>
+</div>
+<div class="row" role="group" aria-label="바꿀 때 드는 시간">
+  <span class="label">바꿀 때 드는 시간</span>
+  <button class="btn mono" data-sw="0">0칸</button>
+  <button class="btn mono" data-sw="0.5">0.5칸</button>
+</div>
+
+<div class="gantt" id="gantt" aria-label="실행 차례"></div>
+<div class="ticks mono" id="ticks"></div>
+<table id="table"></table>
+<div class="stats">
+  <div class="stat"><div class="k">평균 기다린 시간</div><div class="v mono" id="wait"></div></div>
+  <div class="stat"><div class="k">평균 반환 시간</div><div class="v mono" id="turn"></div></div>
+  <div class="stat"><div class="k">바뀐 횟수</div><div class="v mono" id="sw"></div></div>
+  <div class="stat"><div class="k">모두 끝난 시각</div><div class="v mono" id="end"></div></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const SchedLogic = (() => {
+  const SETS = {
+    basic: [{ name: "P1", arrival: 0, burst: 8 }, { name: "P2", arrival: 1, burst: 4 }, { name: "P3", arrival: 2, burst: 2 }],
+    convoy: [{ name: "P1", arrival: 0, burst: 10 }, { name: "P2", arrival: 0, burst: 1 }, { name: "P3", arrival: 0, burst: 1 }, { name: "P4", arrival: 0, burst: 1 }],
+  };
+  const byArrival = (a, b) => a.arrival - b.arrival || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  // alg: "FCFS"(도착 차례, 비선점), "SJF"(도착한 것 중 남은 시간이 가장 짧은 것, 비선점), "RR"(q칸씩 돌고 큐 끝으로)
+  // RR에서 같은 시각에 도착한 작업은 그 시각에 밀려난 작업보다 앞에 선다. 다른 작업으로 바뀔 때마다 s칸이 빈다.
+  function simulate(jobsIn, alg, q = 2, s = 0) {
+    const jobs = jobsIn.map(j => ({ ...j, left: j.burst }));
+    const arrived = new Set(), done = {}, queue = [], seg = [];
+    let t = 0, last = null, switches = 0;
+    const admit = now => {
+      for (const j of [...jobs].sort(byArrival))
+        if (!arrived.has(j.name) && j.arrival <= now + 1e-9) { arrived.add(j.name); queue.push(j); }
+    };
+    admit(t);
+    while (Object.keys(done).length < jobs.length) {
+      if (!queue.length) {
+        const nxt = Math.min(...jobs.filter(j => !arrived.has(j.name)).map(j => j.arrival));
+        seg.push({ job: null, start: t, end: nxt, kind: "idle" });
+        t = nxt; admit(t); continue;
+      }
+      if (alg === "SJF") queue.sort((a, b) => a.left - b.left || byArrival(a, b));
+      const j = queue.shift();
+      if (last !== null && last !== j.name) {
+        switches++;
+        if (s > 0) { seg.push({ job: null, start: t, end: t + s, kind: "switch" }); t += s; admit(t); }
+      }
+      const run = alg === "RR" ? Math.min(q, j.left) : j.left;
+      seg.push({ job: j.name, start: t, end: t + run, kind: "run" });
+      t += run; j.left -= run; last = j.name;
+      admit(t);
+      if (j.left <= 1e-9) done[j.name] = t; else queue.push(j);
+    }
+    const res = {};
+    for (const j of jobs) {
+      const c = done[j.name];
+      res[j.name] = { done: c, turnaround: c - j.arrival, wait: c - j.arrival - j.burst };
+    }
+    const n = jobs.length, avg = k => Object.values(res).reduce((a, r) => a + r[k], 0) / n;
+    return { segments: seg, jobs: res, avgWait: avg("wait"), avgTurn: avg("turnaround"), switches, end: t };
+  }
+  // 칸 수 표기: 정수면 그대로, 아니면 소수 둘째 자리에서 반올림
+  const cells = v => (Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : (Math.round(v * 100) / 100).toString());
+  return { SETS, simulate, cells };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = SchedLogic;
+  const $ = id => document.getElementById(id);
+  const COLOR = { P1: "var(--p1)", P2: "var(--p2)", P3: "var(--p3)", P4: "var(--p4)" };
+  let set = "basic", alg = "FCFS", sw = 0;
+
+  function render() {
+    const jobs = L.SETS[set];
+    const kind = alg.startsWith("RR") ? "RR" : alg, q = alg.startsWith("RR") ? Number(alg.slice(2)) : 0;
+    const r = L.simulate(jobs, kind, q, sw);
+    const span = Math.max(r.end, 19);   // 그래프 가로 길이 (칸). 0.5칸 비용일 때도 같은 눈금으로 비교하게 고정
+    $("gantt").innerHTML = r.segments.map(g => `<div class="seg ${g.kind === "run" ? "" : g.kind}" style="left:${(g.start / span) * 100}%;width:${((g.end - g.start) / span) * 100}%;${g.job ? `background:${COLOR[g.job]}` : ""}" title="${g.job || (g.kind === "switch" ? "바꾸기" : "쉼")} ${L.cells(g.start)}~${L.cells(g.end)}">${g.job && g.end - g.start >= 1 ? g.job : ""}</div>`).join("");
+    const ticks = [];
+    for (let v = 0; v <= span; v += span > 15 ? 2 : 1) ticks.push(`<span style="left:${(v / span) * 100}%">${v}</span>`);
+    $("ticks").innerHTML = ticks.join("");
+    $("table").innerHTML = `<tr><th>작업</th><th>도착</th><th>실행</th><th>끝난 시각</th><th>기다린 시간</th></tr>` +
+      jobs.map(j => `<tr><td><span class="dot" style="background:${COLOR[j.name]}"></span>${j.name}</td><td>${j.arrival}</td><td>${j.burst}</td><td>${L.cells(r.jobs[j.name].done)}</td><td><b>${L.cells(r.jobs[j.name].wait)}</b></td></tr>`).join("");
+    $("wait").textContent = L.cells(r.avgWait) + "칸";
+    $("turn").textContent = L.cells(r.avgTurn) + "칸";
+    $("sw").textContent = r.switches + "번";
+    $("end").textContent = L.cells(r.end);
+    let note;
+    if (alg === "FCFS") note = set === "convoy" ? "줄 맨 앞의 긴 작업(P1)이 끝날 때까지 짧은 작업 셋이 줄줄이 기다린다(호위 효과). 비선점이라 중간에 빼앗지 않는다." : "도착한 차례대로 끝까지 돌린다. 바꾸는 횟수는 가장 적지만, 늦게 온 짧은 작업이 오래 기다린다.";
+    else if (alg === "SJF") note = "짧은 작업부터 돌리면 평균 기다린 시간이 줄어든다. 다만 실제 운영체제는 작업이 얼마나 걸릴지 미리 알 수 없다.";
+    else if (sw > 0) {
+      const f = L.simulate(jobs, "FCFS", 0, sw);
+      note = `조각이 작을수록 자주 바꾸고(${r.switches}번), 바꿀 때마다 빈 시간이 생긴다. ` +
+        (r.avgWait > f.avgWait ? `이 조건에서는 FCFS(${L.cells(f.avgWait)}칸)보다도 평균 기다린 시간이 길어졌다.`
+          : `그래도 이 작업 묶음에서는 FCFS(${L.cells(f.avgWait)}칸)보다 평균 기다린 시간이 짧다. 짧은 작업이 긴 작업 뒤에 갇히지 않기 때문이다.`);
+    } else note = `q칸씩 돌고 큐 끝으로 간다(선점). 짧은 작업이 긴 작업 뒤에 오래 갇히지 않는다. 대신 ${r.switches}번 바꾼다.`;
+    $("note").textContent = note;
+    document.querySelectorAll("[data-set]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.set === set)));
+    document.querySelectorAll("[data-alg]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.alg === alg)));
+    document.querySelectorAll("[data-sw]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.sw) === sw)));
+  }
+  document.querySelectorAll("[data-set]").forEach(b => b.addEventListener("click", () => { set = b.dataset.set; render(); }));
+  document.querySelectorAll("[data-alg]").forEach(b => b.addEventListener("click", () => { alg = b.dataset.alg; render(); }));
+  document.querySelectorAll("[data-sw]").forEach(b => b.addEventListener("click", () => { sw = Number(b.dataset.sw); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

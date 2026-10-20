@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>미로 탐색: DFS와 BFS</title>
+<meta name="description" content="DFS와 BFS를 골라 미로를 한 단계씩 탐색하며, 스택과 큐에 든 칸, 방문한 칸의 수, 찾은 경로의 길이를 비교한다. 칸을 눌러 벽을 바꿀 수도 있다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #d6e8fa;
+    --write: #c2410c;
+    --write-bg: #fbe0c8;
+    --wall: #4a5160;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3044;
+    --write: #ffa94d;
+    --write-bg: #4a3420;
+    --wall: #9aa0aa;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .wrap { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-start; }
+  .grid { display: grid; gap: 2px; }
+  .cell { width: 34px; height: 34px; border-radius: 4px; background: var(--soft); border: 1px solid var(--line); font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); }
+  .cell.wall { background: var(--wall); border-color: var(--wall); }
+  .cell.seen { background: var(--accent-bg); border-color: var(--accent); color: var(--fg); }
+  .cell.front { background: var(--write-bg); border-color: var(--write); color: var(--fg); }
+  .cell.cur { outline: 3px solid var(--write); outline-offset: -3px; font-weight: 700; color: var(--fg); }
+  .cell.path { background: var(--read-bg); border-color: var(--read); color: var(--read); font-weight: 700; }
+  .cell.sg { font-weight: 700; color: var(--accent); font-size: 14px; }
+  .side { font-size: 14px; min-width: 200px; max-width: 280px; }
+  .side .fr { font-size: 12px; word-break: break-all; color: var(--muted); }
+  .side b { color: var(--accent); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid; }
+  .legend .l-seen::before { background: var(--accent-bg); border-color: var(--accent); }
+  .legend .l-front::before { background: var(--write-bg); border-color: var(--write); }
+  .legend .l-path::before { background: var(--read-bg); border-color: var(--read); }
+  .legend .l-wall::before { background: var(--wall); border-color: var(--wall); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .cell { width: 30px; height: 30px; font-size: 10px; } }
+</style>
+</head>
+<body>
+<h1>미로 탐색: DFS와 BFS</h1>
+<p class="lead">S에서 G까지 간다. 이웃은 위, 오른쪽, 아래, 왼쪽 차례로 본다. 칸 안의 숫자는 방문한 차례다. 빈칸을 누르면 벽이 되고, 벽을 누르면 빈칸이 된다.</p>
+
+<div class="row" role="group" aria-label="탐색 방법">
+  <span class="label">방법</span>
+  <button class="btn" data-alg="dfs">DFS (스택)</button>
+  <button class="btn" data-alg="bfs">BFS (큐)</button>
+  <button class="btn" id="resetmaze">미로 처음으로</button>
+</div>
+<div class="row">
+  <button class="btn go" id="play">실행</button>
+  <button class="btn" id="step">한 단계</button>
+  <button class="btn" id="end">끝까지</button>
+</div>
+<div class="wrap">
+  <div class="grid mono" id="grid"></div>
+  <div class="side" id="side"></div>
+</div>
+<div class="legend"><span class="l-seen">방문함</span><span class="l-front">스택·큐에 들어 있음</span><span class="l-path">찾은 경로</span><span class="l-wall">벽</span></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const MazeLogic = (() => {
+  const MAZE = [
+    "S...#....",
+    "##.#..##.",
+    "...#.#...",
+    ".#...#.#.",
+    ".#.###.#.",
+    ".#.....#.",
+    "...###..G",
+  ];
+  const DIRS = [[-1, 0], [0, 1], [1, 0], [0, -1]];   // 위, 오른쪽, 아래, 왼쪽
+  const parse = rows => rows.map(r => [...r]);
+  const find = (g, ch) => { for (let r = 0; r < g.length; r++) { const c = g[r].indexOf(ch); if (c >= 0) return [r, c]; } return null; };
+  const k = ([r, c]) => `${r},${c}`;
+  function neighbors(g, [r, c]) {
+    const out = [];
+    for (const [dr, dc] of DIRS) {
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < g.length && nc >= 0 && nc < g[0].length && g[nr][nc] !== "#") out.push([nr, nc]);
+    }
+    return out;
+  }
+
+  // 탐색을 한 칸 꺼낼 때마다 그때의 모습을 frames에 남긴다
+  function run(g, alg) {
+    const S = find(g, "S"), G = find(g, "G");
+    const parent = new Map([[k(S), null]]);
+    const seen = new Set(), order = [], frames = [];
+    const front = [S];               // DFS는 스택(뒤에서 꺼냄), BFS는 큐(앞에서 꺼냄)
+    let found = false;
+    while (front.length) {
+      const cur = alg === "bfs" ? front.shift() : front.pop();
+      if (alg === "dfs") {
+        if (seen.has(k(cur))) continue;   // DFS는 꺼낼 때 방문 표시
+        seen.add(k(cur));
+      }
+      order.push(cur);
+      if (k(cur) === k(G)) found = true;
+      if (!found) {
+        const nbs = neighbors(g, cur);
+        if (alg === "bfs") {
+          for (const nb of nbs) if (!parent.has(k(nb))) { parent.set(k(nb), cur); front.push(nb); }   // BFS는 넣을 때 방문 표시
+        } else {
+          for (const nb of [...nbs].reverse()) if (!seen.has(k(nb))) { parent.set(k(nb), cur); front.push(nb); }
+        }
+      }
+      frames.push({ cur, order: [...order], front: front.map(x => [...x]) });
+      if (found) break;
+    }
+    const path = [];
+    if (found) for (let c = G; c; c = parent.get(k(c))) path.unshift(c);
+    return { frames, order, path, found };
+  }
+
+  function toggle(g, [r, c]) {
+    if (g[r][c] === "S" || g[r][c] === "G") return g;
+    const n = g.map(row => [...row]);
+    n[r][c] = n[r][c] === "#" ? "." : "#";
+    return n;
+  }
+
+  return { MAZE, parse, find, neighbors, run, toggle };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = MazeLogic;
+  const $ = id => document.getElementById(id);
+  let g = L.parse(L.MAZE), alg = "bfs", res = null, k = 0, timer = null;
+  const key = ([r, c]) => `${r},${c}`;
+
+  function prepare() {
+    stop();
+    res = L.run(g, alg);
+    k = 0;
+    document.querySelectorAll("[data-alg]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.alg === alg)));
+    $("grid").style.gridTemplateColumns = `repeat(${g[0].length}, auto)`;
+    render();
+  }
+
+  function render() {
+    const f = k > 0 ? res.frames[k - 1] : { cur: null, order: [], front: [L.find(g, "S")] };
+    const done = k >= res.frames.length;
+    const seenAt = new Map(f.order.map((c, i) => [key(c), i + 1]));
+    const front = new Set(f.front.map(key));
+    const path = done ? new Set(res.path.map(key)) : new Set();
+    const grid = $("grid");
+    grid.textContent = "";
+    g.forEach((row, r) => row.forEach((ch, c) => {
+      const d = document.createElement("div");
+      const kk = `${r},${c}`;
+      let cls = "cell";
+      if (ch === "#") cls += " wall";
+      else if (path.has(kk)) cls += " path";
+      else if (seenAt.has(kk)) cls += " seen";
+      else if (front.has(kk)) cls += " front";
+      if (f.cur && key(f.cur) === kk && !done) cls += " cur";
+      if (ch === "S" || ch === "G") cls += " sg";
+      d.className = cls;
+      d.textContent = ch === "S" || ch === "G" ? ch : seenAt.has(kk) ? seenAt.get(kk) : "";
+      d.addEventListener("click", () => { if (timer) return; g = L.toggle(g, [r, c]); prepare(); note(); });
+      grid.append(d);
+    }));
+    const name = alg === "bfs" ? "큐" : "스택";
+    const list = f.front.map(([r, c]) => `(${r},${c})`).join(" ");
+    $("side").innerHTML = `${alg.toUpperCase()}: 방문 <b>${f.order.length}</b>칸` +
+      (done ? (res.found ? `, 찾은 경로 <b>${res.path.length - 1}</b>걸음` : ", G에 닿지 못했다") : "") +
+      `<div class="fr">${name}에 든 칸 ${f.front.length}개${alg === "bfs" ? " (앞에서 꺼낸다)" : " (뒤에서 꺼낸다)"}: ${list || "없음"}</div>`;
+    $("play").textContent = timer ? "멈춤" : "실행";
+    note();
+  }
+
+  function note() {
+    const done = res && k >= res.frames.length;
+    let s;
+    if (!res || k === 0) s = alg === "bfs" ? "BFS는 큐에서 가장 먼저 넣은 칸을 꺼낸다. S에서 가까운 칸부터 물결처럼 퍼진다." : "DFS는 스택에서 가장 나중에 넣은 칸을 꺼낸다. 한 길로 끝까지 가 보고, 막히면 돌아온다.";
+    else if (!done) s = alg === "bfs" ? "큐의 앞에서 꺼낸 칸의 이웃을 큐 뒤에 넣는다." : "스택의 뒤에서 꺼낸 칸의 이웃을 스택에 넣는다. 방금 넣은 이웃이 다음에 나온다.";
+    else if (!res.found) s = "S에서 G로 가는 길이 없다. 갈 수 있는 칸을 다 방문하고 끝났다.";
+    else s = alg === "bfs" ? `BFS가 찾은 ${res.path.length - 1}걸음은 가장 짧은 경로다. 가까운 칸부터 방문하므로 G에 처음 닿은 길이 가장 짧다.` : `DFS가 찾은 경로는 ${res.path.length - 1}걸음이다. 가장 짧다는 보장이 없다. BFS로 바꿔 비교해 본다.`;
+    $("note").textContent = s;
+  }
+
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  $("play").addEventListener("click", () => {
+    if (timer) { stop(); render(); return; }
+    if (k >= res.frames.length) k = 0;
+    timer = setInterval(() => { if (k < res.frames.length) { k++; render(); } else { stop(); render(); } }, 120);
+    render();
+  });
+  $("step").addEventListener("click", () => { stop(); if (k < res.frames.length) k++; render(); });
+  $("end").addEventListener("click", () => { stop(); k = res.frames.length; render(); });
+  document.querySelectorAll("[data-alg]").forEach(b => b.addEventListener("click", () => { alg = b.dataset.alg; prepare(); }));
+  $("resetmaze").addEventListener("click", () => { g = L.parse(L.MAZE); prepare(); });
+  prepare();
+})();
+</script>
+</body>
+</html>

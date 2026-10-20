@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>서버가 먼저 알리는 네 가지 방법</title>
+<meta name="description" content="폴링 간격을 바꿔 가며, 같은 사건 여섯 개를 폴링, 롱 폴링, SSE, 웹소켓이 각각 언제 받고 HTTP 요청을 몇 번 보내는지 시간 줄 위에서 견준다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 5.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chart { overflow-x: auto; }
+  .chart svg { display: block; width: 100%; min-width: 520px; height: auto; }
+  svg text { fill: var(--muted); font-size: 11px; font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif; }
+  svg .lab { fill: var(--fg); font-size: 12px; font-weight: 700; }
+  svg .grid { stroke: var(--line); stroke-width: 1; }
+  svg .ev { fill: var(--write); }
+  svg .req { stroke: var(--read); stroke-width: 2; }
+  svg .open { stroke: var(--accent); stroke-width: 5; stroke-linecap: round; opacity: .35; }
+  svg .wait { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  svg .got { fill: var(--good); }
+  table { border-collapse: collapse; font-size: 13px; width: 100%; margin-top: 6px; }
+  th, td { text-align: left; padding: 3px 8px 3px 0; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 400; }
+  td.n { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  .tablewrap { overflow-x: auto; }
+  .legend { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 2px; }
+  .legend b.e { color: var(--write); } .legend b.r { color: var(--read); } .legend b.g { color: var(--good); } .legend b.o { color: var(--accent); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>서버가 먼저 알리는 네 가지 방법</h1>
+<p class="lead">서버에서 사건 여섯 개가 0.3, 1.7, 2.1, 4.4, 4.5, 7.9초에 일어난다(채팅 메시지, 알림 등). 네 방법으로 받으면 각각 언제 받고 요청을 몇 번 보낼까? 네트워크 시간은 0으로 둔 모형이다.</p>
+
+<div class="row" role="group" aria-label="폴링 간격">
+  <span class="label">폴링 간격</span>
+  <button class="btn mono" data-i="0.5">0.5초</button>
+  <button class="btn mono" data-i="1">1초</button>
+  <button class="btn mono" data-i="2">2초</button>
+  <button class="btn mono" data-i="5">5초</button>
+</div>
+<div class="chart"><svg id="chart" viewBox="0 0 600 214" role="img" aria-label="네 방법이 사건을 받은 때와 보낸 요청"></svg></div>
+<div class="legend">
+  <span><b class="e">▼</b> 사건이 일어남</span>
+  <span><b class="r">|</b> HTTP 요청</span>
+  <span><b class="g">●</b> 받음</span>
+  <span><b class="o">━</b> 열어 둔 연결</span>
+</div>
+<div class="tablewrap"><table id="table"></table></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const RealtimeLogic = (() => {
+  const AT = [0.3, 1.7, 2.1, 4.4, 4.5, 7.9];   // 사건이 일어나는 때(초)
+  const r3 = x => Math.round(x * 1000) / 1000;
+  // 폴링: 0초부터 I초마다 묻는다. 사건은 그 뒤의 첫 물음에서 받는다(같은 때면 다음 번). 마지막 사건을 받으면 멈춘다
+  function polling(I) {
+    const deliver = AT.map(t => r3((Math.floor(t / I + 1e-9) + 1) * I));
+    const n = Math.round(deliver[deliver.length - 1] / I) + 1;
+    return { kind: "poll", requests: Array.from({ length: n }, (_, k) => r3(k * I)), deliver };
+  }
+  // 롱 폴링: 묻고 기다리면 사건이 일어날 때 답하고, 받자마자 다시 묻는다
+  const longPolling = () => ({ kind: "long", requests: [0, ...AT.slice(0, -1)], deliver: [...AT] });
+  // SSE와 웹소켓: 연결을 한 번 열어 두고 서버가 사건마다 바로 보낸다
+  const stream = kind => ({ kind, requests: [0], deliver: [...AT] });
+  const delays = r => r.deliver.map((d, k) => Math.round((d - AT[k]) * 1000));   // ms
+  function summary(r) {
+    const d = delays(r);
+    return { requests: r.requests.length, mean: Math.round((d.reduce((a, b) => a + b, 0) / d.length) * 10) / 10, max: Math.max(...d) };
+  }
+  return { AT, polling, longPolling, stream, delays, summary };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = RealtimeLogic;
+  const $ = id => document.getElementById(id);
+  const X0 = 100, XW = 480, TMAX = 10;
+  const x = s => X0 + (XW * s) / TMAX;
+  let I = 1;
+  function render() {
+    const rows = [
+      ["폴링", L.polling(I)], ["롱 폴링", L.longPolling()], ["SSE", L.stream("sse")], ["웹소켓", L.stream("ws")],
+    ];
+    let g = "";
+    for (let s = 0; s <= TMAX; s += 1) g += `<line class="grid" x1="${x(s)}" y1="28" x2="${x(s)}" y2="186"/><text x="${x(s)}" y="202" text-anchor="middle">${s}${s === TMAX ? "초" : ""}</text>`;   // 단위는 마지막 눈금에 붙인다
+    g += `<text class="lab" x="8" y="20">사건</text>`;
+    L.AT.forEach(t => { g += `<path class="ev" d="M${x(t) - 5} 10 h10 l-5 9 z"/>`; });
+    rows.forEach(([name, r], k) => {
+      const y = 50 + k * 38;
+      g += `<text class="lab" x="8" y="${y + 4}">${name}</text>`;
+      const last = r.deliver[r.deliver.length - 1];
+      if (r.kind === "sse" || r.kind === "ws") g += `<line class="open" x1="${x(0)}" y1="${y}" x2="${x(last)}" y2="${y}"/>`;
+      if (r.kind === "long") r.requests.forEach((q, j) => { g += `<line class="wait" x1="${x(q)}" y1="${y}" x2="${x(r.deliver[j])}" y2="${y}"/>`; });
+      r.requests.forEach(q => { g += `<line class="req" x1="${x(q)}" y1="${y - 10}" x2="${x(q)}" y2="${y + 10}"/>`; });
+      r.deliver.forEach(d => { g += `<circle class="got" cx="${x(d)}" cy="${y}" r="4"/>`; });
+    });
+    $("chart").innerHTML = g;
+    const up = { poll: "따로 요청한다", long: "따로 요청한다", sse: "따로 요청한다(SSE는 받기만 한다)", ws: "같은 연결로 보낸다" };   // 브라우저 → 서버
+    $("table").innerHTML = `<thead><tr><th>방법</th><th>HTTP 요청</th><th>평균 지연</th><th>가장 늦게</th><th>브라우저가 서버로 보낼 때</th></tr></thead><tbody>${rows.map(([name, r]) => {
+      const s = L.summary(r);
+      return `<tr><td>${name}</td><td class="n">${s.requests}번</td><td class="n">${s.mean.toLocaleString("en-US")}ms</td><td class="n">${s.max.toLocaleString("en-US")}ms</td><td>${up[r.kind]}</td></tr>`;
+    }).join("")}</tbody>`;
+    const p = L.summary(L.polling(I));
+    $("note").textContent = `폴링은 간격을 줄이면 빨리 받지만 요청이 늘고(${I}초 간격: ${p.requests}번, 평균 ${p.mean.toLocaleString("en-US")}ms), 늘리면 요청은 줄지만 늦게 받는다. 사건이 없을 때의 요청은 모두 헛걸음이다. 나머지 셋은 서버가 사건이 생기는 즉시 보낸다. 이 PC에서 같은 사건으로 재니 1초 폴링은 평균 527~535ms, 나머지 셋은 1ms 안팎이었다.`;
+    document.querySelectorAll("[data-i]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.i) === I)));
+  }
+  document.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", () => { I = Number(b.dataset.i); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>콜 스택 따라가기</title>
+<meta name="description" content="예제를 고르고 ‘한 단계’를 눌러, 함수를 부를 때마다 스택에 프레임이 쌓이고 돌아오면 사라지는 모습을 한 줄씩 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --stale: #9aa0aa;
+    --warn: #c2410c;
+    --warn-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --stale: #6b7280;
+    --warn: #ffa94d;
+    --warn-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .stepno { font-size: 13px; color: var(--muted); }
+
+  .main { display: flex; flex-wrap: wrap; gap: 14px 22px; margin-top: 6px; align-items: flex-start; }
+  .panel h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
+  .src { font-size: 13px; line-height: 1.6; background: var(--soft); border-radius: 6px; padding: 6px 0; min-width: 300px; }
+  .src .ln { display: block; padding: 0 10px 0 0; white-space: pre; }
+  .src .ln .no { display: inline-block; width: 2.4em; text-align: right; color: var(--muted); margin-right: 10px; user-select: none; }
+  .src .ln.cur { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+  .src .ln.ret { background: var(--warn-bg); box-shadow: inset 3px 0 0 var(--warn); }
+
+  .stack { min-width: 230px; flex: 1 1 230px; }
+  .frame { border: 1.5px solid var(--line); border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; background: var(--bg); }
+  .frame.top { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .frame.stale { border-style: dashed; color: var(--stale); background: transparent; }
+  .frame .fn { font-weight: 700; font-size: 14px; }
+  .frame .meta { font-size: 12px; color: var(--muted); }
+  .frame.stale .meta { color: var(--stale); }
+  .vars { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; font-size: 14px; margin-top: 2px; }
+  .vars .v.changed { color: var(--accent); font-weight: 700; }
+  .grow { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .out { margin-top: 8px; font-size: 13px; }
+  .out pre { margin: 4px 0 0; padding: 6px 8px; background: var(--soft); border-radius: 4px; min-height: 1.6em; white-space: pre-wrap; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .src { min-width: 0; width: 100%; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<h1>콜 스택 따라가기</h1>
+
+<div class="row" role="group" aria-label="예제">
+  <span class="label">예제</span>
+  <button class="btn" data-preset="fact">재귀: fact(3)</button>
+  <button class="btn" data-preset="swap">매개변수는 복사본</button>
+  <button class="btn" data-preset="dangle">끝난 함수의 지역 변수</button>
+</div>
+<div class="row">
+  <span class="label">실행</span>
+  <button class="btn" id="prev">이전</button>
+  <button class="btn primary" id="next">한 단계</button>
+  <button class="btn" id="end">끝까지</button>
+  <button class="btn" id="reset">처음으로</button>
+  <span class="stepno" id="stepno"></span>
+</div>
+
+<div class="main">
+  <div class="panel">
+    <h2>프로그램 (색칠한 줄을 실행할 차례)</h2>
+    <div class="src mono" id="src"></div>
+  </div>
+  <div class="panel stack">
+    <h2>스택 (먼저 부른 함수가 위, 아래로 쌓인다)</h2>
+    <div id="frames"></div>
+    <div class="grow">↓ 스택이 자라는 쪽 (낮은 주소)</div>
+  </div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+<div class="out">출력<pre class="mono" id="out"></pre></div>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const StackLogic = (() => {
+  // 아주 작은 실행기: 각 예제의 C 함수를 같은 순서로 따라가는 생성기(function*)로 옮겨 두고,
+  // 줄마다 스택의 모습을 찍어 trace를 만든다. 프레임이 끝나도 그 자리의 값은 지워지지 않고 남는다(stale).
+  function machine() {
+    const m = { frames: [], stale: [], out: "", pendingRet: null };
+    const copy = fr => fr.map(f => ({ fn: f.fn, title: f.title, ret: f.ret, vars: f.vars.map(v => ({ ...v })) }));
+    m.snap = (line, note, kind = "line") => ({
+      line, note, kind, out: m.out,
+      frames: copy(m.frames),
+      stale: m.stale.map(f => (f ? copy([f])[0] : null)),
+    });
+    m.top = () => m.frames[m.frames.length - 1];
+    // 함수에 들어가며 프레임을 쌓는다. vars: [[이름, 값], ...] (매개변수가 먼저)
+    m.enter = (fn, title, vars, line, note) => {
+      m.frames.push({ fn, title, ret: m.pendingRet, vars: vars.map(([name, value]) => ({ name, value })) });
+      m.stale[m.frames.length - 1] = null;
+      return m.snap(line, note, "enter");
+    };
+    m.set = (name, value) => { m.top().vars.find(v => v.name === name).value = value; };
+    m.get = name => m.top().vars.find(v => v.name === name).value;
+    // 함수를 부른다: 돌아올 곳을 기억하고 피호출 함수의 생성기를 끝까지 돌린다
+    m.call = function* (caller, line, fn, ...args) {
+      m.pendingRet = `${caller} ${line}행`;
+      return yield* fn(m, ...args);
+    };
+    // 돌아간다: 프레임을 걷어 내지만 그 자리의 값은 그대로 남는다
+    m.leave = function* (line, value, note) {
+      yield m.snap(line, note, "return");
+      const f = m.frames.pop();
+      m.stale[m.frames.length] = f;
+      return value;
+    };
+    // 포인터가 가리키는 칸: { depth, slot } → 지금 그 자리에 있는 값
+    m.deref = ref => {
+      const f = m.frames[ref.depth] || m.stale[ref.depth];
+      return f && f.vars[ref.slot] ? f.vars[ref.slot].value : undefined;
+    };
+    m.print = s => { m.out += s; };
+    return m;
+  }
+
+  // 조사: 읽었을 때의 끝소리로 고른다. "fact(2)"는 2(이)로, "main"은 n(엔)으로 끝난다
+  const lastSound = w => String(w).replace(/[)\]]+$/, "").slice(-1);
+  const batchim = w => {
+    const ch = lastSound(w), c = ch.charCodeAt(0);
+    if (c >= 0xac00 && c <= 0xd7a3) return (c - 0xac00) % 28 !== 0;
+    return "013678LMNRlmnr".includes(ch);
+  };
+  const rieul = w => { const ch = lastSound(w), c = ch.charCodeAt(0); return (c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 === 8) || "178Ll".includes(ch); };
+  const iga = w => `${w}${batchim(w) ? "이" : "가"}`;
+  const eul = w => `${w}${batchim(w) ? "을" : "를"}`;
+  const ro = w => `${w}${batchim(w) && !rieul(w) ? "으로" : "로"}`;
+
+  const PROGRAMS = {
+    fact: {
+      source: [
+        "int fact(int n) {",
+        "    if (n <= 1)",
+        "        return 1;",
+        "    return n * fact(n - 1);",
+        "}",
+        "",
+        "int main(void) {",
+        "    int r = fact(3);",
+        "    printf(\"%d\\n\", r);",
+        "    return 0;",
+        "}",
+      ],
+      *run(m) {
+        function* fact(m, n) {
+          yield m.enter("fact", `fact(${n})`, [["n", n]], 2, `${eul(`fact(${n})`)} 위한 프레임이 쌓였다. 매개변수 n에 ${iga(n)} 복사되었다.`);
+          if (n <= 1) return yield* m.leave(3, 1, `n이 1이라 1을 돌려준다. 이 프레임이 걷히면 ${ro(m.frames[m.frames.length - 2].title)} 돌아간다.`);
+          yield m.snap(4, `n(${n})이 1보다 크다. ${eul(`fact(${n - 1})`)} 불러야 ${eul(`n * fact(${n - 1})`)} 계산할 수 있다.`);
+          const r = yield* m.call("fact", 4, fact, n - 1);
+          return yield* m.leave(4, n * r, `${iga(`fact(${n - 1})`)} ${eul(r)} 돌려줬다. ${n} * ${r} = ${eul(n * r)} 돌려준다.`);
+        }
+        yield m.enter("main", "main", [["r", "?"]], 8, "main의 프레임에서 시작한다. 지역 변수 r은 아직 값이 없다.");
+        const r = yield* m.call("main", 8, fact, 3);
+        m.set("r", r);
+        yield m.snap(9, `fact(3)이 ${eul(r)} 돌려줘서 r = ${r}이다. 모든 fact 프레임은 이미 걷혔다.`);
+        m.print(`${r}\n`);
+        yield m.snap(10, `${eul(r)} 출력했다.`);
+        yield* m.leave(10, 0, "main도 끝난다.");
+      },
+    },
+    swap: {
+      source: [
+        "void swap(int a, int b) {",
+        "    int t = a;",
+        "    a = b;",
+        "    b = t;",
+        "}",
+        "",
+        "int main(void) {",
+        "    int x = 1, y = 2;",
+        "    swap(x, y);",
+        "    printf(\"%d %d\\n\", x, y);",
+        "    return 0;",
+        "}",
+      ],
+      *run(m) {
+        function* swap(m, a, b) {
+          yield m.enter("swap", "swap", [["a", a], ["b", b], ["t", "?"]], 2, `swap의 프레임에 a = ${a}, b = ${b}가 복사되었다. main의 x, y와는 다른 칸이다.`);
+          m.set("t", m.get("a"));
+          yield m.snap(3, "t = a: t에 1을 넣었다.");
+          m.set("a", m.get("b"));
+          yield m.snap(4, "a = b: swap의 a가 2가 되었다. main의 x는 그대로 1이다.");
+          m.set("b", m.get("t"));
+          return yield* m.leave(5, undefined, "b = t: swap 안에서는 a와 b가 바뀌었다. 하지만 이 프레임은 곧 걷힌다.");
+        }
+        yield m.enter("main", "main", [["x", "?"], ["y", "?"]], 8, "main의 프레임에서 시작한다.");
+        m.set("x", 1); m.set("y", 2);
+        yield m.snap(9, "x = 1, y = 2. 이제 swap(x, y)를 부른다. 넘기는 것은 x와 y의 값이다.");
+        yield* m.call("main", 9, swap, 1, 2);
+        yield m.snap(10, "swap이 끝났다. 바뀐 것은 swap 프레임의 a, b였고, 그 프레임은 사라졌다. x와 y는 그대로다.");
+        m.print(`${m.get("x")} ${m.get("y")}\n`);
+        yield m.snap(11, "1 2가 출력된다. 바꾸려면 x와 y의 주소를 넘겨야 한다(10번 항목의 포인터).");
+        yield* m.leave(11, 0, "main도 끝난다.");
+      },
+    },
+    dangle: {
+      source: [
+        "int *make(void) {",
+        "    int v = 42;",
+        "    return &v;          /* 끝나면 사라질 지역 변수의 주소 */",
+        "}",
+        "",
+        "void other(void) {",
+        "    int w = 7;",
+        "    printf(\"other %d\\n\", w);",
+        "}",
+        "",
+        "int main(void) {",
+        "    int *p = make();",
+        "    printf(\"%d\\n\", *p);",
+        "    other();",
+        "    printf(\"%d\\n\", *p);",
+        "    return 0;",
+        "}",
+      ],
+      *run(m) {
+        function* make(m) {
+          yield m.enter("make", "make", [["v", "?"]], 2, "make의 프레임이 쌓였다.");
+          m.set("v", 42);
+          return yield* m.leave(3, { depth: m.frames.length - 1, slot: 0, label: "make의 v" },
+            "v의 주소를 돌려준다. 이 프레임은 곧 걷히지만, 주소는 그대로 main에 넘어간다. Visual Studio는 이 줄에 경고 C4172를 낸다.");
+        }
+        function* other(m) {
+          yield m.enter("other", "other", [["w", "?"]], 7, "other의 프레임이 make가 있던 바로 그 자리에 쌓였다.");
+          m.set("w", 7);
+          yield m.snap(8, "w = 7. make의 v가 있던 칸에 w가 들어갔다.");
+          m.print("other 7\n");
+          return yield* m.leave(9, undefined, "other도 끝나고 프레임이 걷힌다. 그 자리에는 7이 남는다.");
+        }
+        yield m.enter("main", "main", [["p", "?"]], 12, "main의 프레임에서 시작한다.");
+        const ref = yield* m.call("main", 12, make);
+        m.set("p", ref);
+        yield m.snap(13, "p는 이미 걷힌 make 프레임 안의 칸을 가리킨다. 아직 아무도 그 칸을 쓰지 않아 42가 남아 있다.");
+        m.print(`${m.deref(ref)}\n`);
+        yield m.snap(14, "42가 출력된다. 우연히 남아 있었을 뿐이다.");
+        yield* m.call("main", 14, other);
+        yield m.snap(15, "다시 *p를 읽는다. 그 칸에는 이제 other가 쓴 값이 있다.");
+        m.print(`${m.deref(ref)}\n`);
+        yield m.snap(16, "7이 출력된다(Visual Studio의 Debug 설정). Release 설정에서는 42가 나왔다. 끝난 함수의 지역 변수를 읽는 것은 정의되지 않은 동작이라 결과를 믿을 수 없다.");
+        yield* m.leave(16, 0, "main도 끝난다.");
+      },
+    },
+  };
+
+  // 예제를 처음부터 끝까지 실행해 단계 목록을 만든다
+  function trace(name) {
+    const m = machine();
+    const steps = [];
+    for (const s of PROGRAMS[name].run(m)) steps.push(s);
+    return steps;
+  }
+
+  const maxDepth = steps => Math.max(...steps.map(s => s.frames.length));
+
+  return { PROGRAMS, trace, maxDepth, iga, eul, ro };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = StackLogic;
+  const $ = id => document.getElementById(id);
+  let name = "fact", steps = [], at = 0;
+
+  function load(n) {
+    name = n;
+    steps = L.trace(n);
+    at = 0;
+    const src = $("src");
+    src.textContent = "";
+    L.PROGRAMS[n].source.forEach((line, i) => {
+      const d = document.createElement("span");
+      d.className = "ln";
+      d.innerHTML = `<span class="no">${i + 1}</span>`;
+      d.append(line || " ");
+      src.append(d);
+    });
+    document.querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.preset === n)));
+    render();
+  }
+
+  const show = (v, s) => {
+    if (v && typeof v === "object") {
+      const f = s.frames[v.depth] || s.stale[v.depth];
+      const now = f && f.vars[v.slot] ? `${f.fn}의 ${f.vars[v.slot].name}` : "";
+      return `→ ${v.label}의 자리` + (now && now !== v.label ? ` (지금은 ${now})` : "");
+    }
+    return v === undefined ? "" : String(v);
+  };
+
+  function frameBox(f, s, cls, prevF) {
+    const d = document.createElement("div");
+    d.className = "frame " + cls;
+    const meta = cls === "stale" ? "끝난 함수의 자리. 값은 남아 있지만 주인이 없다" : f.ret ? `돌아갈 곳: ${f.ret}` : "프로그램의 시작";
+    d.innerHTML = `<div class="fn mono">${f.title}</div><div class="meta">${meta}</div><div class="vars mono"></div>`;
+    const vars = d.querySelector(".vars");
+    f.vars.forEach((v, i) => {
+      const before = prevF && prevF.fn === f.fn && prevF.vars[i] ? show(prevF.vars[i].value, s) : null;
+      const now = show(v.value, s);
+      const k = document.createElement("span"); k.textContent = v.name;
+      const val = document.createElement("span"); val.className = "v" + (before !== null && before !== now && cls === "top" ? " changed" : ""); val.textContent = now;
+      vars.append(k, val);
+    });
+    return d;
+  }
+
+  function render() {
+    const s = steps[at], prev = at > 0 ? steps[at - 1] : null;
+    $("src").querySelectorAll(".ln").forEach((d, i) => { d.className = "ln" + (i + 1 === s.line ? (s.kind === "return" ? " ret" : " cur") : ""); });
+    const box = $("frames");
+    box.textContent = "";
+    const depth = Math.max(s.frames.length, s.stale.length);
+    for (let d = 0; d < depth; d++) {
+      if (d < s.frames.length) box.append(frameBox(s.frames[d], s, d === s.frames.length - 1 ? "top" : "", prev && prev.frames[d]));
+      else if (s.stale[d]) box.append(frameBox(s.stale[d], s, "stale", null));
+    }
+    $("note").textContent = s.note;
+    $("out").textContent = s.out;
+    $("stepno").textContent = `단계 ${at + 1} / ${steps.length}`;
+    $("prev").disabled = at === 0;
+    $("next").disabled = $("end").disabled = at === steps.length - 1;
+  }
+
+  $("next").addEventListener("click", () => { if (at < steps.length - 1) { at++; render(); } });
+  $("prev").addEventListener("click", () => { if (at > 0) { at--; render(); } });
+  $("end").addEventListener("click", () => { at = steps.length - 1; render(); });
+  $("reset").addEventListener("click", () => { at = 0; render(); });
+  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => load(b.dataset.preset)));
+
+  // 페이지가 ?preset=swap 처럼 처음 보여 줄 예제를 정할 수 있다
+  const first = new URLSearchParams(location.search).get("preset");
+  load(first && L.PROGRAMS[first] ? first : "fact");
+})();
+</script>
+</body>
+</html>

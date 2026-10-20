@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>명세로 서버 시험하기</title>
+<meta name="description" content="서버 셋 가운데 하나를 골라 '계약 테스트'을 누르면, 명세에 적힌 요청을 차례로 보내 상태 코드와 응답 모양이 명세와 같은지 줄마다 보여 준다. 줄을 누르면 응답 본문이 보인다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --ok: #2b8a3e;
+    --ok-bg: #e6f4ea;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --ok: #69db7c;
+    --ok-bg: #1f3a27;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--soft); }
+  tbody tr.sel td { background: var(--accent-bg); }
+  .pass { color: var(--ok); font-weight: 700; }
+  .fail { color: var(--write); font-weight: 700; }
+  .wrap { overflow-x: auto; }
+  .detail { margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font-size: 12.5px; white-space: pre-wrap; word-break: break-all; min-height: 2.4em; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } table { font-size: 11.5px; } }
+</style>
+</head>
+<body>
+<h1>명세로 서버 시험하기</h1>
+<p class="lead">할 일 API의 명세에 요청 10개와 기대하는 결과가 적혀 있다. 서버를 고르고 "계약 테스트"을 누르면 그 요청을 차례로 보내 견준다. 서버는 이 페이지 안에서 흉내 낸 것이다.</p>
+<div class="row" role="group" aria-label="서버">
+  <span class="label">서버</span>
+  <button class="btn" data-server="spec">명세대로 짠 서버</button>
+  <button class="btn" data-server="ai">AI가 처음 짠 서버</button>
+  <button class="btn" data-server="rename">필드 이름을 바꾼 서버</button>
+  <button class="btn go" id="run">계약 테스트</button>
+</div>
+<div class="wrap"><table>
+  <thead><tr><th>요청</th><th>보낸 본문</th><th>명세</th><th>받은 응답</th><th>결과</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table></div>
+<div class="detail mono" id="detail">줄을 누르면 응답 본문이 여기에 보인다.</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ContractLogic = (() => {
+  const Todo = { id: "number", title: "string", done: "boolean" };
+  const Problem = { title: "string", status: "number", detail: "string" };
+  // 64번 실습의 명세와 같다: 메서드, 경로, 보낼 본문(문자열이면 그대로), 상태 코드, 응답 모양
+  const SPEC = [
+    ["POST", "/todos", { title: "우유 사기" }, 201, "Todo"],
+    ["POST", "/todos", { title: "" }, 422, "Problem"],
+    ["POST", "/todos", "{제목", 400, "Problem"],
+    ["GET", "/todos", null, 200, "Todo[]"],
+    ["GET", "/todos/1", null, 200, "Todo"],
+    ["GET", "/todos/99", null, 404, "Problem"],
+    ["PATCH", "/todos/1", { done: "yes" }, 422, "Problem"],
+    ["PATCH", "/todos/1", { done: true }, 200, "Todo"],
+    ["DELETE", "/todos/1", null, 204, "없음"],
+    ["DELETE", "/todos/1", null, 404, "Problem"],
+  ];
+  const SHAPES = { Todo, Problem, "Todo[]": [Todo], "없음": null };
+  function matches(value, shape) {
+    if (shape === null) return value === null;
+    if (Array.isArray(shape)) return Array.isArray(value) && value.every(v => matches(v, shape[0]));
+    if (typeof shape === "string") return typeof value === shape;
+    return value !== null && typeof value === "object" && Object.entries(shape).every(([k, s]) => matches(value[k], s));
+  }
+  const problem = (status, title, detail) => ({ status, body: { title, status, detail } });
+  // 서버 셋. 저마다 요청 하나를 받아 { status, body }를 돌려준다(body: 값, 또는 JSON이 아닌 글이면 { text })
+  function makeServer(kind) {
+    const todos = new Map();
+    let nextId = 1;
+    const doneKey = kind === "rename" ? "completed" : "done";
+    const view = t => ({ id: t.id, title: t.title, [doneKey]: t.done });
+    return (method, path, raw) => {
+      let body = null;
+      if (raw !== null) {
+        try { body = JSON.parse(raw); } catch {
+          return kind === "ai" ? { status: 500, body: { text: "Internal Server Error" } } : problem(400, "Bad Request", "본문을 JSON으로 읽지 못했다");
+        }
+      }
+      const m = path.match(/^\/todos(?:\/(\d+))?$/);
+      if (m[1] === undefined) {
+        if (method === "GET") return { status: 200, body: [...todos.values()].map(view) };
+        const title = body && body.title;
+        if (kind !== "ai" && (typeof title !== "string" || title.length < 1 || title.length > 100)) return problem(422, "Unprocessable Content", "title은 1~100자의 문자열이다");
+        const todo = { id: nextId++, title, done: false };
+        todos.set(todo.id, todo);
+        return { status: kind === "ai" ? 200 : 201, body: view(todo) };
+      }
+      const todo = todos.get(Number(m[1]));
+      if (!todo) return kind === "ai" ? { status: 200, body: { error: "없는 할 일" } } : problem(404, "Not Found", `id ${m[1]}인 할 일이 없다`);
+      if (method === "GET") return { status: 200, body: view(todo) };
+      if (method === "PATCH") {
+        if (kind !== "ai" && typeof body.done !== "boolean") return problem(422, "Unprocessable Content", "done은 true나 false다");
+        todo.done = body.done;
+        return { status: 200, body: view(todo) };
+      }
+      todos.delete(todo.id);
+      return { status: 204, body: null };
+    };
+  }
+  // 명세의 요청을 차례로 보내고, 줄마다 상태 코드와 모양이 맞는지 적는다
+  function run(kind) {
+    const server = makeServer(kind);
+    return SPEC.map(([method, path, body, status, shape]) => {
+      const raw = body === null ? null : typeof body === "string" ? body : JSON.stringify(body);
+      const res = server(method, path, raw);
+      const statusOk = res.status === status;
+      const shapeOk = res.body && res.body.text !== undefined ? false : matches(res.body, SHAPES[shape]);
+      return { method, path, raw, status, shape, got: res.status, body: res.body, statusOk, shapeOk, ok: statusOk && shapeOk };
+    });
+  }
+  return { SPEC, SHAPES, matches, makeServer, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ContractLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  let kind = "ai", results = null, sel = -1;
+  const NOTE = {
+    spec: "명세의 요청 10개가 모두 통과했다. 클라이언트는 명세만 보고 짜도 이 서버와 맞는다.",
+    ai: "흔히 보이는 어긋남이다. 201 대신 200, 빈 제목과 \"yes\"를 그대로 받음, 틀린 JSON에 500, 없는 할 일에 200과 {\"error\"}. 하나하나는 작아도 클라이언트의 판단을 바꾼다.",
+    rename: "상태 코드는 모두 맞지만 done 대신 completed를 보낸다. 명세의 Todo 모양과 달라서, done을 읽는 클라이언트는 조용히 틀린 값을 쓴다.",
+  };
+  function render() {
+    document.querySelectorAll("[data-server]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.server === kind)));
+    if (!results) {
+      $("rows").innerHTML = L.SPEC.map(([m, p, b, s, sh]) => `<tr><td class="mono">${m} ${p}</td><td class="mono">${b === null ? "" : esc(typeof b === "string" ? b : JSON.stringify(b))}</td><td class="mono">${s} ${sh}</td><td></td><td></td></tr>`).join("");
+      $("note").textContent = "\"계약 테스트\"을 누른다.";
+      return;
+    }
+    $("rows").innerHTML = results.map((r, k) => `<tr data-k="${k}" class="${k === sel ? "sel" : ""}"><td class="mono">${r.method} ${r.path}</td><td class="mono">${r.raw === null ? "" : esc(r.raw)}</td>`
+      + `<td class="mono">${r.status} ${r.shape}</td><td class="mono ${r.statusOk ? "" : "fail"}">${r.got}</td>`
+      + `<td class="${r.ok ? "pass" : "fail"}">${r.ok ? "통과" : r.statusOk ? "모양이 다름" : "상태 코드가 다름"}</td></tr>`).join("");
+    const n = results.filter(r => r.ok).length;
+    $("note").textContent = `통과 ${n}개, 실패 ${results.length - n}개. ${NOTE[kind]}`;
+    if (sel >= 0) {
+      const r = results[sel];
+      $("detail").textContent = `${r.method} ${r.path} → ${r.got}\n${r.body === null ? "(본문 없음)" : r.body.text !== undefined ? r.body.text + "   (JSON이 아니다)" : JSON.stringify(r.body)}`;
+    }
+  }
+  document.querySelectorAll("[data-server]").forEach(b => b.addEventListener("click", () => { kind = b.dataset.server; results = null; sel = -1; $("detail").textContent = "줄을 누르면 응답 본문이 여기에 보인다."; render(); }));
+  $("run").addEventListener("click", () => { results = L.run(kind); sel = -1; render(); });
+  $("rows").addEventListener("click", e => { const tr = e.target.closest("tr[data-k]"); if (tr) { sel = Number(tr.dataset.k); render(); } });
+  const q = new URLSearchParams(location.search).get("server");
+  if (["spec", "ai", "rename"].includes(q)) kind = q;
+  render();
+})();
+</script>
+</body>
+</html>

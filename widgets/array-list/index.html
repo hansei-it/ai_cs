@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>배열과 연결 리스트의 연산 비용</title>
+<meta name="description" content="연산과 위치를 골라 실행하며, 배열은 몇 칸을 옮기고 연결 리스트는 next를 몇 번 따라가는지 같은 데이터로 비교한다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3044;
+    --write: #ffa94d;
+    --write-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); width: 160px; }
+  .panel { margin-top: 12px; }
+  .panel h2 { font-size: 14px; margin: 0 0 6px; }
+  .panel h2 small { font-weight: 400; color: var(--muted); }
+  .cells { display: flex; flex-wrap: wrap; gap: 3px; }
+  .cell { width: 44px; text-align: center; border: 1px solid var(--line); border-radius: 4px; background: var(--soft); font-size: 13px; padding: 2px 0; }
+  .cell small { display: block; font-size: 10px; color: var(--muted); }
+  .cell.empty { border-style: dashed; color: var(--muted); background: transparent; }
+  .cell.target { border-color: var(--accent); background: var(--accent-bg); font-weight: 700; }
+  .cell.moved { border-color: var(--write); background: var(--write-bg); }
+  .cell.visited { border-color: var(--read); background: var(--read-bg); }
+  .nodes { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+  .nodes .arrow { color: var(--muted); font-size: 13px; }
+  .nodes .head { font-size: 12px; color: var(--muted); margin-right: 2px; }
+  .cost { margin-top: 6px; font-size: 14px; }
+  .cost b { font-size: 15px; }
+  .cost .a { color: var(--write); }
+  .cost .l { color: var(--read); }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .cell { width: 38px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<h1>배열과 연결 리스트의 연산 비용</h1>
+<p class="lead">같은 값을 배열(칸 10개)과 연결 리스트에 넣어 두었다. 연산과 위치 i를 고르고 실행한다. 배열에서 <span style="color:var(--write)">옮긴 칸</span>, 리스트에서 <span style="color:var(--read)">따라간 노드</span>를 센다.</p>
+
+<div class="row" role="group" aria-label="연산">
+  <span class="label">연산</span>
+  <button class="btn" data-op="read">i번째 읽기</button>
+  <button class="btn" data-op="insert">i번째에 넣기</button>
+  <button class="btn" data-op="remove">i번째 지우기</button>
+</div>
+<div class="row">
+  <span class="label">위치</span>
+  <input type="range" id="pos" min="0" max="7" value="0" aria-label="위치 i">
+  <span class="mono" id="posv">i = 0</span>
+  <button class="btn go" id="go">실행</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+
+<div class="panel">
+  <h2>배열 <small>칸이 붙어 있다. i번째 주소 = 시작 주소 + i × 4</small></h2>
+  <div class="cells mono" id="arr"></div>
+  <div class="cost" id="arrcost"></div>
+</div>
+<div class="panel">
+  <h2>연결 리스트 <small>노드마다 다음 노드의 주소(next)를 든다</small></h2>
+  <div class="nodes mono" id="list"></div>
+  <div class="cost" id="listcost"></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ListLogic = (() => {
+  const CAP = 10;   // 배열의 칸 수. 다 차면 넣을 수 없다 (실제로는 더 큰 배열을 받아 모두 복사한다)
+  const initial = () => ({ values: [10, 20, 30, 40, 50, 60, 70, 80], next: 90 });
+
+  // 연산 하나의 비용. 배열: moved = 옮긴 칸 수, 리스트: hops = 따라간 next 수, links = 바꾼 next(또는 head) 수
+  function cost(op, n, i) {
+    switch (op) {
+      case "read":
+        if (i < 0 || i >= n) return null;
+        return { array: { moved: 0, direct: true }, list: { hops: i, links: 0 } };
+      case "insert":
+        if (i < 0 || i > n) return null;
+        // 배열: i부터 끝까지 한 칸씩 뒤로. 리스트: i−1번째 노드까지 가서 next 두 개를 바꾼다 (i = 0이면 head)
+        return { array: { moved: n - i, full: n >= CAP }, list: { hops: Math.max(0, i - 1), links: 2 } };
+      case "remove":
+        if (i < 0 || i >= n) return null;
+        // 배열: i+1부터 끝까지 한 칸씩 앞으로. 리스트: i−1번째 노드까지 가서 next 하나를 바꾼다
+        return { array: { moved: n - 1 - i }, list: { hops: Math.max(0, i - 1), links: 1 } };
+    }
+    return null;
+  }
+
+  // 연산을 실제로 적용한다. 결과: { state, ok, c, value }
+  function apply(state, op, i) {
+    const n = state.values.length, c = cost(op, n, i);
+    if (!c || (op === "insert" && c.array.full)) return { state, ok: false, c };
+    const values = [...state.values];
+    let value = null, next = state.next;
+    if (op === "read") value = values[i];
+    if (op === "insert") { value = next; values.splice(i, 0, next); next += 10; }
+    if (op === "remove") value = values.splice(i, 1)[0];
+    return { state: { values, next }, ok: true, c, value };
+  }
+
+  // 화면에 칠할 칸: 배열에서 옮겨지는 칸(실행 전 기준), 리스트에서 거쳐 가는 노드
+  function marks(op, n, i) {
+    const moved = [], visited = [];
+    if (op === "insert") for (let k = i; k < n; k++) moved.push(k);
+    if (op === "remove") for (let k = i + 1; k < n; k++) moved.push(k);
+    const last = op === "read" ? i : i - 1;   // 리스트에서 도착해야 하는 노드
+    for (let k = 0; k <= last; k++) visited.push(k);
+    return { moved, visited };
+  }
+
+  return { CAP, initial, cost, apply, marks };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ListLogic;
+  const $ = id => document.getElementById(id);
+  let state = L.initial(), op = "read", last = null;
+  const OP_NAME = { read: "읽기", insert: "넣기", remove: "지우기" };
+
+  function limits() {
+    const n = state.values.length;
+    const max = op === "insert" ? n : Math.max(0, n - 1);
+    $("pos").max = String(max);
+    if (Number($("pos").value) > max) $("pos").value = String(max);
+    $("posv").textContent = `i = ${$("pos").value}`;
+  }
+
+  function render() {
+    limits();
+    const n = state.values.length, i = Number($("pos").value);
+    const show = last || { op, i, before: n };
+    const mk = L.marks(show.op, show.before, show.i);
+    const vals = last ? last.beforeValues : state.values;
+    // 배열: 실행한 뒤라면 실행 전 모습에 옮긴 칸을 칠한다
+    let html = "";
+    for (let k = 0; k < L.CAP; k++) {
+      const v = vals[k];
+      const cls = v === undefined ? "cell empty" : `cell${mk.moved.includes(k) ? " moved" : ""}${show.op === "read" && k === show.i ? " target" : ""}`;
+      html += `<div class="${cls}">${v === undefined ? "·" : v}<small>[${k}]</small></div>`;
+    }
+    $("arr").innerHTML = html;
+    let lh = `<span class="head">head →</span>`;
+    vals.forEach((v, k) => {
+      const cls = `cell${mk.visited.includes(k) ? " visited" : ""}${show.op === "read" && k === show.i ? " target" : ""}`;
+      lh += `<div class="${cls}">${v}<small>노드</small></div><span class="arrow">→</span>`;
+    });
+    lh += `<span class="arrow">NULL</span>`;
+    $("list").innerHTML = lh;
+
+    const c = L.cost(show.op, show.before, show.i);
+    if (!c) { $("arrcost").textContent = ""; $("listcost").textContent = ""; return; }
+    if (show.op === "read") $("arrcost").innerHTML = `주소를 바로 계산해 <b class="a">0칸</b> 옮기고 한 번에 읽는다.`;
+    else if (c.array.full && show.op === "insert") $("arrcost").innerHTML = `칸이 다 찼다. 더 큰 배열을 받아 <b class="a">${show.before}칸</b>을 모두 옮겨 담아야 한다.`;
+    else if (c.array.moved === 0) $("arrcost").innerHTML = `맨 끝이라 옮길 칸이 없다(<b class="a">0칸</b>).`;
+    else $("arrcost").innerHTML = `${show.op === "insert" ? "뒤로" : "앞으로"} <b class="a">${c.array.moved}칸</b>을 한 칸씩 옮긴다.`;
+    const reach = show.op === "read" ? `${show.i}번째 노드` : show.i === 0 ? "head" : `${show.i - 1}번째 노드`;
+    const walk = c.list.hops === 0 ? `따라갈 필요 없이(<b class="l">0번</b>) ${reach}에서 시작한다.` : `head에서 next를 <b class="l">${c.list.hops}번</b> 따라가 ${reach}에 닿는다.`;
+    $("listcost").innerHTML = walk + (c.list.links ? ` 그다음 next(또는 head)를 ${c.list.links}개 바꾼다.` : "");
+  }
+
+  function note(text) { $("note").textContent = text; }
+
+  document.querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => {
+    op = b.dataset.op; last = null;
+    document.querySelectorAll("[data-op]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    render();
+    note(`위치를 고르고 "실행"을 누른다. 실행 전에는 미리 볼 비용이, 실행한 뒤에는 실제로 옮긴 칸과 따라간 노드가 칠해진다.`);
+  }));
+  $("pos").addEventListener("input", () => { last = null; render(); });
+  $("go").addEventListener("click", () => {
+    const i = Number($("pos").value), before = state.values.length, beforeValues = [...state.values];
+    const r = L.apply(state, op, i);
+    if (!r.ok) {
+      note(op === "insert" ? "배열의 칸 10개가 다 찼다. 실제 프로그램은 더 큰 배열을 받아 모두 옮겨 담는다(realloc). 지우기를 하거나 처음으로 돌린다."
+        : `값이 하나도 없어 ${op === "read" ? "읽을" : "지울"} 수 없다. 넣기를 하거나 처음으로 돌린다.`);
+      last = { op, i, before, beforeValues }; render(); return;
+    }
+    last = { op, i, before, beforeValues };
+    state = r.state;
+    render();
+    const a = r.c.array, l = r.c.list;
+    if (op === "read") note(`${i}번째 값 ${r.value}: 배열은 바로, 리스트는 ` + (l.hops ? `next를 ${l.hops}번 따라가서 읽었다.` : "head가 가리키는 첫 노드를 바로 읽었다.") + " i가 클수록 리스트만 느려진다.");
+    else note(`${OP_NAME[op]}: 배열은 ` + (a.moved ? `${a.moved}칸을 옮겼고` : "옮길 칸이 없었고") + ", 리스트는 " + (l.hops ? `${l.hops}번 따라간 뒤` : "따라갈 필요 없이") + ` 연결 ${l.links}개만 바꿨다. ` +
+      (i === 0 ? "맨 앞은 리스트가 가장 유리한 자리다." : i >= before - 1 ? "끝쪽은 배열이 옮길 칸이 적다." : "가운데는 배열은 옮기느라, 리스트는 찾아가느라 일한다.") +
+      ` 위 그림은 무엇을 옮기고 따라갔는지 보이려고 실행 전 모습에 칠했다. 실행한 뒤의 값: ${state.values.join(" ") || "(없음)"}`);
+  });
+  $("reset").addEventListener("click", () => { state = L.initial(); last = null; render(); note("처음 상태로 돌렸다. 값 8개가 들어 있다."); });
+
+  document.querySelector('[data-op="read"]').click();
+})();
+</script>
+</body>
+</html>

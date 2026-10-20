@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>식사하는 철학자</title>
+<meta name="description" content="철학자 다섯을 눌러 포크를 하나씩 들게 하며 교착 상태를 직접 만들어 보고, 번호가 작은 포크부터 드는 규칙으로 바꿔 순환 대기가 사라지는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #237032;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3a26;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .table { display: block; width: 100%; max-width: 420px; height: auto; margin: 4px auto 0; }
+  .table .tbl { fill: var(--soft); stroke: var(--line); stroke-width: 2; }
+  .table .ph { cursor: pointer; }
+  .table .ph circle { fill: var(--bg); stroke: var(--muted); stroke-width: 2; }
+  .table .ph.eat circle { fill: var(--good-bg); stroke: var(--good); stroke-width: 3; }
+  .table .ph.blocked circle { fill: var(--write-bg); stroke: var(--write); stroke-width: 3; }
+  .table .ph.one circle { stroke: var(--read); stroke-width: 3; }
+  .table .ph:focus-visible circle { stroke: var(--accent); stroke-width: 4; }
+  .table text { fill: var(--fg); font-size: 13px; text-anchor: middle; font-weight: 700; }
+  .table text.sub { font-size: 11px; font-weight: 400; fill: var(--muted); }
+  .table .fork { stroke: var(--muted); stroke-width: 5; stroke-linecap: round; }
+  .table .fork.held { stroke: var(--read); }
+  .table text.fl { font-size: 11px; fill: var(--muted); }
+  .table .edge { stroke: var(--write); stroke-width: 2; fill: none; stroke-dasharray: 4 3; }
+  .status { text-align: center; font-weight: 700; border-radius: 6px; padding: 4px; margin-top: 6px; font-size: 14px; }
+  .status.bad { background: var(--write-bg); color: var(--write); }
+  .status.good { background: var(--good-bg); color: var(--good); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>식사하는 철학자</h1>
+<p class="lead">철학자 다섯이 둥근 탁자에 앉아 있고, 사이마다 포크가 하나씩 모두 다섯 개다. 먹으려면 양옆의 포크 둘이 필요하다. 철학자를 누르면 다음 일을 한 단계 한다: 포크 하나 들기, 또는 둘을 쥐었으면 먹고 내려놓기.</p>
+
+<div class="row" role="group" aria-label="포크 드는 규칙">
+  <span class="label">규칙</span>
+  <button class="btn" data-st="naive">모두 왼쪽 포크부터</button>
+  <button class="btn" data-st="ordered">번호가 작은 포크부터</button>
+</div>
+<div class="row">
+  <span class="label">한꺼번에</span>
+  <button class="btn" id="allfirst">0번부터 차례로 첫 포크 들기</button>
+  <button class="btn" id="auto">무작위로 300단계</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+
+<svg class="table" id="table" viewBox="0 0 420 330" role="group" aria-label="탁자"></svg>
+<div class="status" id="status"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const DiningLogic = (() => {
+  const N = 5;
+  // 철학자 i의 왼쪽 포크는 i, 오른쪽 포크는 (i+1)%5. naive: 왼쪽 먼저, ordered: 번호가 작은 포크 먼저
+  const order = (st, i) => { const a = i, b = (i + 1) % N; return st === "naive" ? [a, b] : [Math.min(a, b), Math.max(a, b)]; };
+  const initial = st => ({ st, forks: Array(N).fill(-1), held: Array.from({ length: N }, () => []), meals: Array(N).fill(0) });
+  const clone = s => ({ st: s.st, forks: [...s.forks], held: s.held.map(h => [...h]), meals: [...s.meals] });
+  // 다음 일: 포크 둘이면 먹고 내려놓기, 아니면 다음 포크 (누가 쥐고 있으면 못 한다)
+  const want = (s, i) => (s.held[i].length === 2 ? null : order(s.st, i)[s.held[i].length]);
+  const can = (s, i) => { const w = want(s, i); return w === null || s.forks[w] === -1; };
+  function act(s0, i) {
+    const s = clone(s0), w = want(s, i);
+    if (w === null) {
+      for (const f of s.held[i]) s.forks[f] = -1;
+      s.held[i] = [];
+      s.meals[i] += 1;
+      return { state: s, did: "eat" };
+    }
+    if (s.forks[w] !== -1) return { state: s0, did: "blocked", fork: w, by: s0.forks[w] };
+    s.forks[w] = i;
+    s.held[i].push(w);
+    return { state: s, did: "pick", fork: w };
+  }
+  const deadlocked = s => !Array.from({ length: N }, (_, i) => i).some(i => can(s, i));
+  // 할 수 있는 사람 중 하나를 선형 합동 생성기로 골라 steps번 진행한다. 아무도 못 하면 교착으로 멈춘다
+  function auto(st, seed, steps) {
+    let s = initial(st), x = seed >>> 0;
+    for (let k = 0; k < steps; k++) {
+      const ready = Array.from({ length: N }, (_, i) => i).filter(i => can(s, i));
+      if (!ready.length) return { state: s, deadlock: true, at: k };
+      x = (Math.imul(x, 1103515245) + 12345) >>> 0;
+      s = act(s, ready[(x >>> 16) % ready.length]).state;
+    }
+    return { state: s, deadlock: false, at: steps };
+  }
+  const meals = s => s.meals.reduce((a, b) => a + b, 0);
+  return { N, order, initial, want, can, act, deadlocked, auto, meals };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = DiningLogic;
+  const $ = id => document.getElementById(id);
+  const CX = 210, CY = 165, RT = 70, RP = 128, RF = 92;
+  let s, seed = 1, blockedNow = new Set();
+  const ang = k => -Math.PI / 2 + (k * 2 * Math.PI) / L.N;
+  // 조사: 숫자를 읽은 끝소리로 고른다 (0 영, 1 일, 3 삼은 받침이 있고 2 이, 4 사는 없다)
+  const has = n => !"2459".includes(String(n).slice(-1));
+  const eun = n => `${n}${has(n) ? "은" : "는"}`, iga = n => `${n}${has(n) ? "이" : "가"}`, eul = n => `${n}${has(n) ? "을" : "를"}`;
+
+  function render(msg) {
+    let g = `<circle class="tbl" cx="${CX}" cy="${CY}" r="${RT}"/>`;
+    // 포크: 철학자 i와 i+1 사이
+    for (let f = 0; f < L.N; f++) {
+      const a = ang(f + 0.5), x1 = CX + Math.cos(a) * (RF - 14), y1 = CY + Math.sin(a) * (RF - 14);
+      const owner = s.forks[f];
+      let x2 = CX + Math.cos(a) * (RF + 14), y2 = CY + Math.sin(a) * (RF + 14);
+      if (owner !== -1) {   // 쥔 사람 쪽으로 기울인다
+        const pa = ang(owner);
+        x2 = CX + Math.cos(pa) * (RP - 34); y2 = CY + Math.sin(pa) * (RP - 34);
+      }
+      g += `<line class="fork${owner !== -1 ? " held" : ""}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+      g += `<text class="fl" x="${(CX + Math.cos(a) * (RF - 30)).toFixed(1)}" y="${(CY + Math.sin(a) * (RF - 30) + 4).toFixed(1)}">${f}</text>`;
+    }
+    const dead = L.deadlocked(s);
+    // 기다리는 관계(교착일 때): 철학자 → 그가 원하는 포크를 쥔 사람
+    if (dead) for (let i = 0; i < L.N; i++) {
+      const w = L.want(s, i);
+      if (w === null || s.forks[w] === -1) continue;
+      const j = s.forks[w], a = ang(i), b = ang(j);
+      g += `<path class="edge" d="M${(CX + Math.cos(a) * (RP - 24)).toFixed(1)} ${(CY + Math.sin(a) * (RP - 24)).toFixed(1)} Q${CX} ${CY} ${(CX + Math.cos(b) * (RP - 24)).toFixed(1)} ${(CY + Math.sin(b) * (RP - 24)).toFixed(1)}"/>`;
+    }
+    for (let i = 0; i < L.N; i++) {
+      const a = ang(i), x = CX + Math.cos(a) * RP, y = CY + Math.sin(a) * RP, h = s.held[i].length;
+      const cls = h === 2 ? "eat" : (blockedNow.has(i) || (dead && h < 2)) ? "blocked" : h === 1 ? "one" : "";
+      const sub = h === 2 ? "먹는다" : h === 1 ? `포크 ${s.held[i][0]}` : "생각 중";
+      g += `<g class="ph ${cls}" data-ph="${i}" tabindex="0" role="button" aria-label="철학자 ${i}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="26"/><text x="${x.toFixed(1)}" y="${(y + 1).toFixed(1)}">${i}</text><text class="sub" x="${x.toFixed(1)}" y="${(y + 15).toFixed(1)}">${sub}</text></g>`;
+    }
+    $("table").innerHTML = g;
+    $("table").querySelectorAll("[data-ph]").forEach(el => {
+      const go = () => step(Number(el.dataset.ph));
+      el.addEventListener("click", go);
+      el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    });
+    $("status").className = "status " + (dead ? "bad" : "good");
+    $("status").textContent = dead ? "교착: 아무도 다음 일을 할 수 없다" : `식사 ${L.meals(s)}번`;
+    $("note").textContent = msg;
+    document.querySelectorAll("[data-st]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.st === s.st)));
+  }
+  function step(i) {
+    const r = L.act(s, i);
+    blockedNow = new Set();
+    if (r.did === "blocked") {
+      blockedNow.add(i);
+      render(`철학자 ${eun(i)} 포크 ${eul(r.fork)} 원하지만 철학자 ${iga(r.by)} 쥐고 있어 기다린다.` + (s.held[i].length ? " 쥔 포크는 내려놓지 않는다(점유와 대기)." : ""));
+      return;
+    }
+    s = r.state;
+    if (r.did === "eat") render(`철학자 ${iga(i)} 먹고 포크 둘을 내려놓았다.`);
+    else if (L.deadlocked(s)) render("모두 포크 하나씩 쥐고 옆 사람의 포크를 기다린다. 기다림이 한 바퀴 원을 이루어(순환 대기) 누구도 움직일 수 없다. 주황 점선이 \"누가 누구를 기다리는지\"다.");
+    else render(`철학자 ${iga(i)} 포크 ${eul(r.fork)} 들었다.`);
+  }
+  function start(st) {
+    s = L.initial(st); blockedNow = new Set();
+    render(st === "naive" ? "\"0번부터 차례로 첫 포크 들기\"를 누르거나, 철학자를 0, 1, 2, 3, 4 차례로 한 번씩 눌러 본다."
+      : "철학자 4만 오른쪽 포크(0)를 먼저 든다. 같은 차례로 눌러도 누군가는 늘 먹을 수 있다.");
+  }
+  document.querySelectorAll("[data-st]").forEach(b => b.addEventListener("click", () => start(b.dataset.st)));
+  $("reset").addEventListener("click", () => start(s.st));
+  $("allfirst").addEventListener("click", () => {
+    s = L.initial(s.st); blockedNow = new Set();
+    const log = [];
+    for (let i = 0; i < L.N; i++) { const r = L.act(s, i); s = r.state; log.push(r.did === "pick" ? `${i}→포크 ${r.fork}` : `${i} 기다림`); if (r.did === "blocked") blockedNow.add(i); }
+    render(`${log.join(", ")}. ` + (L.deadlocked(s) ? "모두 포크 하나씩 쥐고 기다린다. 교착이다." : "철학자 4는 포크 0을 기다리지만 포크 4가 비어 있어 철학자 3이 먹을 수 있다. 원이 만들어지지 않는다."));
+  });
+  $("auto").addEventListener("click", () => {
+    // 누를 때마다 처음 상태에서 다른 무작위 순서(씨앗)로 300단계를 돌린다
+    const r = L.auto(s.st, seed, 300), k = seed;
+    s = r.state; blockedNow = new Set(); seed += 1;
+    render(r.deadlock ? `무작위 순서 ${k}번으로 처음부터 돌려 ${r.at}단계 만에 교착에 빠졌다(식사 ${L.meals(s)}번). 다시 누르면 다른 순서로 처음부터 돌린다.`
+      : `무작위 순서 ${k}번으로 처음부터 300단계를 돌려 교착 없이 식사 ${L.meals(s)}번. 번호 순서대로 들면 기다림이 원을 이룰 수 없다.`);
+  });
+  const q = new URLSearchParams(location.search).get("rule");
+  start(q === "ordered" ? "ordered" : "naive");
+})();
+</script>
+</body>
+</html>

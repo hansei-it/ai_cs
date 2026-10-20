@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>마지막 좌석을 두 사람이 동시에</title>
+<meta name="description" content="락 없음, 비관적 락(FOR UPDATE), 낙관적 락(version)을 골라 두 세션의 문장을 한 단계씩 실행하며, 누가 기다리고 좌석이 몇 번 팔리는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --ok: #2b8a3e;
+    --ok-bg: #e6f4ea;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --ok: #69db7c;
+    --ok-bg: #1f3a27;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  .grid h2 { font-size: 13px; margin: 0; }
+  .grid h2.a { color: var(--read); }
+  .grid h2.b { color: var(--write); }
+  .step { font-size: 12.5px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px; background: var(--soft); min-height: 1.8em; }
+  .step.a { border-left: 3px solid var(--read); }
+  .step.b { border-left: 3px solid var(--write); }
+  .step .sql { display: block; word-break: break-word; }
+  .step .res { display: block; color: var(--muted); }
+  .step.wait { background: var(--write-bg); }
+  .step.wait .res { color: var(--write); font-weight: 700; }
+  .step.now { outline: 2px solid var(--accent); }
+  .empty { visibility: hidden; }
+  .state { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0 0; font-size: 13.5px; }
+  .state b { font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; }
+  .sold { color: var(--write); font-weight: 700; }
+  .fine { color: var(--ok); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .step { font-size: 11.5px; } }
+</style>
+</head>
+<body>
+<h1>마지막 좌석을 두 사람이 동시에</h1>
+<p class="lead">좌석 표에 남은 좌석 1개(version 7)가 있다. 세션 A와 B가 같은 때에 예약한다. 단계와 결과는 이 PC의 MySQL 8.4에서 두 연결로 실제로 실행한 것과 같다.</p>
+<div class="row" role="group" aria-label="방식">
+  <span class="label">방식</span>
+  <button class="btn" data-mode="none">락 없이 읽고 고치기</button>
+  <button class="btn" data-mode="pessimistic">비관적 락 (FOR UPDATE)</button>
+  <button class="btn" data-mode="optimistic">낙관적 락 (version)</button>
+</div>
+<div class="row">
+  <button class="btn go" id="next">다음 단계</button>
+  <button class="btn" id="all">끝까지</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+<div class="grid" id="grid"></div>
+<div class="state" id="state"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const SeatLogic = (() => {
+  // 단계: [세션, SQL, 동작]. 동작은 작은 모형이 해석한다
+  const STEPS = {
+    none: [
+      ["A", "SELECT remaining FROM seat WHERE id = 1", { read: ["remaining"] }],
+      ["B", "SELECT remaining FROM seat WHERE id = 1", { read: ["remaining"] }],
+      ["A", "UPDATE seat SET remaining = 0 WHERE id = 1", { set: { remaining: 0 } }],
+      ["A", "INSERT INTO booking (seat_id, who) VALUES (1, 'A')", { book: "A" }],
+      ["B", "UPDATE seat SET remaining = 0 WHERE id = 1", { set: { remaining: 0 } }],
+      ["B", "INSERT INTO booking (seat_id, who) VALUES (1, 'B')", { book: "B" }],
+    ],
+    pessimistic: [
+      ["A", "START TRANSACTION", { tx: "begin" }],
+      ["A", "SELECT remaining FROM seat WHERE id = 1 FOR UPDATE", { read: ["remaining"], lock: true }],
+      ["B", "START TRANSACTION", { tx: "begin" }],
+      ["B", "SELECT remaining FROM seat WHERE id = 1 FOR UPDATE", { read: ["remaining"], lock: true }],
+      ["A", "UPDATE seat SET remaining = 0 WHERE id = 1", { set: { remaining: 0 } }],
+      ["A", "INSERT INTO booking (seat_id, who) VALUES (1, 'A')", { book: "A" }],
+      ["A", "COMMIT", { tx: "end" }],
+      ["B", "ROLLBACK", { tx: "end" }],
+    ],
+    optimistic: [
+      ["A", "SELECT remaining, version FROM seat WHERE id = 1", { read: ["remaining", "version"] }],
+      ["B", "SELECT remaining, version FROM seat WHERE id = 1", { read: ["remaining", "version"] }],
+      ["A", "UPDATE seat SET remaining = 0, version = 8 WHERE id = 1 AND version = 7", { set: { remaining: 0, version: 8 }, ifVersion: 7 }],
+      ["A", "INSERT INTO booking (seat_id, who) VALUES (1, 'A')", { book: "A" }],
+      ["B", "UPDATE seat SET remaining = 0, version = 8 WHERE id = 1 AND version = 7", { set: { remaining: 0, version: 8 }, ifVersion: 7 }],
+      ["B", "SELECT remaining, version FROM seat WHERE id = 1", { read: ["remaining", "version"] }],
+    ],
+  };
+  const initial = () => ({ seat: { remaining: 1, version: 7 }, booked: [], lock: null, waiting: null, log: [] });
+  // 단계 하나를 실행한다. 기다리는 세션의 문장은 잠금이 풀릴 때(COMMIT, ROLLBACK) 이어서 끝난다
+  function step(s0, mode, i) {
+    const s = { seat: { ...s0.seat }, booked: [...s0.booked], lock: s0.lock, waiting: s0.waiting, log: [...s0.log] };
+    const [who, sql, op] = STEPS[mode][i];
+    const readRow = cols => [cols.map(c => s.seat[c])];
+    if (op.read) {
+      if (op.lock && s.lock && s.lock !== who) { s.waiting = { who, sql, cols: op.read }; s.log.push([who, sql, "wait"]); return s; }
+      if (op.lock) s.lock = who;
+      s.log.push([who, sql, readRow(op.read)]);
+    } else if (op.set) {
+      const match = op.ifVersion === undefined || s.seat.version === op.ifVersion;
+      // MySQL이 돌려주는 수는 실제로 값이 바뀐 행의 수다(같은 값으로 바꾸면 0)
+      const changed = match && Object.entries(op.set).some(([c, v]) => s.seat[c] !== v);
+      if (match) Object.assign(s.seat, op.set);
+      s.log.push([who, sql, { affected: changed ? 1 : 0 }]);
+    } else if (op.book) {
+      s.booked.push(op.book);
+      s.log.push([who, sql, { affected: 1 }]);
+    } else if (op.tx === "begin") {
+      s.log.push([who, sql, { affected: 0 }]);
+    } else {
+      s.log.push([who, sql, { affected: 0 }]);
+      if (s.lock === who) {
+        s.lock = null;
+        if (s.waiting) {                                     // 기다리던 FOR UPDATE가 이제 잠그고 새 값을 읽는다
+          const w = s.waiting;
+          s.lock = w.who;
+          s.waiting = null;
+          s.log.push([w.who, w.sql, "resumed", readRow(w.cols)]);
+        }
+      }
+    }
+    return s;
+  }
+  function run(mode, n = STEPS[mode].length) {
+    let s = initial();
+    for (let i = 0; i < n; i++) s = step(s, mode, i);
+    return s;
+  }
+  return { STEPS, initial, step, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = SeatLogic;
+  const $ = id => document.getElementById(id);
+  let mode = "none", n = 0;
+  const show = (r, sql) => r === "wait" ? "잠금이 풀리기를 기다린다"
+    : Array.isArray(r) ? `→ ${r.map(row => row.join(", ")).join(" / ")}`
+    : /^START/.test(sql) ? "→ 트랜잭션 시작" : /^COMMIT/.test(sql) ? "→ 확정" : /^ROLLBACK/.test(sql) ? "→ 되돌림"
+    : r.affected !== undefined ? `→ ${/^INSERT/.test(sql) ? "넣은" : "바뀐"} 행 ${r.affected}` : "";
+  const NOTE = {
+    none: ["A가 남은 좌석 1을 읽었다.", "B도 같은 1을 읽었다. 둘 다 \"자리가 있다\"고 판단한다.", "A가 0으로 고쳤다.", "A의 예약이 들어갔다.",
+      "B도 0으로 고쳤다. 이미 0이라 바뀐 행은 0이지만, B의 프로그램은 앞에서 읽은 1을 믿고 계속한다.", "B의 예약도 들어갔다. 좌석 하나가 두 번 팔렸다."],
+    pessimistic: ["A가 트랜잭션을 시작했다.", "A가 좌석 행을 잠그며 읽었다(FOR UPDATE).", "B가 트랜잭션을 시작했다.", "B도 잠그며 읽으려 하지만 A가 잠가 두어 기다린다.",
+      "A가 0으로 고쳤다. B는 여전히 기다린다.", "A의 예약이 들어갔다.", "A가 커밋해 잠금을 풀었다. 기다리던 B가 이제 잠그고 새 값 0을 읽었다.", "B는 0을 보고 예약하지 않고 끝냈다. 좌석은 한 번만 팔렸다."],
+    optimistic: ["A가 남은 좌석과 version을 읽었다.", "B도 같은 값(1, 7)을 읽었다. 잠그지 않으므로 둘 다 바로 읽는다.",
+      "A가 \"version이 아직 7이면\" 고치고 version을 8로 올렸다. 바뀐 행 1.", "A의 예약이 들어갔다.",
+      "B도 \"version이 7이면\" 고치려 했지만 이미 8이라 맞는 행이 없다. 바뀐 행 0을 보고 누군가 먼저 고쳤다는 것을 안다.", "B가 다시 읽어 남은 좌석 0을 보고 예약을 포기했다. 좌석은 한 번만 팔렸다."],
+  };
+  function render() {
+    const s = L.run(mode, n);
+    const cells = [];
+    s.log.forEach((e, i) => {
+      const [who, sql] = e, res = e[2] === "resumed" ? e[3] : e[2];
+      const resumed = e[2] === "resumed", last = i === s.log.length - 1;
+      const box = `<div class="step ${who.toLowerCase()} ${res === "wait" ? "wait" : ""} ${last ? "now" : ""}"><span class="sql mono">${resumed ? "(기다리던 문장이 끝남) " : ""}${sql}</span><span class="res mono">${show(res, sql)}</span></div>`;
+      cells.push(who === "A" ? box + `<div class="step empty"></div>` : `<div class="step empty"></div>` + box);
+    });
+    $("grid").innerHTML = `<h2 class="a">세션 A</h2><h2 class="b">세션 B</h2>` + cells.join("");
+    const over = s.booked.length > 1;
+    $("state").innerHTML = `<span>남은 좌석 <b>${s.seat.remaining}</b></span><span>version <b>${s.seat.version}</b></span>`
+      + `<span>예약 <b>${s.booked.length ? s.booked.join(", ") : "없음"}</b></span>`
+      + (n === L.STEPS[mode].length ? `<span class="${over ? "sold" : "fine"}">${over ? "좌석 1개를 두 번 팔았다" : "좌석 1개를 한 번만 팔았다"}</span>` : "")
+      + (s.waiting ? `<span class="sold">${s.waiting.who}가 기다리는 중</span>` : "");
+    $("note").textContent = n ? NOTE[mode][n - 1] : "\"다음 단계\"를 눌러 두 세션의 문장을 차례로 실행한다.";
+    $("next").disabled = $("all").disabled = n >= L.STEPS[mode].length;
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  }
+  document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { mode = b.dataset.mode; n = 0; render(); }));
+  $("next").addEventListener("click", () => { n++; render(); });
+  $("all").addEventListener("click", () => { n = L.STEPS[mode].length; render(); });
+  $("reset").addEventListener("click", () => { n = 0; render(); });
+  const q = new URLSearchParams(location.search).get("mode");
+  if (q in L.STEPS) mode = q;
+  render();
+})();
+</script>
+</body>
+</html>

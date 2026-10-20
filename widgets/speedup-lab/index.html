@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스레드를 늘리면 몇 배 빨라지나</title>
+<meta name="description" content="이 PC에서 같은 계산을 스레드 1~32개로 나눠 잰 빨라진 배수를 보고, 나눌 수 없는 부분의 비율을 바꿔 가며 암달의 법칙 곡선과 비교한다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --write: #c2410c;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --write: #ffa94d;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { fill: var(--muted); font-size: 11px; font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; }
+  svg .grid { stroke: var(--line); stroke-width: 1; }
+  svg .ideal { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+  svg .amdahl { stroke: var(--write); stroke-width: 2.5; fill: none; }
+  svg .meas { fill: var(--accent); }
+  svg .meas-line { stroke: var(--accent); stroke-width: 2; fill: none; }
+  svg text.lab { fill: var(--fg); font-weight: 700; }
+  .legend { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
+  .legend i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: 3px; margin-right: 4px; }
+  .tablewrap { overflow-x: auto; }
+  .chartwrap { overflow-x: auto; }
+  .chartwrap svg { min-width: 520px; }   /* 휴대폰에서 글자가 너무 작아지지 않게, 줄이지 않고 옆으로 밀어 본다 */
+  table { border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+  th, td { padding: 2px 12px 2px 0; text-align: right; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 400; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } th, td { padding-right: 7px; } }
+</style>
+</head>
+<body>
+<h1>스레드를 늘리면 몇 배 빨라지나</h1>
+<p class="lead">혼자 하면 약 2.3초 걸리는 계산을 스레드 N개로 똑같이 나눴다. 이 PC(Core i9-14900KF, P-코어 8개 + E-코어 16개, 논리 프로세서 32개)에서 5번 잰 중앙값이다.</p>
+
+<div class="row" role="group" aria-label="나눌 수 없는 부분">
+  <span class="label">나눌 수 없는 부분</span>
+  <button class="btn mono" data-s="0">0%</button>
+  <button class="btn mono" data-s="0.01">1%</button>
+  <button class="btn mono" data-s="0.05">5%</button>
+  <button class="btn mono" data-s="0.1">10%</button>
+  <button class="btn mono" data-s="0.5">50%</button>
+</div>
+<div class="chartwrap"><svg id="chart" viewBox="0 0 600 270" role="img" aria-label="스레드 수에 따른 빨라진 배수"></svg></div>
+<div class="legend"><span><i style="border-color:var(--muted);border-top-style:dashed"></i>이상적 (N배)</span><span><i style="border-color:var(--write)"></i>암달의 법칙</span><span><i style="border-color:var(--accent)"></i>이 PC에서 잰 값</span></div>
+<div class="tablewrap"><table id="table"></table></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const SpeedupLogic = (() => {
+  // 스레드 N개로 나눴을 때 걸린 시간 (ms, 5번 잰 값). 나눌 수 없는 부분이 없는 계산이다
+  const MEASURED = [
+    { n: 1, ms: [2292.0, 2297.0, 2325.6, 2280.6, 2317.7] },
+    { n: 2, ms: [1148.7, 1147.0, 1146.3, 1138.8, 1137.9] },
+    { n: 4, ms: [586.3, 569.3, 571.2, 574.7, 592.4] },
+    { n: 8, ms: [305.7, 302.1, 295.3, 304.8, 293.5] },
+    { n: 16, ms: [176.6, 183.3, 174.2, 184.8, 176.7] },
+    { n: 24, ms: [123.8, 122.9, 125.1, 123.5, 122.1] },
+    { n: 32, ms: [97.9, 105.7, 108.7, 108.3, 101.6] },
+  ];
+  const median = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+  const speedup = n => median(MEASURED[0].ms) / median(MEASURED.find(m => m.n === n).ms);
+  // 암달의 법칙: 나눌 수 없는 비율 s, 스레드 n개일 때 빨라지는 배수
+  const amdahl = (s, n) => 1 / (s + (1 - s) / n);
+  const limit = s => (s > 0 ? 1 / s : Infinity);
+  const fmt = v => (v >= 10 ? v.toFixed(1) : v.toFixed(2));
+  return { MEASURED, median, speedup, amdahl, limit, fmt };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = SpeedupLogic;
+  const $ = id => document.getElementById(id);
+  const X0 = 44, X1 = 580, Y0 = 245, Y1 = 14;
+  const X = n => X0 + ((n - 1) / 31) * (X1 - X0);
+  const Y = v => Y0 - (v / 32) * (Y0 - Y1);
+  let s = 0;
+
+  function render() {
+    let g = "";
+    for (const v of [0, 8, 16, 24, 32]) g += `<line class="grid" x1="${X0}" y1="${Y(v)}" x2="${X1}" y2="${Y(v)}"/><text x="${X0 - 6}" y="${Y(v) + 4}" text-anchor="end">×${v}</text>`;
+    for (const n of [1, 8, 16, 24, 32]) g += `<text x="${X(n)}" y="${Y0 + 16}" text-anchor="middle">${n}</text>`;
+    g += `<text x="${X1}" y="${Y0 + 16}" text-anchor="end" dx="-24">스레드 수 →</text>`;
+    g += `<line class="ideal" x1="${X(1)}" y1="${Y(1)}" x2="${X(32)}" y2="${Y(32)}"/>`;
+    let path = "";
+    for (let n = 1; n <= 32; n += 0.25) path += `${path ? "L" : "M"}${X(n).toFixed(1)} ${Y(L.amdahl(s, n)).toFixed(1)}`;
+    g += `<path class="amdahl" d="${path}"/>`;
+    const pts = L.MEASURED.map(m => [X(m.n), Y(L.speedup(m.n))]);
+    g += `<path class="meas-line" d="${pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join("")}"/>`;
+    for (const m of L.MEASURED) {
+      const sp = L.speedup(m.n);
+      g += `<circle class="meas" cx="${X(m.n)}" cy="${Y(sp)}" r="4.5"/>`;
+      if (m.n >= 8) g += `<text class="lab" x="${X(m.n)}" y="${Y(sp) + 18}" text-anchor="middle">×${L.fmt(sp)}</text>`;
+    }
+    $("chart").innerHTML = g;
+    $("table").innerHTML = `<tr><th>스레드</th>${L.MEASURED.map(m => `<th>${m.n}</th>`).join("")}</tr>
+      <tr><th>잰 시간</th>${L.MEASURED.map(m => `<td class="mono">${Math.round(L.median(m.ms))}ms</td>`).join("")}</tr>
+      <tr><th>잰 배수</th>${L.MEASURED.map(m => `<td class="mono">×${L.fmt(L.speedup(m.n))}</td>`).join("")}</tr>
+      <tr><th>암달</th>${L.MEASURED.map(m => `<td class="mono">×${L.fmt(L.amdahl(s, m.n))}</td>`).join("")}</tr>`;
+    const lim = L.limit(s);
+    let note;
+    if (s === 0) note = "이 계산은 나눌 수 없는 부분이 없어 이론으로는 N배다. 그래도 8개까지는 거의 N배(×7.6)였다가 그 뒤로 처진다. 스레드가 8개를 넘으면 일부가 더 느린 E-코어에서 도는데, 이 계산은 E-코어에서 1.3~1.4배 느렸다. 똑같이 나눴으므로 가장 늦게 끝나는 스레드가 전체 시간을 정한다. 하드웨어가 똑같은 코어 32개가 아니기 때문이다.";
+    else note = `일의 ${s * 100}%가 나눌 수 없으면, 그 부분은 스레드가 몇 개든 혼자 해야 한다. 스레드를 아무리 늘려도 ×${L.fmt(lim)}을 넘지 못하고, 32개로는 ×${L.fmt(L.amdahl(s, 32))}이다.`;
+    $("note").textContent = note;
+    document.querySelectorAll("[data-s]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.s) === s)));
+  }
+  document.querySelectorAll("[data-s]").forEach(b => b.addEventListener("click", () => { s = Number(b.dataset.s); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

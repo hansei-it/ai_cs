@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이 위협은 STRIDE의 어느 것일까</title>
+<meta name="description" content="주문 서비스의 위협 카드 10장을 STRIDE 여섯 가지 가운데 하나로 고르고, 맞는지와 이 강의의 어느 항목이 그 대응을 다루는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .prog { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .prog .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 3px; background: var(--soft); border: 1px solid var(--muted); vertical-align: middle; box-sizing: border-box; }
+  .prog .dot.ok { background: var(--good); border-color: var(--good); }
+  .prog .dot.bad { background: var(--bg); border: 3px solid var(--write); }   /* 색만이 아니라 모양(속 빈 고리)으로도 가른다 */
+  .prog .dot.cur { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .prog > span:first-child { margin-right: 8px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--soft); font-size: 15px; min-height: 3.2em; }
+  #letters .btn b { margin-right: 3px; }
+  #letters .btn[aria-pressed="true"]:disabled { opacity: 1; }
+  .qs { font-size: 12px; color: var(--muted); margin: -2px 0 8px; }
+  .ans { font-size: 14px; margin-bottom: 4px; }
+  .why { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .t { border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  .t td, .t th { border-bottom: 1px solid var(--line); padding: 2px 8px; text-align: left; }
+  .t th { color: var(--muted); font-weight: 400; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .card { font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>이 위협은 STRIDE의 어느 것일까</h1>
+<p class="lead">섹션 8의 주문 서비스에서 일어날 수 있는 일 10가지다(이 강의가 만든 예). 카드마다 STRIDE 가운데 하나를 고르면, 맞는지와 대응이 나온다. 한 위협이 둘에 걸치기도 하므로, 고른 까닭이 맞으면 틀려도 괜찮다.</p>
+<div class="prog" id="prog"></div>
+<div class="card" id="card"></div>
+<div class="row" role="group" aria-label="STRIDE" id="letters"></div>
+<div class="qs" id="qs"></div>
+<div id="reveal" aria-live="polite"></div>
+<div class="row">
+  <button class="btn" id="prev">이전</button>
+  <button class="btn" id="next">다음</button>
+  <button class="btn" id="restart">처음부터</button>
+</div>
+<div id="summary"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const StrideLogic = (() => {
+  // STRIDE 여섯 가지와 지키는 성질(Microsoft의 STRIDE 분류의 이름과 지키는 성질을 따르고, 질문은 이 강의가 직접 썼다)
+  const LETTERS = [
+    { k: "S", name: "위장", keep: "인증", q: "남인 척할 수 있나?" },
+    { k: "T", name: "변조", keep: "무결성", q: "데이터나 코드를 바꿀 수 있나?" },
+    { k: "R", name: "부인", keep: "기록(부인 방지)", q: "한 일을 안 했다고 할 수 있나?" },
+    { k: "I", name: "정보 노출", keep: "기밀성", q: "볼 권한이 없는 것이 보이나?" },
+    { k: "D", name: "서비스 거부", keep: "가용성", q: "남이 쓰지 못하게 할 수 있나?" },
+    { k: "E", name: "권한 상승", keep: "인가", q: "허락받지 않은 일을 할 수 있나?" },
+  ];
+  // 주문 서비스의 위협 카드(이 강의가 만든 예). ans: 주된 분류, fix: 대응과 그것을 다루는 항목
+  const CARDS = [
+    { text: "다른 손님의 세션 쿠키를 손에 넣은 누군가가 그 손님인 척 주문한다.", ans: "S", why: "남의 인증 정보로 그 사람 행세를 한다.", fix: "세션을 짧게 두고 HttpOnly 쿠키에 담는다(47번). 배송지 바꾸기 같은 중요한 일은 다시 확인한다." },
+    { text: "주문 요청에 실린 가격을 바꿔 보내, 1원에 주문이 된다.", ans: "T", why: "오가는 데이터를 바꿨다.", fix: "가격은 서버가 DB에서 다시 계산한다. 손님이 보낸 값을 믿지 않는다(이 항목 문제 1)." },
+    { text: "상담원이 환불해 놓고 나중에 하지 않았다고 한다. 누가 했는지 남은 것이 없다.", ans: "R", why: "한 일을 증명할 길이 없다.", fix: "누가, 언제, 무엇을 했는지 기록으로 남기고(72번), 그 기록은 상담원이 고치거나 지울 수 없는 곳에 둔다." },
+    { text: "로그인한 손님이 주소(URL)의 주문 번호만 바꿔 다른 손님의 주문 내역을 본다.", ans: "I", alt: "E", altNote: "권한 상승으로 보아도 된다", why: "볼 권한이 없는 정보가 보인다. 인가를 빠뜨려 생겼으니 권한 상승으로 보기도 한다.", fix: "주문마다 주인인지 확인한다(75번 문제 1)." },
+    { text: "로그에 손님의 전화번호와 주소를 통째로 남겨, 로그를 보는 사람 모두가 본다.", ans: "I", why: "개인정보가 볼 권한이 없는 사람에게 간다.", fix: "로그에는 필요한 것만 남기고 개인정보는 남기지 않는다(72번, 99번)." },
+    { text: "주문 API에 요청이 쏟아져, 다른 손님이 주문하지 못한다.", ans: "D", why: "정당한 사용자가 서비스를 쓰지 못한다.", fix: "게이트웨이에서 손님마다 속도를 제한하고(67번), 서버를 늘릴 수 있게 둔다(65번)." },
+    { text: "손님 계정으로 쿠폰 만들기처럼 마케터에게만 준 기능을 부른다.", ans: "E", why: "허락받지 않은 높은 권한의 일을 한다.", fix: "기능마다 역할을 서버에서 확인하고, 허락한 경우가 아니면 거절한다(75번)." },
+    { text: "결제 대행사가 보내는 '결제 완료' 알림을 다른 누군가가 꾸며 보낸다.", ans: "S", why: "결제 대행사인 척한다.", fix: "알림에 붙은 서명을 확인하고, 결제 상태는 대행사에 다시 묻는다(47번의 서명)." },
+    { text: "의존성 패키지의 새 판에 몰래 바뀐 코드가 들어 있다.", ans: "T", why: "내가 쓰는 코드가 바뀌었다.", fix: "버전과 해시를 고정하고, 올리기 전에 확인한다(77번)." },
+    { text: "결제 API 키를 적은 .env를 실수로 커밋해 공개 저장소에 올린다.", ans: "I", why: "비밀값이 볼 권한이 없는 사람에게 간다.", fix: "키를 폐기하고 새로 발급한 뒤, 커밋 전에 막는 검사를 건다(76번)." },
+  ];
+  const letter = k => LETTERS.find(l => l.k === k);
+  // 둘에 걸치는 카드는 다른 글자(alt)도 맞힌 것으로 센다
+  const ok = (card, p) => p === card.ans || (card.alt !== undefined && p === card.alt);
+
+  // 고른 답(카드마다 글자 또는 null)으로 맞힌 수와 글자별 개수
+  function score(picks) {
+    const done = picks.map((p, i) => ({ p, card: CARDS[i] })).filter(x => x.p !== null);
+    const right = done.filter(x => ok(x.card, x.p)).length;
+    const byLetter = LETTERS.map(l => ({ k: l.k, n: CARDS.filter(c => c.ans === l.k).length, right: done.filter(x => x.card.ans === l.k && ok(x.card, x.p)).length }));
+    return { done: done.length, right, byLetter };
+  }
+  return { LETTERS, CARDS, letter, ok, score };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = StrideLogic;
+  const $ = id => document.getElementById(id);
+  let i = 0, picks = L.CARDS.map(() => null);
+  // 받침에 맞춘 "이다/다"(괄호로 끝나면 괄호 앞 낱말이 받침으로 끝나는 경우만 쓴다)
+  const ida = w => { const b = w.replace(/\([^()]*\)$/, ""); const c = b.charCodeAt(b.length - 1);   // 끝의 괄호는 떼고 그 앞 낱말로 본다
+    return w + (c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 === 0 ? "다" : "이다"); };
+
+  $("letters").innerHTML = L.LETTERS.map(l => `<button class="btn" data-k="${l.k}" title="${l.q}"><b>${l.k}</b>${l.name}</button>`).join("");
+  $("qs").textContent = L.LETTERS.map(l => `${l.k}\u00a0${l.q}`).join(" · ");   // 휴대폰에서도 고르기 전에 질문이 보이게, 글자와 질문은 줄바꿈으로 떨어지지 않게
+
+  function render() {
+    const c = L.CARDS[i], p = picks[i];
+    $("prog").innerHTML = `<span>${i + 1} / ${L.CARDS.length}</span> ` + L.CARDS.map((x, k) => {
+      const st = picks[k] === null ? "아직 고르지 않았다" : L.ok(x, picks[k]) ? "맞혔다" : "다르게 골랐다";
+      return `<span class="dot${picks[k] === null ? "" : L.ok(x, picks[k]) ? " ok" : " bad"}${k === i ? " cur" : ""}" role="img" title="${k + 1}번: ${st}" aria-label="${k + 1}번: ${st}"></span>`;
+    }).join("");
+    $("card").textContent = c.text;
+    document.querySelectorAll("[data-k]").forEach(b => { b.setAttribute("aria-pressed", String(b.dataset.k === p)); b.disabled = p !== null; });
+    const a = L.letter(c.ans);
+    $("reveal").innerHTML = p === null ? ""
+      : `<div class="ans">${p === c.ans ? '<span class="fine">맞다.</span>' : L.ok(c, p) ? `<span class="fine">맞다(${c.altNote}).</span>`
+        : `고른 답: ${p} ${L.letter(p).name}. <span class="warn">이 강의의 답은 ${a.k} ${ida(a.name)}.</span>`} `
+        + `${a.k} ${a.name}: ${a.q} 지키는 성질은 ${ida(a.keep)}.</div><div class="why">${c.why} 대응: ${c.fix}</div>`;
+    $("prev").disabled = i === 0;
+    $("next").disabled = i === L.CARDS.length - 1;
+    const s = L.score(picks);
+    const left = picks.map((q, k) => q === null ? k + 1 : null).filter(k => k !== null);
+    $("summary").innerHTML = !left.length ? `<table class="t"><tr><th>STRIDE</th><th>카드</th><th>맞힘</th></tr>`
+      + s.byLetter.map(b => `<tr><td>${b.k} ${L.letter(b.k).name}</td><td>${b.n}</td><td>${b.right}</td></tr>`).join("") + "</table>" : "";
+    $("note").textContent = !s.done ? "카드를 읽고 STRIDE 가운데 하나를 고른다. 글자마다 묻는 질문은 단추 아래에 있다. 다 고르면 글자별로 몇 장을 맞혔는지 표가 나온다."
+      : left.length ? (p === null ? "STRIDE 가운데 하나를 고른다."
+        : `아직 고르지 않은 카드: ${left.join(", ")}번.` + (left.some(k => k > i + 1) ? " 다음으로 간다." : " 이전으로 돌아가 마저 고른다."))
+      : `${L.CARDS.length}장 가운데 ${s.right}장을 이 강의와 같게 골랐다. STRIDE는 정답을 맞히는 시험이 아니라, 요소마다 여섯 질문을 빠짐없이 묻게 하는 목록이다. 4번처럼 둘에 걸치는 위협은 어느 쪽으로 적든 대응이 빠지지 않으면 된다.`;
+  }
+  document.querySelectorAll("[data-k]").forEach(b => b.addEventListener("click", () => {
+    if (picks[i] !== null) return;
+    picks[i] = b.dataset.k; render();
+    $(i < L.CARDS.length - 1 ? "next" : "prev").focus();
+  }));
+  // 끝에 닿아 누른 단추가 잠기면, 고를 단추나 반대 방향 단추로 포커스를 옮긴다
+  const go = dir => {
+    i = Math.min(L.CARDS.length - 1, Math.max(0, i + dir)); render();
+    if ($(dir > 0 ? "next" : "prev").disabled) (document.querySelector("[data-k]:not(:disabled)") || $(dir > 0 ? "prev" : "next")).focus();
+  };
+  $("prev").addEventListener("click", () => go(-1));
+  $("next").addEventListener("click", () => go(1));
+  $("restart").addEventListener("click", () => { i = 0; picks = L.CARDS.map(() => null); render(); });
+  render();
+})();
+</script>
+</body>
+</html>

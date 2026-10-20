@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스택, 큐, 덱</title>
+<meta name="description" content="스택·큐·덱을 골라 넣기와 꺼내기 단추를 눌러 보며, 어느 쪽에서 꺼내지는지와 배열 칸 8개 위에서 head·top 위치가 어떻게 도는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3044;
+    --write: #ffa94d;
+    --write-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.b-in { border-color: var(--write); }
+  .btn.b-out { border-color: var(--read); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .slots { display: flex; gap: 3px; margin-top: 18px; position: relative; }
+  .slot { width: 52px; text-align: center; position: relative; }
+  .slot .box { border: 1px solid var(--line); border-radius: 4px; height: 34px; line-height: 32px; font-size: 15px; background: var(--soft); }
+  .slot .box.empty { border-style: dashed; background: transparent; color: var(--muted); }
+  .slot .box.full { border-color: var(--accent); background: var(--accent-bg); font-weight: 700; }
+  .slot .box.new { border-color: var(--write); background: var(--write-bg); }
+  .slot .idx { font-size: 11px; color: var(--muted); }
+  .slot .tag { position: absolute; left: 0; right: 0; top: -17px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .slot .tag.end { left: auto; right: 0; text-align: right; }
+  .slot .tag.front { color: var(--read); }
+  .slot .tag.back { color: var(--write); }
+  .order { margin-top: 10px; font-size: 14px; }
+  .out { margin-top: 6px; font-size: 14px; }
+  .out b { color: var(--read); }
+  .calc { font-size: 13px; color: var(--muted); margin-top: 4px; min-height: 1.4em; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .note.bad { border-left-color: var(--write); background: var(--write-bg); }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .slot { width: 38px; }
+    .slot .box { font-size: 13px; }
+    .slot .tag { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+<h1>스택, 큐, 덱</h1>
+<p class="lead">세 자료구조 모두 칸 8개짜리 배열 하나에 담는다. 넣는 값은 1, 2, 3, … 차례로 커진다.</p>
+
+<div class="row" role="group" aria-label="자료구조">
+  <span class="label">종류</span>
+  <button class="btn" data-kind="stack">스택</button>
+  <button class="btn" data-kind="queue">큐</button>
+  <button class="btn" data-kind="deque">덱</button>
+</div>
+<div class="row" id="ops" role="group" aria-label="연산"></div>
+
+<div class="slots mono" id="slots"></div>
+<div class="order" id="order"></div>
+<div class="out" id="out"></div>
+<div class="calc mono" id="calc"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const SQLogic = (() => {
+  const CAP = 8;
+  const mod = (a, m) => ((a % m) + m) % m;   // C의 %는 음수를 그대로 남긴다 (-1 % 8 == -1). 그래서 + m을 한 번 더 한다
+  const initial = () => ({ cells: Array(CAP).fill(null), head: 0, count: 0, next: 1, out: [] });
+  const clone = s => ({ cells: [...s.cells], head: s.head, count: s.count, next: s.next, out: [...s.out] });
+
+  // 연산: push/pop(스택: top = count), enqueue/dequeue(큐), push_front/push_back/pop_front/pop_back(덱)
+  // 결과: { state, ok, index, value, calc }
+  function exec(state, op) {
+    const s = clone(state);
+    const fail = calc => ({ state, ok: false, calc });
+    switch (op) {
+      case "push": {      // 스택: 0번 칸부터 쌓는다. top = count
+        if (s.count === CAP) return fail("top == 8: 가득 찼다");
+        const i = s.count;
+        s.cells[i] = s.next++; s.count++;
+        return { state: s, ok: true, index: i, value: s.cells[i], calc: `stack[top++] = ${s.cells[i]}  →  top = ${s.count}` };
+      }
+      case "pop": {
+        if (s.count === 0) return fail("top == 0: 비었다");
+        const i = s.count - 1, v = s.cells[i];
+        s.cells[i] = null; s.count--; s.out.push(v);
+        return { state: s, ok: true, index: i, value: v, calc: `stack[--top] = ${v}  →  top = ${s.count}` };
+      }
+      case "enqueue":
+      case "push_back": {
+        if (s.count === CAP) return fail("count == 8: 가득 찼다");
+        const i = mod(s.head + s.count, CAP);
+        s.cells[i] = s.next++; s.count++;
+        return { state: s, ok: true, index: i, value: s.cells[i], calc: `뒤 = (head + count) % 8 = (${state.head} + ${state.count}) % 8 = ${i}` };
+      }
+      case "dequeue":
+      case "pop_front": {
+        if (s.count === 0) return fail("count == 0: 비었다");
+        const i = s.head, v = s.cells[i];
+        s.cells[i] = null; s.head = mod(s.head + 1, CAP); s.count--; s.out.push(v);
+        return { state: s, ok: true, index: i, value: v, calc: `head = (head + 1) % 8 = (${i} + 1) % 8 = ${s.head}` };
+      }
+      case "push_front": {
+        if (s.count === CAP) return fail("count == 8: 가득 찼다");
+        const i = mod(s.head - 1, CAP);
+        s.cells[i] = s.next++; s.head = i; s.count++;
+        return { state: s, ok: true, index: i, value: s.cells[i], calc: `head = (head − 1 + 8) % 8 = (${state.head} − 1 + 8) % 8 = ${i}` };
+      }
+      case "pop_back": {
+        if (s.count === 0) return fail("count == 0: 비었다");
+        const i = mod(s.head + s.count - 1, CAP), v = s.cells[i];
+        s.cells[i] = null; s.count--; s.out.push(v);
+        return { state: s, ok: true, index: i, value: v, calc: `뒤 = (head + count − 1) % 8 = (${state.head} + ${state.count} − 1) % 8 = ${i}` };
+      }
+    }
+    return fail(`모르는 연산 ${op}`);
+  }
+
+  // 앞에서부터 차례로 늘어놓은 값 (스택은 아래에서 위로)
+  function order(state, kind) {
+    const vals = [];
+    for (let k = 0; k < state.count; k++) vals.push(state.cells[kind === "stack" ? k : mod(state.head + k, CAP)]);
+    return vals;
+  }
+
+  function run(ops) {
+    let s = initial();
+    const res = [];
+    for (const op of ops) { const r = exec(s, op); res.push(r); s = r.state; }
+    return { state: s, res };
+  }
+
+  // 조사: 숫자를 읽은 끝소리로 고른다 (2 이, 4 사, 5 오, 9 구는 받침 없음)
+  const eul = v => `${v}${"2459".includes(String(v).slice(-1)) ? "를" : "을"}`;
+
+  return { CAP, mod, initial, exec, order, run, eul };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = SQLogic;
+  const $ = id => document.getElementById(id);
+  const OPS = {
+    stack: [["push", "넣기 push", "in"], ["pop", "꺼내기 pop", "out"]],
+    queue: [["enqueue", "뒤에 넣기 enqueue", "in"], ["dequeue", "앞에서 꺼내기 dequeue", "out"]],
+    deque: [["push_front", "앞에 넣기", "in"], ["push_back", "뒤에 넣기", "in"], ["pop_front", "앞에서 꺼내기", "out"], ["pop_back", "뒤에서 꺼내기", "out"]],
+  };
+  const HINT = {
+    stack: "넣은 순서와 반대로 나온다(LIFO). 넣기와 꺼내기가 모두 한쪽 끝(top)에서만 일어난다.",
+    queue: "넣은 순서대로 나온다(FIFO). 뒤에 넣고 앞에서 꺼내다 보면 head가 오른쪽으로 옮겨 가고, 끝에 닿으면 0번 칸으로 돌아온다.",
+    deque: "앞과 뒤 양쪽에서 넣고 꺼낸다. 앞에 넣을 때 head가 0번에서 7번 칸으로 넘어가는 것을 본다.",
+  };
+  let kind = "stack", state = L.initial(), last = null;
+
+  function render(msg, bad) {
+    const ord = L.order(state, kind);
+    let html = "";
+    const frontIdx = kind === "stack" ? null : state.head;
+    const backIdx = kind === "stack" ? state.count - 1 : L.mod(state.head + state.count - 1, L.CAP);
+    for (let i = 0; i < L.CAP; i++) {
+      const v = state.cells[i];
+      let tag = "";
+      if (kind === "stack" && i === state.count) tag = `<span class="tag back">↓ top</span>`;
+      if (kind === "stack" && state.count === L.CAP && i === L.CAP - 1) tag = `<span class="tag back end">top = 8, 가득</span>`;
+      if (kind !== "stack" && i === frontIdx) tag = `<span class="tag front">↓ head${state.count ? "" : " (비었다)"}</span>`;
+      if (kind !== "stack" && state.count && i === backIdx && i !== frontIdx) tag = `<span class="tag back">↓ 뒤</span>`;
+      const cls = v === null ? "box empty" : `box full${last && last.ok && last.index === i && last.value === v ? " new" : ""}`;
+      html += `<div class="slot">${tag}<div class="${cls}">${v === null ? "·" : v}</div><div class="idx">[${i}]</div></div>`;
+    }
+    $("slots").innerHTML = html;
+    $("order").innerHTML = kind === "stack" ? `아래에서 위로: <b class="mono">${ord.join(" ") || "(비었다)"}</b>` : `앞에서 뒤로: <b class="mono">${ord.join(" ") || "(비었다)"}</b>`;
+    $("out").innerHTML = `꺼낸 차례: <b class="mono">${state.out.join(" ") || "-"}</b>`;
+    $("calc").textContent = last ? last.calc : "";
+    $("note").textContent = msg;
+    $("note").className = "note" + (bad ? " bad" : "");
+  }
+
+  function setKind(k) {
+    kind = k; state = L.initial(); last = null;
+    document.querySelectorAll("[data-kind]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.kind === k)));
+    $("ops").innerHTML = `<span class="label">연산</span>` + OPS[k].map(([op, name, cls]) => `<button class="btn b-${cls} mono" data-op="${op}">${name}</button>`).join("") + `<button class="btn" data-op="reset">처음으로</button>`;
+    $("ops").querySelectorAll("[data-op]").forEach(b => b.addEventListener("click", () => {
+      if (b.dataset.op === "reset") { state = L.initial(); last = null; render(HINT[kind]); return; }
+      const r = L.exec(state, b.dataset.op);
+      last = r;
+      if (!r.ok) { render(`${r.calc}. ${/pop|dequeue/.test(b.dataset.op) ? "꺼낼 것이 없다" : "더 넣을 수 없다"}. 실제 코드에서는 이 경우를 꼭 검사한다.`, true); return; }
+      state = r.state;
+      const isOut = /pop|dequeue/.test(b.dataset.op);
+      render(`${L.eul(r.value)} ${isOut ? "꺼냈다" : "넣었다"} (${r.index}번 칸). ${HINT[kind]}`);
+    }));
+    render(HINT[k]);
+  }
+
+  document.querySelectorAll("[data-kind]").forEach(b => b.addEventListener("click", () => setKind(b.dataset.kind)));
+  const q = new URLSearchParams(location.search).get("kind");
+  setKind(OPS[q] ? q : "stack");
+})();
+</script>
+</body>
+</html>

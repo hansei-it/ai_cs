@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>캐시가 낡은 값을 줄 때</title>
+<meta name="description" content="캐시를 쓰는 방법(캐시 없음, TTL만, 쓸 때 캐시 지우기, 지우기와 읽기가 겹칠 때)과 TTL을 골라, 4초마다 읽는 가격이 DB에서 왔는지, 캐시에서 맞게 왔는지, 낡은 값이었는지를 시간 줄에서 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .writes { position: relative; height: 34px; margin: 6px 0 0; }
+  .writes span { position: absolute; transform: translateX(-50%); font-size: 12px; color: var(--write); text-align: center; white-space: nowrap; }
+  .writes span::after { content: ""; display: block; width: 2px; height: 8px; background: var(--write); margin: 1px auto 0; }
+  .reads { display: grid; grid-template-columns: repeat(15, 1fr); gap: 3px; }
+  .cell { border: 1px solid var(--line); border-radius: 4px; padding: 2px 0; text-align: center; font-size: 11px; line-height: 1.35; background: var(--soft); min-width: 0; }
+  .cell .v { font-size: 12px; font-weight: 700; }
+  .cell.m { border-color: var(--read); background: var(--read-bg); }
+  .cell.h { border-color: var(--good); background: var(--good-bg); }
+  .cell.s { border-color: var(--write); background: var(--write-bg); }
+  .cell.s .v { color: var(--write); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin: 6px 0; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid; }
+  .sum { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; }
+  .sum b { font-size: 19px; }
+  @media (max-width: 520px) { body { padding: 10px; font-size: 14px; } .reads { grid-template-columns: repeat(8, 1fr); } .writes { display: none; } }
+</style>
+</head>
+<body>
+<h1>캐시가 낡은 값을 줄 때</h1>
+<p class="lead">주문 서버가 상품 가격을 0초부터 4초마다 읽는다. 관리자가 6초에 1000원을 1200원으로, 34초에 1500원으로 바꾼다. 캐시에 넣은 값은 넣은 때부터 TTL 동안 산다. "지우기와 읽기가 겹칠 때"는 관리자가 캐시를 먼저 지우고 DB를 고치는 사이에 다른 손님의 읽기(칸에 없는 읽기)가 끼어드는 경우다.</p>
+<div class="row" role="group" aria-label="캐시를 쓰는 방법">
+  <span class="label">방법</span>
+  <button class="btn" data-s="none">캐시 없음</button>
+  <button class="btn" data-s="ttl">TTL만</button>
+  <button class="btn" data-s="delete">쓸 때 캐시 지우기</button>
+  <button class="btn" data-s="race">지우기와 읽기가 겹칠 때</button>
+</div>
+<div class="row" role="group" aria-label="TTL">
+  <span class="label">TTL</span>
+  <button class="btn" data-ttl="10">10초</button>
+  <button class="btn" data-ttl="30">30초</button>
+  <button class="btn" data-ttl="60">60초</button>
+</div>
+
+<div class="writes" id="writes"></div>
+<div class="reads" id="reads"></div>
+<div class="legend"><span><i style="border-color:var(--read);background:var(--read-bg)"></i>DB에서 읽음</span><span><i style="border-color:var(--good);background:var(--good-bg)"></i>캐시, 맞는 값</span><span><i style="border-color:var(--write);background:var(--write-bg)"></i>캐시, 낡은 값</span></div>
+<div class="sum" id="sum"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CacheLogic = (() => {
+  // 0초부터 4초마다 읽는다(15번). 6초에 1000 → 1200, 34초에 1200 → 1500으로 바뀐다
+  // 캐시에 넣은 값은 넣은 시각 + TTL까지 산다. 읽을 때 살아 있으면 캐시에서(지금 DB 값과 같으면 맞음, 다르면 낡음), 아니면 DB에서 읽어 넣는다
+  // none: 캐시 없음 / ttl: 쓸 때 캐시를 건드리지 않는다 / delete: 쓸 때 캐시를 지운다
+  // race: 쓸 때 캐시를 먼저 지우고 DB를 고친다. 그 사이에 끼어든 다른 손님의 읽기(칸에 없는 읽기)가 캐시에서 찾지 못해
+  //       DB의 옛 값을 읽고 캐시에 넣는다(넣은 시각 = 쓴 시각). 그 읽기의 DB 질의도 센다(others)
+  const READS = Array.from({ length: 15 }, (_, i) => i * 4);
+  const WRITES = [[6, 1200], [34, 1500]];
+  function run(strategy, ttl) {
+    let db = 1000, cache = null, dbReads = 0, stale = 0, others = 0;
+    const w = WRITES.slice(), out = [];
+    for (const t of READS) {
+      while (w.length && w[0][0] <= t) {
+        const [wt, value] = w.shift();
+        const old = db;
+        if (strategy === "delete" || strategy === "race") cache = null;
+        if (strategy === "race") { cache = { value: old, until: wt + ttl }; dbReads++; others++; }   // 지운 뒤, DB를 고치기 전에 끼어든 읽기
+        db = value;
+      }
+      let kind, value;
+      if (strategy !== "none" && cache && t < cache.until) {
+        kind = cache.value === db ? "h" : "s";
+        value = cache.value;
+      } else {
+        kind = "m";
+        value = db;
+        dbReads++;
+        if (strategy !== "none") cache = { value: db, until: t + ttl };
+      }
+      if (kind === "s") stale++;
+      out.push({ t, kind, value, db });
+    }
+    return { out, dbReads, stale, others, events: out.map(o => o.kind).join("") };
+  }
+  return { READS, WRITES, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CacheLogic;
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  let strategy = q.get("s") || "ttl", ttl = Number(q.get("ttl")) || 30;
+  const LABEL = { m: "DB", h: "캐시", s: "낡음" };
+  function render() {
+    const r = L.run(strategy, ttl);
+    // 쓰기 표시는 읽기 칸 사이에 둔다(칸 15개가 0~56초를 고르게 나눈다)
+    $("writes").innerHTML = L.WRITES.map(([t, v]) => `<span style="left:${((t / 4 + 0.5) / 15 * 100).toFixed(2)}%">${t}초: ${v}원으로</span>`).join("");
+    $("reads").innerHTML = r.out.map(o => `<div class="cell ${o.kind}" title="${o.t}초: DB는 ${o.db}원, 받은 값 ${o.value}원"><div>${o.t}초</div><div class="v">${o.value}</div><div>${LABEL[o.kind]}</div></div>`).join("");
+    $("sum").innerHTML = `<span>DB 질의 <b class="mono">${r.dbReads}</b>번${r.others ? ` (끼어든 다른 손님의 읽기 ${r.others}번 포함)` : ""}</span><span>낡은 값을 읽음 <b class="mono">${r.stale}</b>번</span>`;
+    const notes = {
+      none: "캐시가 없으면 늘 맞는 값을 읽지만 읽을 때마다 DB에 묻는다. 손님이 많으면 DB가 먼저 막힌다(65번).",
+      ttl: `캐시에 넣은 값은 ${ttl}초 동안 산다. 그 사이에 가격이 바뀌어도 캐시는 모른다. TTL이 길수록 DB 질의는 줄고 낡은 값은 오래간다.`,
+      delete: "가격을 바꿀 때 캐시를 지우면, 다음 읽기가 DB에서 새 값을 읽어 넣는다. 낡은 값이 없다. 쓰는 코드가 캐시를 지워야 한다는 것을 잊지 않는 것이 관건이다.",
+      race: "관리자가 캐시를 지운 뒤 DB를 고치기 전에 다른 손님의 읽기가 끼어들었다. 캐시에서 찾지 못해 DB의 옛 값을 읽고 캐시에 넣었다. 지웠는데도 TTL이 다할 때까지 낡은 값이 남는다. DB를 먼저 고치고 지우면 어떨지는 문제 2에서 본다.",
+    };
+    $("note").textContent = notes[strategy];
+    document.querySelectorAll("[data-s]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === strategy)));
+    document.querySelectorAll("[data-ttl]").forEach(b => { b.setAttribute("aria-pressed", String(Number(b.dataset.ttl) === ttl)); b.disabled = strategy === "none"; });
+  }
+  document.querySelectorAll("[data-s]").forEach(b => b.addEventListener("click", () => { strategy = b.dataset.s; render(); }));
+  document.querySelectorAll("[data-ttl]").forEach(b => b.addEventListener("click", () => { ttl = Number(b.dataset.ttl); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

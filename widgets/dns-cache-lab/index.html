@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DNS 캐시와 TTL</title>
+<meta name="description" content="이름을 묻고 시간을 흘려 보내며, 내 PC와 학교 DNS 서버의 캐시가 TTL에 따라 남고 사라지는 모습과, 그때마다 몇 단계를 거쳐 몇 ms가 드는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .clock { font-size: 13px; color: var(--muted); }
+  .clock b { color: var(--fg); }
+  .steps { list-style: none; margin: 4px 0 0; padding: 0; }
+  .steps li { display: flex; gap: 8px; align-items: baseline; padding: 4px 8px; border-left: 3px solid var(--line); margin-bottom: 3px; background: var(--soft); border-radius: 0 6px 6px 0; font-size: 14px; }
+  .steps li .ms { margin-left: auto; font-size: 13px; white-space: nowrap; }
+  .steps li.hit { border-left-color: var(--good); background: var(--good-bg); }
+  .steps li.res { border-left-color: var(--accent); }
+  .steps li.far { border-left-color: var(--read); }
+  .total { margin-top: 6px; font-size: 14px; }
+  .total b { font-size: 18px; }
+  .caches { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .cache { flex: 1 1 250px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  .cache h2 { font-size: 13px; margin: 0 0 4px; color: var(--muted); font-weight: 400; }
+  table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  td { padding: 2px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.left { text-align: right; white-space: nowrap; }
+  .empty { font-size: 13px; color: var(--muted); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>DNS 캐시와 TTL</h1>
+<p class="lead">내 PC가 학교 DNS 서버에 이름을 묻는다. 학교 DNS 서버는 모르면 루트부터 차례로 물어 알아낸 것을 TTL 동안 캐시에 둔다. 시간(ms)은 이 PC에서 각 서버에 물어 잰 중앙값, TTL은 실제 답에 적혀 온 값이다.</p>
+
+<div class="row" role="group" aria-label="이름">
+  <span class="label">이름</span>
+  <button class="btn mono" data-name="www.example.com">www.example.com</button>
+  <button class="btn mono" data-name="www.kisa.or.kr">www.kisa.or.kr</button>
+  <button class="btn go" id="ask">묻기</button>
+</div>
+<div class="row">
+  <span class="label">시간</span>
+  <button class="btn" data-wait="300">5분 지나기</button>
+  <button class="btn" data-wait="86400">1일 지나기</button>
+  <button class="btn" data-wait="259200">3일 지나기</button>
+  <button class="btn" id="reset">처음으로</button>
+  <span class="clock" id="clock"></span>
+</div>
+
+<ol class="steps" id="steps"></ol>
+<div class="total" id="total"></div>
+<div class="caches">
+  <div class="cache"><h2>내 PC (Windows)의 캐시</h2><div id="pc"></div></div>
+  <div class="cache"><h2>학교 DNS 서버의 캐시</h2><div id="res"></div></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const DnsLogic = (() => {
+  // ms: 루트, TLD 서버, 그 도메인의 서버에 묻고 답을 받는 데 걸린 시간(이 PC에서 5번 잰 중앙값)
+  // ttl: 루트가 알려 준 TLD 서버, TLD 서버가 알려 준 도메인의 서버, 마지막 답의 TTL(초)
+  const NAMES = {
+    "www.example.com": { tld: "com", zone: "example.com", ms: [32.7, 68.4, 5.7], ttl: [172800, 172800, 300] },
+    "www.kisa.or.kr": { tld: "kr", zone: "kisa.or.kr", ms: [33.6, 2.7, 10.3], ttl: [172800, 86400, 600] },
+  };
+  const PC = 0.09, RES = 0.76;   // Windows 캐시에서 꺼내기, 학교 DNS 서버에 묻기
+  const initial = () => ({ now: 0, pc: {}, res: {} });   // 캐시: 열쇠 → 사라지는 시각(초)
+  const live = (c, k, now) => (c[k] ?? -1) > now;
+  function ask(s0, name) {
+    const s = { now: s0.now, pc: { ...s0.pc }, res: { ...s0.res } }, n = NAMES[name];
+    if (live(s.pc, name, s.now)) return { state: s, steps: ["pc"], total: PC };
+    const steps = ["res"];
+    let total = RES;
+    if (!live(s.res, "A " + name, s.now)) {
+      if (!live(s.res, "NS " + n.zone, s.now)) {
+        if (!live(s.res, "NS " + n.tld, s.now)) {
+          steps.push("root"); total += n.ms[0]; s.res["NS " + n.tld] = s.now + n.ttl[0];
+        }
+        steps.push("tld"); total += n.ms[1]; s.res["NS " + n.zone] = s.now + n.ttl[1];
+      }
+      steps.push("auth"); total += n.ms[2]; s.res["A " + name] = s.now + n.ttl[2];
+    }
+    s.pc[name] = s.res["A " + name];   // 내 PC는 학교 DNS 서버가 알려 준 남은 TTL만큼 둔다
+    return { state: s, steps, total: Math.round(total * 100) / 100 };
+  }
+  const wait = (s, sec) => ({ now: s.now + sec, pc: { ...s.pc }, res: { ...s.res } });
+  // 아직 살아 있는 캐시 항목과 남은 초
+  const entries = (c, now) => Object.keys(c).filter(k => live(c, k, now)).map(k => [k, c[k] - now]);
+  return { NAMES, PC, RES, initial, ask, wait, entries };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = DnsLogic;
+  const $ = id => document.getElementById(id);
+  let s = L.initial(), name = "www.example.com", last = null, msg = "";
+  // 초를 읽기 좋게: 1일 2시간 3분처럼
+  const dur = sec => {
+    if (sec <= 0) return "0초";
+    const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60), x = sec % 60;
+    return [d && `${d}일`, h && `${h}시간`, m && `${m}분`, x && `${x}초`].filter(Boolean).join(" ");
+  };
+  const label = k => {
+    const [kind, what] = k.split(" ");
+    if (kind === "A") return `<span class="mono">${what}</span>의 IP 주소`;
+    return what.includes(".") ? `<span class="mono">${what}</span>을 맡은 서버` : `<span class="mono">.${what}</span>을 맡은 서버`;
+  };
+  const table = (c, pc) => {
+    const e = L.entries(c, s.now);
+    if (!e.length) return `<div class="empty">비어 있다</div>`;
+    return `<table>${e.map(([k, left]) => `<tr><td>${pc ? `<span class="mono">${k}</span>의 IP 주소` : label(k)}</td><td class="left">${dur(left)} 남음</td></tr>`).join("")}</table>`;
+  };
+  const STEP = {
+    pc: ["hit", "내 PC의 Windows 캐시에 있다", L.PC],
+    res: ["res", "학교 DNS 서버에 묻는다", L.RES],
+    root: ["far", "학교 DNS 서버가 루트 서버에 묻는다", null],
+    tld: ["far", "TLD 서버에 묻는다", null],
+    auth: ["far", "그 도메인을 맡은 서버에 묻는다", null],
+  };
+  function render() {
+    $("clock").innerHTML = `처음부터 <b>${s.now ? dur(s.now) : "0초"}</b> 지났다`;
+    if (last) {
+      const n = L.NAMES[last.name];
+      const ms = { root: n.ms[0], tld: n.ms[1], auth: n.ms[2] };
+      const who = { tld: `.${n.tld} 서버에 묻는다`, auth: `${n.zone}의 서버에 묻는다` };
+      $("steps").innerHTML = last.steps.map(k => {
+        const [cls, text, t] = STEP[k];
+        const resHit = k === "res" && last.steps.length === 1 ? " (캐시에 있다)" : "";
+        return `<li class="${cls}${resHit ? " hit" : ""}"><span>${who[k] || text}${resHit}</span><span class="ms mono">${(t ?? ms[k]).toFixed(2)}ms</span></li>`;
+      }).join("");
+      $("total").innerHTML = `<span class="mono">${last.name}</span>: 모두 <b class="mono">${last.total.toFixed(2)}ms</b>, ${last.steps[0] === "pc" ? "아무에게도 묻지 않았다" : `묻는 단계 ${last.steps.length}개`}`;
+    } else {
+      $("steps").innerHTML = "";
+      $("total").textContent = "";
+    }
+    $("pc").innerHTML = table(s.pc, true);
+    $("res").innerHTML = table(s.res, false);
+    $("note").textContent = msg;
+    document.querySelectorAll("[data-name]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.name === name)));
+  }
+  function ask() {
+    const r = L.ask(s, name);
+    s = r.state;
+    last = { name, steps: r.steps, total: r.total };
+    const n = L.NAMES[name];
+    if (r.steps[0] === "pc") msg = "내 PC가 캐시에 둔 답을 바로 썼다. 바깥으로 나가지도 않는다.";
+    else if (r.steps.length === 1) msg = "학교 DNS 서버가 캐시에 둔 답을 바로 돌려줬다. 같은 학교의 다른 PC가 먼저 물었어도 이렇게 빨라진다.";
+    else if (r.steps.length === 2) msg = `답(TTL ${dur(n.ttl[2])})은 사라졌지만 ${n.zone}을 맡은 서버는 아직 캐시에 있어(TTL ${dur(n.ttl[1])}) 그 서버에만 물었다.`;
+    else if (r.steps.length === 3) msg = `.${n.tld}을 맡은 서버는 캐시에 있어(TTL ${dur(n.ttl[0])}) 루트에는 묻지 않고 .${n.tld} 서버부터 물었다.`;
+    else msg = "캐시가 비어 있어 루트부터 차례로 물었다. 알아낸 것은 모두 TTL 동안 캐시에 둔다. 한 번 더 물어 본다.";
+    render();
+  }
+  document.querySelectorAll("[data-name]").forEach(b => b.addEventListener("click", () => { name = b.dataset.name; render(); }));
+  $("ask").addEventListener("click", ask);
+  document.querySelectorAll("[data-wait]").forEach(b => b.addEventListener("click", () => {
+    s = L.wait(s, Number(b.dataset.wait));
+    msg = `${b.textContent.replace(" 지나기", "")}이 지났다. TTL이 다 된 항목은 캐시에서 사라졌다. 다시 물어 본다.`;
+    render();
+  }));
+  $("reset").addEventListener("click", () => { s = L.initial(); last = null; msg = "캐시가 모두 비었다. 이름을 골라 묻는다."; render(); });
+  msg = "이름을 골라 \"묻기\"를 누른다.";
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>입력이 10배가 되면</title>
+<meta name="description" content="n을 1,000에서 100만까지 10배씩 바꿔 가며, 네 함수의 실제 실행 시간이 몇 배로 늘어나는지 이론값과 함께 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --warn: #c2410c;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --warn: #ffa94d;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 2.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .grid { display: grid; grid-template-columns: auto 1fr; gap: 10px 12px; align-items: center; margin-top: 12px; }
+  .name { font-weight: 700; white-space: nowrap; font-size: 14px; }
+  .name small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .cell { min-width: 0; }
+  .track { position: relative; height: 22px; border-radius: 4px; background:
+    repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px calc(100% / 9)); }
+  .bar { position: absolute; left: 0; top: 3px; height: 16px; border-radius: 3px; background: var(--accent); transition: width .25s; }
+  .info { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; margin-top: 3px; }
+  .info .t { font-weight: 700; }
+  .info .r { color: var(--muted); }
+  .info .r b { color: var(--fg); }
+  .info .none { color: var(--warn); }
+  .axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+    .grid { grid-template-columns: 1fr; gap: 2px; }
+    .name { margin-top: 8px; }
+  }
+</style>
+</head>
+<body>
+<h1>입력이 10배가 되면</h1>
+<p class="lead">C(Release, /O2)로 짠 네 함수를 같은 PC에서 n을 10배씩 키워 가며 한 번 실행하는 시간을 쟀다 (5번 잰 중앙값). 막대는 로그 눈금이라 한 칸이 10배다.</p>
+
+<div class="row" role="group" aria-label="입력 크기 n">
+  <span class="label">n</span>
+  <button class="btn" data-k="0">1,000</button>
+  <button class="btn" data-k="1">1만</button>
+  <button class="btn" data-k="2">10만</button>
+  <button class="btn" data-k="3">100만</button>
+</div>
+
+<div class="grid" id="grid" aria-live="polite"></div>
+<p class="note" id="note"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const GrowthLogic = (() => {
+  // 이 PC(Core i9-14900KF)에서 VS 2026 cl /O2로 잰 값, 단위 ns. 프로그램마다 5번 실행한 중앙값(모든 쌍 비교 10만은 3번).
+  // 모든 쌍 비교는 중복이 없는 최악의 경우다. 정렬은 섞은 배열 16개를 번갈아 정렬했다(같은 배열만 되풀이하면 n = 1,000에서 시간이 40%쯤 짧게 나온다). n = 100만은 재지 않았다 (null).
+  const NS = [1e3, 1e4, 1e5, 1e6];
+  const FUNCS = [
+    { id: "bsearch", name: "이진 탐색", big: "O(log n)", t: [15.5, 23.0, 34.1, 72.4] },
+    { id: "sum", name: "합계", big: "O(n)", t: [105.8, 885.4, 8903.3, 88585.3] },
+    { id: "qsort", name: "qsort 정렬", big: "O(n log n)", t: [39796.9, 528435.1, 6472245.2, 77109466.7] },
+    { id: "pairs", name: "모든 쌍 비교", big: "O(n²)", t: [131769.4, 12633231.2, 1257309900.0, null] },
+  ];
+
+  // n이 NS[k-1]에서 NS[k]로 10배가 될 때 이론상 몇 배인지
+  function theory(id, k) {
+    const a = NS[k - 1], b = NS[k];
+    switch (id) {
+      case "bsearch": return Math.log(b) / Math.log(a);
+      case "sum": return b / a;
+      case "qsort": return (b * Math.log(b)) / (a * Math.log(a));
+      case "pairs": return (b * b) / (a * a);
+    }
+    return null;
+  }
+  const measured = (f, k) => (f.t[k] == null || f.t[k - 1] == null ? null : f.t[k] / f.t[k - 1]);
+
+  // 몇 배인지: 10배 이상은 정수, 그보다 작으면 소수 한 자리
+  const times = r => (r >= 10 ? String(Math.round(r)) : (Math.round(r * 10) / 10).toFixed(1));
+
+  // 사람이 읽기 좋은 시간: 10 미만은 소수 한 자리, 그 이상은 정수
+  function dur(ns) {
+    const units = [["ns", 1], ["µs", 1e3], ["ms", 1e6], ["초", 1e9]];
+    let u = units[0];
+    for (const x of units) if (ns >= x[1]) u = x;
+    const v = ns / u[1];
+    return (v < 10 ? (Math.round(v * 10) / 10).toFixed(1) : String(Math.round(v))) + u[0];
+  }
+
+  // 막대 길이: 10ns에서 10초까지 9칸(한 칸이 10배)의 로그 눈금, 0~1
+  const pos = ns => Math.min(1, Math.max(0, Math.log10(ns / 10) / 9));
+
+  return { NS, FUNCS, theory, measured, times, dur, pos };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = GrowthLogic;
+  const $ = id => document.getElementById(id);
+  let k = 1;
+  const N_NAME = ["1,000", "1만", "10만", "100만"];
+  const rows = {};
+  for (const f of L.FUNCS) {
+    const name = document.createElement("div");
+    name.className = "name";
+    name.innerHTML = `${f.name}<small class="mono">${f.big}</small>`;
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.innerHTML = `<div class="track"><div class="bar"></div></div><div class="info"></div>`;
+    $("grid").append(name, cell);
+    rows[f.id] = cell;
+  }
+  const axisName = document.createElement("div");
+  const axis = document.createElement("div");
+  axis.className = "axis mono";
+  // 눈금 글자: 막대 영역의 0, 2, 4, 6, 8칸 자리 (한 칸이 10배)
+  axis.style.position = "relative"; axis.style.height = "14px";
+  axis.innerHTML = [[0, "10ns"], [2, "1µs"], [4, "100µs"], [6, "10ms"], [8, "1초"]].map(([c, s]) => `<span style="position:absolute;left:${(c / 9) * 100}%;transform:translateX(${c ? "-50%" : "0"})">${s}</span>`).join("");
+  $("grid").append(axisName, axis);
+
+  function render() {
+    const parts = [];
+    for (const f of L.FUNCS) {
+      const cell = rows[f.id], t = f.t[k];
+      cell.querySelector(".bar").style.width = t == null ? "0" : `${Math.max(1.5, L.pos(t) * 100)}%`;
+      let html;
+      if (t == null) {
+        const prev = f.t[k - 1];
+        html = `<span class="none">재지 않았다. 앞 단계처럼 100배라면 ${L.dur(prev * 100)} 남짓이다.</span>`;
+      } else {
+        html = `<span class="t mono">${L.dur(t)}</span>`;
+        if (k > 0) html += `<span class="r">n이 10배일 때 <b class="mono">×${L.times(L.measured(f, k))}</b> (이론 ×${L.times(L.theory(f.id, k))})</span>`;
+      }
+      cell.querySelector(".info").innerHTML = html;
+      if (k > 0 && t != null) parts.push(`${f.name} ×${L.times(L.measured(f, k))}`);
+    }
+    let note;
+    if (k === 0) note = "n = 1,000에서는 네 함수 모두 1ms보다 짧다. 차이는 n을 키울 때 드러난다. 다음 단추를 차례로 눌러 본다.";
+    else {
+      note = `n을 ${N_NAME[k - 1]}에서 ${N_NAME[k]}으로 10배 키웠더니 시간은 이렇게 늘었다: ${parts.join(", ")}.`;
+      if (k === 1) note += " n이 작을 때는 함수를 부르는 고정 비용이 섞여 이론과 꽤 다르다(합계 ×8.4).";
+      if (k === 2) note += " n이 커지자 합계는 10배, 모든 쌍 비교는 100배로 이론값에 가까워졌다.";
+      if (k === 3) note += " 이진 탐색은 연산 횟수가 조금 늘었을 뿐인데 시간은 2배가 넘었다. Big-O는 연산 횟수가 늘어나는 모양만 말한다. 큰 배열은 메모리에서 읽는 시간이 길어진다(5번 항목).";
+    }
+    $("note").textContent = note;
+    document.querySelectorAll("[data-k]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.k) === k)));
+  }
+
+  document.querySelectorAll("[data-k]").forEach(b => b.addEventListener("click", () => { k = Number(b.dataset.k); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

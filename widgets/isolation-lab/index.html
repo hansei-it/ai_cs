@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>격리 수준마다 B가 보는 것</title>
+<meta name="description" content="격리 수준(네 가지)과 이상 현상(Dirty, Non-Repeatable, Phantom Read)을 골라 두 세션의 문장을 한 단계씩 실행하며, B가 무엇을 읽고 누가 기다리는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --ok: #2b8a3e;
+    --ok-bg: #e6f4ea;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --ok: #69db7c;
+    --ok-bg: #1f3a27;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  .grid h2 { font-size: 13px; margin: 0; }
+  .grid h2.a { color: var(--write); }
+  .grid h2.b { color: var(--read); }
+  .step { font-size: 12.5px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px; background: var(--soft); min-height: 1.8em; }
+  .step.a { border-left: 3px solid var(--write); }
+  .step.b { border-left: 3px solid var(--read); }
+  .step .sql { display: block; word-break: break-word; }
+  .step .res { display: block; color: var(--muted); }
+  .step.read .res { color: var(--read); font-weight: 700; }
+  .step.wait { background: var(--write-bg); }
+  .step.wait .res { color: var(--write); font-weight: 700; }
+  .step.now { outline: 2px solid var(--accent); }
+  .empty { visibility: hidden; }
+  .verdict { margin-top: 10px; font-size: 14px; font-weight: 700; }
+  .verdict.bad { color: var(--write); }
+  .verdict.ok { color: var(--ok); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .step { font-size: 11.5px; } }
+</style>
+</head>
+<body>
+<h1>격리 수준마다 B가 보는 것</h1>
+<p class="lead">계좌 셋(100, 200, 300원)이 있다. A가 고치는 동안 B가 읽는다. B의 격리 수준을 바꿔 가며 같은 차례로 실행한다. 결과는 이 PC의 MySQL 8.4에서 연결 둘로 실제로 실행한 것과 같다.</p>
+<div class="row" role="group" aria-label="이상 현상">
+  <span class="label">이상 현상</span>
+  <button class="btn" data-kind="dirty">Dirty Read</button>
+  <button class="btn" data-kind="nonrepeat">Non-Repeatable Read</button>
+  <button class="btn" data-kind="phantom">Phantom Read</button>
+</div>
+<div class="row" role="group" aria-label="B의 격리 수준">
+  <span class="label">B의 격리 수준</span>
+  <button class="btn" data-level="RU">READ UNCOMMITTED</button>
+  <button class="btn" data-level="RC">READ COMMITTED</button>
+  <button class="btn" data-level="RR">REPEATABLE READ</button>
+  <button class="btn" data-level="SER">SERIALIZABLE</button>
+</div>
+<div class="row">
+  <button class="btn go" id="next">다음 단계</button>
+  <button class="btn" id="all">끝까지</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+<div class="grid" id="grid"></div>
+<div class="verdict" id="verdict"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const IsoLogic = (() => {
+  const LEVELS = { RU: "READ UNCOMMITTED", RC: "READ COMMITTED", RR: "REPEATABLE READ", SER: "SERIALIZABLE" };
+  const CNT = "SELECT COUNT(*) FROM account WHERE balance >= 100";
+  const STEPS = {
+    dirty: [["A", "START TRANSACTION", { begin: true }], ["A", "UPDATE account SET balance = 0 WHERE id = 1", { update: [1, 0] }],
+      ["B", "START TRANSACTION", { begin: true }], ["B", "SELECT balance FROM account WHERE id = 1", { read: 1 }],
+      ["A", "ROLLBACK", { end: "rollback" }], ["B", "COMMIT", { end: "commit" }]],
+    nonrepeat: [["B", "START TRANSACTION", { begin: true }], ["B", "SELECT balance FROM account WHERE id = 1", { read: 1 }],
+      ["A", "UPDATE account SET balance = 50 WHERE id = 1", { update: [1, 50] }], ["B", "SELECT balance FROM account WHERE id = 1", { read: 1 }],
+      ["B", "COMMIT", { end: "commit" }]],
+    phantom: [["B", "START TRANSACTION", { begin: true }], ["B", CNT, { count: true }],
+      ["A", "INSERT INTO account VALUES (4, '최네오', 500)", { insert: [4, 500] }], ["B", CNT, { count: true }],
+      ["B", CNT + " FOR UPDATE", { count: true, current: true }], ["B", "COMMIT", { end: "commit" }]],
+  };
+  const initial = () => ({ committed: { 1: 100, 2: 200, 3: 300 }, aTx: false, aPending: {}, bTx: false, snap: null, bLocks: [], waiting: null, log: [] });
+  const clone = s => JSON.parse(JSON.stringify(s));
+  // B가 행을 읽는 방법. RU: 커밋 안 된 값까지, RC: 문장마다 최신 커밋, RR: 트랜잭션의 첫 읽기 때 스냅숏, SER: 공유 잠금을 걸고 최신 커밋
+  function view(s, level, current) {
+    if (current || level === "RC" || level === "SER") return { ...s.committed };
+    if (level === "RU") return { ...s.committed, ...s.aPending };
+    if (!s.snap) s.snap = { ...s.committed };                             // RR: 처음 읽을 때 찍은 스냅숏을 끝까지 쓴다
+    return { ...s.snap };
+  }
+  const countOf = rows => Object.values(rows).filter(v => v >= 100).length;
+  function apply(s, level, who, sql, op) {
+    if (op.begin) { if (who === "A") s.aTx = true; else s.bTx = true; s.log.push([who, sql, null]); return; }
+    if (who === "B" && (op.read || op.count)) {
+      // SERIALIZABLE의 평범한 SELECT는 잠그며 읽는다. A가 고치고 아직 끝내지 않은 행이면 기다린다
+      if (level === "SER" && op.read && op.read in s.aPending) { s.waiting = { who, sql, op }; s.log.push([who, sql, "wait"]); return; }
+      if (level === "SER") s.bLocks.push(op.read ? op.read : "range");
+      const rows = view(s, level, op.current);
+      s.log.push([who, sql, [[op.read ? rows[op.read] : countOf(rows)]]]);
+      return;
+    }
+    if (who === "A" && (op.update || op.insert)) {
+      const [id, v] = op.update || op.insert;
+      const blocked = s.bLocks.includes(op.update ? id : "range") || (op.insert && s.bLocks.includes("range"));
+      if (blocked) { s.waiting = { who, sql, op }; s.log.push([who, sql, "wait"]); return; }   // B의 공유 잠금에 막힌다
+      if (s.aTx) s.aPending[id] = v; else s.committed[id] = v;
+      s.log.push([who, sql, null]);
+      return;
+    }
+    if (op.end) {
+      s.log.push([who, sql, null]);
+      if (who === "A") { if (op.end === "commit") Object.assign(s.committed, s.aPending); s.aPending = {}; s.aTx = false; }
+      else { s.bLocks = []; s.bTx = false; s.snap = null; }
+      if (s.waiting) {                                                      // 기다리던 문장이 이어서 끝난다
+        const w = s.waiting;
+        s.waiting = null;
+        if (w.who === "B") s.log.push(["B", w.sql, "resumed", [[s.committed[w.op.read]]]]);
+        else { const [id, v] = w.op.update || w.op.insert; s.committed[id] = v; s.log.push(["A", w.sql, "resumed", null]); }
+      }
+    }
+  }
+  function run(kind, level, n = STEPS[kind].length) {
+    const s = initial();
+    s.log.push(["B", `SET SESSION TRANSACTION ISOLATION LEVEL ${LEVELS[level]}`, null]);
+    for (let i = 0; i < n; i++) { const [who, sql, op] = STEPS[kind][i]; apply(s, level, who, sql, op); }
+    return clone(s);
+  }
+  // B가 이상 현상을 겪었나. dirty: 되돌려질 값(0)을 읽었다, nonrepeat: 두 번 읽은 값이 다르다, phantom: 평범한 두 COUNT가 다르다
+  function anomaly(kind, level) {
+    const reads = run(kind, level).log.filter(e => e[0] === "B" && (e[2] === "resumed" ? e[3] : Array.isArray(e[2]) && e[2]) && /^SELECT/.test(e[1]) && !/FOR UPDATE/.test(e[1]))
+      .map(e => (e[2] === "resumed" ? e[3] : e[2])[0][0]);
+    if (kind === "dirty") return reads[0] === 0;
+    return reads[0] !== reads[1];
+  }
+  const waited = (kind, level) => run(kind, level).log.some(e => e[2] === "wait");
+  return { LEVELS, STEPS, run, anomaly, waited };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = IsoLogic;
+  const $ = id => document.getElementById(id);
+  let kind = "dirty", level = "RU", n = 0;
+  const DESC = {
+    dirty: "A가 김하나의 잔액을 0으로 고치고 아직 커밋하지 않았다. 그 사이 B가 읽는다. A는 결국 되돌린다(ROLLBACK).",
+    nonrepeat: "B가 김하나의 잔액을 읽고, A가 50으로 고쳐 커밋하려 하고, B가 같은 행을 다시 읽는다.",
+    phantom: "B가 잔액 100 이상인 계좌를 세고, A가 새 계좌(500원)를 넣어 커밋하려 하고, B가 다시 센다. 마지막엔 잠그며(FOR UPDATE) 센다.",
+  };
+  const VERDICT = {
+    dirty: { RU: "Dirty Read: 되돌려질 0을 읽었다", RC: "막았다: 커밋된 100을 읽었다", RR: "막았다: 커밋된 100을 읽었다", SER: "막았다: A가 끝날 때까지 기다렸다가 100을 읽었다" },
+    nonrepeat: { RU: "Non-Repeatable Read: 100을 읽고 다시 읽으니 50", RC: "Non-Repeatable Read: 100을 읽고 다시 읽으니 50",
+      RR: "막았다: 두 번 다 100(트랜잭션의 스냅숏)", SER: "막았다: B가 끝날 때까지 A의 UPDATE가 기다렸다" },
+    phantom: { RU: "Phantom Read: 3개였는데 다시 세니 4개", RC: "Phantom Read: 3개였는데 다시 세니 4개",
+      RR: "평범한 SELECT는 막았다(3개, 스냅숏). 평범하게 센 뒤 잠그며 다시 세면 4개", SER: "막았다: B가 끝날 때까지 A의 INSERT가 기다렸다" },
+  };
+  function render() {
+    const s = L.run(kind, level, n);
+    const cells = [];
+    s.log.slice(1).forEach((e, i, all) => {
+      const [who, sql] = e, resumed = e[2] === "resumed", res = resumed ? e[3] : e[2], last = i === all.length - 1;
+      const txt = res === "wait" ? "잠금이 풀리기를 기다린다" : Array.isArray(res) ? `→ ${res[0][0]}`
+        : /^START/.test(sql) ? "→ 트랜잭션 시작" : /^COMMIT/.test(sql) ? "→ 확정" : /^ROLLBACK/.test(sql) ? "→ 되돌림" : resumed ? "→ 실행됐다" : "";
+      const cls = `${who.toLowerCase()} ${res === "wait" ? "wait" : Array.isArray(res) ? "read" : ""} ${last ? "now" : ""}`;
+      const box = `<div class="step ${cls}"><span class="sql mono">${resumed ? "(기다리던 문장이 끝남) " : ""}${sql}</span><span class="res mono">${txt}</span></div>`;
+      cells.push(who === "A" ? box + `<div class="step empty"></div>` : `<div class="step empty"></div>` + box);
+    });
+    $("grid").innerHTML = `<h2 class="a">세션 A (고친다)</h2><h2 class="b">세션 B (읽는다, ${L.LEVELS[level]})</h2>` + cells.join("");
+    const done = n === L.STEPS[kind].length;
+    const bad = L.anomaly(kind, level);
+    $("verdict").className = `verdict ${done ? (bad ? "bad" : "ok") : ""}`;
+    $("verdict").textContent = done ? VERDICT[kind][level] : "";
+    $("note").textContent = DESC[kind];
+    $("next").disabled = $("all").disabled = done;
+    document.querySelectorAll("[data-kind]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.kind === kind)));
+    document.querySelectorAll("[data-level]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.level === level)));
+  }
+  document.querySelectorAll("[data-kind]").forEach(b => b.addEventListener("click", () => { kind = b.dataset.kind; n = 0; render(); }));
+  document.querySelectorAll("[data-level]").forEach(b => b.addEventListener("click", () => { level = b.dataset.level; n = 0; render(); }));
+  $("next").addEventListener("click", () => { n++; render(); });
+  $("all").addEventListener("click", () => { n = L.STEPS[kind].length; render(); });
+  $("reset").addEventListener("click", () => { n = 0; render(); });
+  const q = new URLSearchParams(location.search);
+  if (q.get("kind") in L.STEPS) kind = q.get("kind");
+  if (q.get("level") in L.LEVELS) level = q.get("level");
+  render();
+})();
+</script>
+</body>
+</html>

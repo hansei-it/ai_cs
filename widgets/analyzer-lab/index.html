@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>도구가 잡는 것, 사람이 잡는 것</title>
+<meta name="description" content="분석 모드(기본, Recommended, All)를 골라 같은 C# 코드에서 .NET 분석기가 내는 경고를 줄마다 보고, 사람의 리뷰가 찾아야 하는 냄새를 겹쳐 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  pre.code { margin: 6px 0; padding: 6px 0; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); font-size: 12px; line-height: 1.5; overflow-x: auto; }
+  pre.code span.ln { display: block; padding-right: 8px; white-space: pre; border-left: 3px solid transparent; }
+  pre.code span.ln i { display: inline-block; width: 2.4em; text-align: right; padding-right: 8px; color: var(--muted); font-style: normal; }
+  pre.code span.ln.tool { border-left-color: var(--write); background: var(--write-bg); }
+  pre.code span.ln.human { border-left-color: var(--good); }
+  pre.code span.ln.tool.human { border-left-color: var(--write); box-shadow: inset 6px 0 0 -3px var(--good); }
+  .list { list-style: none; padding: 0; margin: 4px 0 0; font-size: 13px; }
+  .list li { padding: 3px 0; border-bottom: 1px solid var(--line); }
+  .list .rule { font-weight: 700; color: var(--write); }
+  .list .sm { font-weight: 700; color: var(--good); }
+  .sum { font-size: 14px; margin: 8px 0 2px; }
+  .sum b { font-size: 18px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>도구가 잡는 것, 사람이 잡는 것</h1>
+<p class="lead">87번의 주문 계산 코드를 .NET 10 SDK로 빌드했을 때 분석기가 낸 경고다(이 PC에서 dotnet build로 확인). 경고 줄은 주황, 사람이 찾을 냄새는 초록 표시다.</p>
+<div class="row" role="group" aria-label="분석 모드">
+  <span class="label">분석 모드</span>
+  <button class="btn" data-m="기본">기본</button>
+  <button class="btn" data-m="Recommended">Recommended</button>
+  <button class="btn" data-m="All">All</button>
+</div>
+<div class="row">
+  <label style="font-size:14px"><input id="smells" type="checkbox"> 사람이 찾을 냄새도 보기</label>
+</div>
+
+<pre class="code mono" id="code" aria-label="Program.cs"></pre>
+<div class="sum" id="sum"></div>
+<ul class="list" id="list"></ul>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const AnalyzerLogic = (() => {
+  // 87번의 리뷰 받을 코드(Program.cs)와, .NET 10 SDK의 dotnet build가 분석 모드마다 낸 경고(이 PC에서 실행해 얻은 줄:칸과 규칙).
+  // 경고 설명과 사람이 찾을 냄새는 이 강의가 쓴 것이다.
+  const CODE = [
+    "var calc = new OrderCalculator();",
+    'Console.WriteLine(calc.Calc([(25000, 1)], "", false));',
+    'Console.WriteLine(calc.Calc([(33000, 1)], "WELCOME10", false));',
+    'Console.WriteLine(calc.Calc([(60000, 1)], "VIP20", true));',
+    "",
+    "public class OrderCalculator",
+    "{",
+    "    public string Calc(List<(int, int)> items, string coupon, bool express)",
+    "    {",
+    "        int total = 0;",
+    "        for (int i = 0; i < items.Count; i++)",
+    "        {",
+    "            total = total + items[i].Item1 * items[i].Item2;",
+    "        }",
+    "        int d = 0;",
+    '        if (coupon == "WELCOME10")',
+    "        {",
+    "            d = total * 10 / 100;",
+    "            if (d > 5000) d = 5000;",
+    "        }",
+    '        if (coupon == "VIP20")',
+    "        {",
+    "            d = total * 20 / 100;",
+    "            if (d > 5000) d = 5000;",
+    "        }",
+    "        int ship = 3000;",
+    "        if (total - d >= 30000) ship = 0;",
+    "        if (express) ship = ship + 2500;",
+    '        string result = "결제 금액: " + (total - d + ship).ToString("N0") + "원";',
+    "        return result;",
+    "    }",
+    "}",
+  ];
+  // [줄, 칸, 규칙, 처음 나오는 모드, 설명]
+  const WARNINGS = [
+    [6, 14, "CA1050", "Recommended", "클래스를 네임스페이스 안에 두라. 다른 코드의 같은 이름과 부딪히지 않게 한다."],
+    [8, 19, "CA1822", "Recommended", "Calc는 객체의 필드를 쓰지 않으니 static으로 만들 수 있다. 객체를 만들 까닭이 없다는 뜻이다."],
+    [29, 37, "CA1305", "Recommended", "ToString(\"N0\")의 결과는 PC의 지역 설정에 따라 다를 수 있다. 어느 문화권으로 쓸지 넘긴다."],
+    [6, 14, "CA1515", "All", "이 앱 밖에서 쓰지 않는 클래스는 internal로 둔다."],
+    [8, 41, "CA1002", "All", "공개 메서드의 매개 변수에 List<T>를 쓰지 말고 Collection<T> 같은 형식을 쓰라고 권한다."],
+    [11, 29, "CA1062", "All", "밖에서 부르는 메서드는 items가 null인지 먼저 확인한다."],
+  ];
+  // [줄들, 냄새] — 분석기가 All에서도 잡지 않은 것
+  const SMELLS = [
+    [[16, 17, 18, 19, 20, 21, 22, 23, 24, 25], "쿠폰마다 같은 모양의 if 블록이 되풀이된다. 쿠폰이 늘 때마다 복사해 붙이게 된다."],
+    [[19, 24, 26, 27, 28], "5000, 3000, 30000, 2500이 이름 없이 흩어져 있다(마법의 수). 무엇인지, 함께 바꿔야 하는지 알 수 없다."],
+    [[8, 15, 26], "Calc, d, ship은 무엇을 담는지 말하지 않는 이름이다."],
+    [[29], "금액 계산과 문장 만들기를 한 메서드가 한다. 금액만 따로 시험할 수 없다."],
+  ];
+  function lineRange(lines) {                    // [19, 24, 26, 27, 28] → "19·24·26~28"
+    const parts = [];
+    for (const l of lines) {
+      const last = parts.at(-1);
+      if (last && l === last[1] + 1) last[1] = l; else parts.push([l, l]);
+    }
+    return parts.map(([a, b]) => (a === b ? `${a}` : `${a}~${b}`)).join("·");
+  }
+  const MODES = ["기본", "Recommended", "All"];
+  function warnings(mode) {
+    const upto = MODES.indexOf(mode);
+    return WARNINGS.filter(w => MODES.indexOf(w[3]) <= upto && upto > 0).map(([line, col, rule, , why]) => ({ line, col, rule, why }));
+  }
+  function marks(mode, smells) {
+    const m = {};
+    for (const w of warnings(mode)) (m[w.line] ??= new Set()).add("tool");
+    if (smells) for (const [lines] of SMELLS) for (const l of lines) (m[l] ??= new Set()).add("human");
+    return m;
+  }
+  return { CODE, WARNINGS, SMELLS, MODES, warnings, marks, lineRange };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = AnalyzerLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let mode = "기본";
+  function render() {
+    const smells = $("smells").checked;
+    const m = L.marks(mode, smells);
+    $("code").innerHTML = L.CODE.map((s, i) => `<span class="ln ${[...(m[i + 1] ?? [])].join(" ")}"><i>${i + 1}</i>${esc(s)}</span>`).join("");
+    const w = L.warnings(mode);
+    $("sum").innerHTML = `dotnet build의 경고 <b class="mono">${w.length}</b>개${smells ? ` · 사람이 찾을 냄새 <b class="mono">${L.SMELLS.length}</b>가지` : ""}`;
+    $("list").innerHTML = w.map(x => `<li><span class="rule mono">${x.rule}</span> ${x.line}줄 ${x.col}칸: ${esc(x.why)}</li>`).join("")
+      + (smells ? L.SMELLS.map(([lines, what]) => `<li><span class="sm">냄새</span> ${L.lineRange(lines)}줄: ${esc(what)}</li>`).join("") : "");
+    let note;
+    if (mode === "기본") note = "기본 설정에서는 경고가 하나도 없다. 대부분의 규칙이 꺼져 있는 것이지 코드가 깨끗한 것이 아니다. 모드를 올려 본다.";
+    else if (!smells) note = `${mode} 모드에서 경고 ${w.length}개. 경고가 없는 줄은 괜찮을까? 사람이 찾을 냄새도 켜 본다.`;
+    else note = "분석기는 켜 둔 규칙에 걸리는 것을 빠짐없이 잡고, 사람은 중복, 이름, 일의 나눔처럼 의도를 읽어야 하는 것을 잡는다. 둘은 서로를 대신하지 못한다.";
+    $("note").textContent = note;
+    document.querySelectorAll("[data-m]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === mode)));
+  }
+  document.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => { mode = b.dataset.m; render(); }));
+  $("smells").addEventListener("change", render);
+  render();
+})();
+</script>
+</body>
+</html>

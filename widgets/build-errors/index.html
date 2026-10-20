@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>빌드 오류는 어느 단계에서 났을까</title>
+<meta name="description" content="Visual Studio가 낸 실제 오류 메시지를 읽고 전처리·컴파일·링크 중 어느 단계에서 났는지 골라, 고칠 곳을 찾는 연습을 한다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --wrong: #c2410c;
+    --wrong-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --wrong: #ffa94d;
+    --wrong-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 10px; }
+  .score { font-weight: 700; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 10px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { cursor: default; }
+  .btn.pick.right { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+  .btn.pick.wrong { border-color: var(--wrong); background: var(--wrong-bg); color: var(--wrong); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+  .card.right { border-color: var(--accent); }
+  .card.wrong { border-color: var(--wrong); }
+  .card .head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); }
+  .code { margin: 6px 0; padding: 6px 8px; background: var(--soft); border-radius: 4px; font-size: 13px; white-space: pre; overflow-x: auto; }
+  .msg { font-size: 13px; color: var(--wrong); margin: 4px 0 8px; overflow-wrap: anywhere; }
+  .picks { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .picks .label { font-size: 13px; color: var(--muted); }
+  .why { margin: 8px 0 0; font-size: 14px; padding: 6px 8px; border-left: 3px solid var(--accent); background: var(--soft); }
+  [hidden] { display: none !important; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+<h1>빌드 오류는 어느 단계에서 났을까</h1>
+<p class="lead">Visual Studio 2026(한국어)의 컴파일러와 링커가 실제로 낸 메시지다. 메시지를 읽고 단계를 고른다.</p>
+<div class="top">
+  <span class="score" id="score" aria-live="polite"></span>
+  <button class="btn" id="again">다시 하기</button>
+</div>
+<div id="cards"></div>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const BuildErrorLogic = (() => {
+  const STAGES = ["전처리", "컴파일", "링크"];
+  // code: 문제가 있는 소스, msg: cl /W3 또는 link가 낸 메시지 그대로 (파일 이름과 줄 번호 앞부분은 뺐다)
+  const ITEMS = [
+    {
+      id: "C2065", stage: "컴파일",
+      code: "int total = cnt + 1;",
+      msg: "error C2065: 'cnt': 선언되지 않은 식별자입니다.",
+      why: "어떤 이름이 무엇인지 확인하는 것은 컴파일러다. cnt를 선언한 적이 없다.",
+    },
+    {
+      id: "LNK2019", stage: "링크",
+      code: "int add(int a, int b);   /* 선언만 있다 */\nint main(void) { return add(2, 3); }",
+      msg: "error LNK2019: addmain 함수에서 참조되는 확인할 수 없는 외부 기호",
+      why: "LNK로 시작하면 링커다. 한국어판은 기호 이름 add와 함수 이름 main이 붙어 'addmain'으로 보인다. main에서 부른 add의 정의를 어느 .obj에서도 찾지 못했다. add를 정의한 파일(util.c)이 빌드에서 빠졌는지 본다.",
+    },
+    {
+      id: "C1083", stage: "전처리",
+      code: "#include <stdioo.h>",
+      msg: "fatal error C1083: 포함 파일을 열 수 없습니다. 'stdioo.h': No such file or directory",
+      why: "#include는 전처리기가 파일을 찾아 그 자리에 붙여 넣는 일이다. 파일 이름이 틀려 찾지 못했다.",
+    },
+    {
+      id: "C2143", stage: "컴파일",
+      code: "int x = 1\nreturn x;",
+      msg: "error C2143: 구문 오류: ';'이(가) 'return' 앞에 없습니다.",
+      why: "문법 검사는 컴파일러가 한다. 세미콜론은 1줄 끝에서 빠졌지만, 컴파일러는 return을 만나서야 알아차리므로 다음 줄을 가리킨다.",
+    },
+    {
+      id: "LNK2005", stage: "링크",
+      code: "/* util.h */\nint add(int a, int b) { return a + b; }\n/* main.c와 other.c가 둘 다 #include \"util.h\" */",
+      msg: "error LNK2005: add이(가) main.obj에 이미 정의되어 있습니다.",
+      why: "#include는 글자를 붙여 넣으므로 add의 정의가 main.obj와 other.obj 둘에 들어간다. 링커가 같은 이름의 정의 두 개 중 하나를 고를 수 없다. 헤더에는 선언만 둔다.",
+    },
+    {
+      id: "C2440", stage: "컴파일",
+      code: "int *p = 3.5;",
+      msg: "error C2440: '초기화 중': 'double'에서 'int *'(으)로 변환할 수 없습니다.",
+      why: "타입이 맞는지 검사하는 것은 컴파일러다. 실수를 포인터에 넣을 수 없다.",
+    },
+    {
+      id: "LNK1561", stage: "링크",
+      code: "/* main이 없는 파일 하나만 명령줄에서 cl nomain.c로 빌드 */\nint helper(void) { return 1; }",
+      msg: "fatal error LNK1561: 진입점이 정의되어야 합니다.",
+      why: "실행 파일에는 시작할 곳(진입점)이 있어야 한다. 파일 하나하나는 문제없이 컴파일됐고, 실행 파일로 합치는 링커가 main을 찾지 못했다.",
+    },
+  ];
+
+  // 단계 이름이 메시지 앞머리와 맞는지: C1xxx 중 C1083은 전처리, Cxxxx는 컴파일, LNK는 링크
+  const stageOf = msg => (/LNK\d{4}/.test(msg) ? "링크" : /C1083/.test(msg) ? "전처리" : "컴파일");
+
+  function grade(answers) {
+    const marks = ITEMS.map((it, k) => (answers[k] == null ? "empty" : answers[k] === it.stage ? "right" : "wrong"));
+    return { marks, right: marks.filter(m => m === "right").length, total: ITEMS.length };
+  }
+
+  return { STAGES, ITEMS, stageOf, grade };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = BuildErrorLogic;
+  const $ = id => document.getElementById(id);
+  let answers = [];
+
+  function build() {
+    answers = L.ITEMS.map(() => null);
+    $("cards").textContent = "";
+    L.ITEMS.forEach((it, k) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `<div class="head"><span>${k + 1}번</span><span class="mono"></span></div>` +
+        `<div class="code mono"></div><div class="msg mono"></div>` +
+        `<div class="picks"><span class="label">어느 단계?</span></div><p class="why" hidden></p>`;
+      card.querySelector(".code").textContent = it.code;
+      card.querySelector(".msg").textContent = it.msg;
+      const picks = card.querySelector(".picks");
+      for (const st of L.STAGES) {
+        const b = document.createElement("button");
+        b.className = "btn pick";
+        b.textContent = st;
+        b.addEventListener("click", () => choose(k, st, card));
+        picks.append(b);
+      }
+      $("cards").append(card);
+    });
+    score();
+  }
+
+  function choose(k, st, card) {
+    if (answers[k] !== null) return;
+    answers[k] = st;
+    const ok = st === L.ITEMS[k].stage;
+    card.classList.add(ok ? "right" : "wrong");
+    card.querySelectorAll(".pick").forEach(b => {
+      b.disabled = true;
+      if (b.textContent === L.ITEMS[k].stage) b.classList.add("right");
+      else if (b.textContent === st) b.classList.add("wrong");
+    });
+    card.querySelector(".head .mono").textContent = (ok ? "맞음" : `틀림, 답은 ${L.ITEMS[k].stage}`);
+    const why = card.querySelector(".why");
+    why.textContent = L.ITEMS[k].why;
+    why.hidden = false;
+    score();
+  }
+
+  function score() {
+    const g = L.grade(answers);
+    const done = answers.filter(a => a !== null).length;
+    $("score").textContent = done ? `${done}개 중 ${g.right}개 맞음` + (done === g.total ? " (끝)" : "") : `${g.total}개의 메시지`;
+  }
+
+  $("again").addEventListener("click", build);
+  build();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관계를 어디에 담을까</title>
+<meta name="description" content="학생과 강좌의 관계를 담는 설계 세 가지를 골라 수강 신청을 하나씩 넣고, 표에 무엇이 남고 무엇이 덮이는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --ok: #2b8a3e;
+    --ok-bg: #e6f4ea;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --ok: #69db7c;
+    --ok-bg: #1f3a27;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .rel { font-size: 13px; margin: 2px 0 10px; padding: 6px 9px; background: var(--accent-bg); border-radius: 6px; }
+  .steps { margin: 0 0 10px; padding: 0; list-style: none; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .steps li { color: var(--muted); }
+  .steps li.done { color: var(--fg); }
+  .steps li.now { color: var(--accent); font-weight: 700; }
+  .tables { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .tbl { flex: 1 1 200px; min-width: 0; }
+  .tbl h2 { font-size: 13px; margin: 0 0 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 3px 6px; text-align: left; }
+  th { background: var(--soft); font-weight: 400; color: var(--muted); }
+  th.fk { color: var(--read); font-weight: 700; }
+  td.null { color: var(--muted); }
+  td.new { background: var(--read-bg); font-weight: 700; }
+  td.over { background: var(--write-bg); font-weight: 700; }
+  .ask { margin-top: 10px; font-size: 13px; display: grid; gap: 4px; }
+  .ask .q { color: var(--muted); }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 4px; padding: 0 6px; margin-left: 4px; }
+  .badge.ok { color: var(--ok); background: var(--ok-bg); }
+  .badge.no { color: var(--write); background: var(--write-bg); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>관계를 어디에 담을까</h1>
+<p class="lead">학생 둘, 강좌 둘에 수강 신청 셋을 차례로 넣는다. 설계를 바꿔 가며 표에 무엇이 남는지 본다. 파랑은 새로 들어간 값, 주황은 앞의 값을 덮어쓴 값이다.</p>
+
+<div class="row" role="group" aria-label="설계">
+  <span class="label">설계</span>
+  <button class="btn" data-design="a">학생 표에 강좌 번호</button>
+  <button class="btn" data-design="b">강좌 표에 학생 번호</button>
+  <button class="btn" data-design="c">수강 표를 따로</button>
+</div>
+<p class="rel" id="rel"></p>
+<div class="row">
+  <button class="btn go" id="next">다음 신청 넣기</button>
+  <button class="btn" id="all">셋 다 넣기</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+<ol class="steps" id="steps"></ol>
+<div class="tables" id="tables"></div>
+<div class="ask" id="ask"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ErdLogic = (() => {
+  const STUDENTS = [[1, "김하나"], [2, "이두리"]];
+  const COURSES = [[101, "데이터베이스"], [102, "네트워크"]];
+  const ENROLL = [[1, 101, "A"], [1, 102, "B"], [2, 102, "A"]];   // (학생, 강좌, 성적)을 이 차례로 넣는다
+  // a: 학생 표에 강좌 번호와 성적 열(학생은 강좌 하나), b: 강좌 표에 학생 번호와 성적 열(강좌는 학생 하나), c: 수강 표(N:M)
+  const COLS = {
+    a: { student: ["id", "name", "course_id", "grade"], course: ["id", "title"] },
+    b: { student: ["id", "name"], course: ["id", "title", "student_id", "grade"] },
+    c: { student: ["id", "name"], course: ["id", "title"], enrollment: ["student_id", "course_id", "grade"] },
+  };
+  // 처음 n개 신청을 넣은 뒤의 표. 행은 앞 열 둘의 차례로 둔다(SQLite의 ORDER BY 1, 2와 같게)
+  function run(design, n) {
+    const done = ENROLL.slice(0, n);
+    if (design === "a") {
+      const student = STUDENTS.map(([id, name]) => [id, name, null, null]);
+      for (const [s, c, g] of done) { const r = student.find(x => x[0] === s); r[2] = c; r[3] = g; }   // UPDATE student SET course_id, grade
+      return { student, course: COURSES.map(r => [...r]) };
+    }
+    if (design === "b") {
+      const course = COURSES.map(([id, title]) => [id, title, null, null]);
+      for (const [s, c, g] of done) { const r = course.find(x => x[0] === c); r[2] = s; r[3] = g; }    // UPDATE course SET student_id, grade
+      return { student: STUDENTS.map(r => [...r]), course };
+    }
+    const enrollment = done.map(r => [...r]).sort((x, y) => x[0] - y[0] || x[1] - y[1]);              // INSERT INTO enrollment
+    return { student: STUDENTS.map(r => [...r]), course: COURSES.map(r => [...r]), enrollment };
+  }
+  // 표에 남은 (학생, 강좌, 성적)
+  function kept(design, n) {
+    const t = run(design, n);
+    if (design === "a") return t.student.filter(r => r[2] !== null).map(r => [r[0], r[2], r[3]]);
+    if (design === "b") return t.course.filter(r => r[2] !== null).map(r => [r[2], r[0], r[3]]);
+    return t.enrollment.map(r => [...r]);
+  }
+  const name = id => STUDENTS.find(r => r[0] === id)[1], title = id => COURSES.find(r => r[0] === id)[1];
+  const coursesOf = (design, n, who) => kept(design, n).filter(r => name(r[0]) === who).map(r => r[1]).sort((x, y) => x - y).map(title);
+  const studentsOf = (design, n, what) => kept(design, n).filter(r => title(r[1]) === what).map(r => r[0]).sort((x, y) => x - y).map(name);
+  const lost = (design, n) => n - kept(design, n).length;
+  return { STUDENTS, COURSES, ENROLL, COLS, run, kept, coursesOf, studentsOf, lost, name, title };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ErdLogic;
+  const $ = id => document.getElementById(id);
+  const REL = {
+    a: "학생 표에 <b class=\"mono\">course_id</b>와 <b class=\"mono\">grade</b> 열을 둔다. 학생 한 명이 강좌를 하나만 가질 수 있다(학생 N : 강좌 1).",
+    b: "강좌 표에 <b class=\"mono\">student_id</b>와 <b class=\"mono\">grade</b> 열을 둔다. 강좌 하나에 학생이 하나만 있을 수 있다(학생 1 : 강좌 N).",
+    c: "<b class=\"mono\">enrollment</b>(수강) 표를 따로 두고 학생 번호와 강좌 번호를 함께 적는다. 학생도 강좌도 여럿과 이어질 수 있다(학생 N : 강좌 M).",
+  };
+  const TNAME = { student: "student (학생)", course: "course (강좌)", enrollment: "enrollment (수강)" };
+  const FK = ["course_id", "student_id"];
+  let design = "a", n = 0;
+  const show = v => (v === null ? "NULL" : String(v));
+  function render() {
+    $("rel").innerHTML = REL[design];
+    $("steps").innerHTML = L.ENROLL.map(([s, c, g], i) =>
+      `<li class="${i < n - 1 ? "done" : i === n - 1 ? "now" : ""}">신청 ${i + 1}: ${L.name(s)} → ${L.title(c)} (성적 ${g})</li>`).join("");
+    const now = L.run(design, n), before = L.run(design, Math.max(0, n - 1));
+    $("tables").innerHTML = Object.entries(L.COLS[design]).map(([t, cols]) => {
+      const rows = now[t].map((r, i) => `<tr>${r.map((v, j) => {
+        const old = before[t][i] ? before[t][i][j] : undefined;
+        const cls = n && old !== v ? (old === null || old === undefined ? "new" : "over") : v === null ? "null" : "";
+        return `<td class="mono ${cls}">${show(v)}</td>`;
+      }).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="null">(비어 있다)</td></tr>`;
+      return `<div class="tbl"><h2 class="mono">${TNAME[t]}</h2><table><thead><tr>${cols.map(c => `<th class="mono${FK.includes(c) ? " fk" : ""}">${c}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    }).join("");
+    const ans = (got, want) => `<span class="mono">${got.length ? got.join(", ") : "(없음)"}</span><span class="badge ${got.join() === want.join() ? "ok" : "no"}">${got.join() === want.join() ? "맞다" : "틀렸다"}</span>`;
+    $("ask").innerHTML = n ? `<div><span class="q">김하나가 듣는 강좌: </span>${ans(L.coursesOf(design, n, "김하나"), L.coursesOf("c", n, "김하나"))}</div>`
+      + `<div><span class="q">네트워크를 듣는 학생: </span>${ans(L.studentsOf(design, n, "네트워크"), L.studentsOf("c", n, "네트워크"))}</div>` : "";
+    const lost = L.lost(design, n);
+    let msg;
+    if (!n) msg = "\"다음 신청 넣기\"를 눌러 신청을 하나씩 넣는다.";
+    else if (lost) msg = `넣은 신청 ${n}개 가운데 ${lost}개가 덮여 사라졌다. 이 설계는 ${design === "a" ? "학생 한 명에 강좌 칸이 하나뿐이라, 김하나의 두 번째 신청이 첫 번째를 덮었다" : "강좌 하나에 학생 칸이 하나뿐이라, 이두리의 신청이 김하나를 덮었다"}. 성적도 같이 덮였다.`;
+    else if (design === "c") msg = `넣은 신청 ${n}개가 모두 남았다. 성적은 학생이나 강좌가 아니라 "누가 무엇을 들었나"(수강)의 속성이라 수강 표에 둔다.`;
+    else msg = `아직은 다 남아 있다. 다음 신청을 넣어 본다.`;
+    $("note").textContent = msg;
+    $("next").disabled = n >= L.ENROLL.length;
+    $("all").disabled = n >= L.ENROLL.length;
+    document.querySelectorAll("[data-design]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.design === design)));
+  }
+  document.querySelectorAll("[data-design]").forEach(b => b.addEventListener("click", () => { design = b.dataset.design; render(); }));
+  $("next").addEventListener("click", () => { n = Math.min(L.ENROLL.length, n + 1); render(); });
+  $("all").addEventListener("click", () => { n = L.ENROLL.length; render(); });
+  $("reset").addEventListener("click", () => { n = 0; render(); });
+  const q = new URLSearchParams(location.search).get("design");
+  if (q in L.COLS) design = q;
+  render();
+})();
+</script>
+</body>
+</html>

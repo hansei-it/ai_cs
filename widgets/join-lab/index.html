@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>조인 결과에서 누가 빠지나</title>
+<meta name="description" content="학생과 수강 표를 INNER, LEFT, 조건을 WHERE와 ON에 둔 LEFT, COUNT(*)와 COUNT(열)로 묶어 보고, 결과 행과 빠진 학생을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .src { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .src .t { flex: 1 1 200px; }
+  h2 { font-size: 13px; margin: 0 0 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 2px 7px; text-align: left; }
+  th { background: var(--soft); font-weight: 400; color: var(--muted); }
+  td.null { color: var(--muted); font-style: italic; }
+  tr.nomatch td { background: var(--read-bg); }
+  pre.sql { margin: 0 0 8px; padding: 7px 9px; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
+  pre.sql b { color: var(--write); }
+  .out { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+  .out .t { flex: 1 1 260px; }
+  .side { flex: 1 1 200px; font-size: 13px; }
+  .side .k { color: var(--muted); }
+  .miss { color: var(--write); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>조인 결과에서 누가 빠지나</h1>
+<p class="lead">학생 넷과 수강 다섯 건을 여러 방법으로 잇는다. 최네오는 수강이 없고, 박세나의 데이터베이스는 아직 점수가 없다(NULL). 결과는 이 PC의 SQLite에서 같은 SQL로 확인했다.</p>
+<div class="src">
+  <div class="t"><h2 class="mono">student s</h2><table id="ts"></table></div>
+  <div class="t"><h2 class="mono">enrollment e</h2><table id="te"></table></div>
+</div>
+<div class="row" role="group" aria-label="질의">
+  <button class="btn" data-q="inner">INNER JOIN</button>
+  <button class="btn" data-q="left">LEFT JOIN</button>
+  <button class="btn" data-q="where">LEFT + WHERE 점수</button>
+  <button class="btn" data-q="on">LEFT + ON 점수</button>
+  <button class="btn" data-q="countstar">COUNT(*)</button>
+  <button class="btn" data-q="countcol">COUNT(e.course_id)</button>
+</div>
+<pre class="sql mono" id="sql"></pre>
+<div class="out">
+  <div class="t"><h2>결과 <span id="n"></span></h2><table id="res"></table></div>
+  <div class="side" id="side"></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const JoinLogic = (() => {
+  const STUDENT = [[1, "김하나"], [2, "이두리"], [3, "박세나"], [4, "최네오"]];
+  const ENROLL = [[1, 101, 90], [1, 102, 85], [2, 102, 70], [3, 101, null], [3, 103, 95]];   // 학생, 강좌, 점수
+  // SQL의 비교: NULL과 견주면 참도 거짓도 아니라서(UNKNOWN) 조건을 통과하지 못한다
+  const atLeast80 = score => score !== null && score >= 80;
+  // 조인: 학생마다 짝이 맞는 수강을 붙인다. left면 짝이 하나도 없는 학생도 NULL을 채워 남긴다. extra는 ON에 더한 조건
+  function join(left, extra = () => true) {
+    const out = [];
+    for (const [sid, name] of STUDENT) {
+      const hits = ENROLL.filter(e => e[0] === sid && extra(e));
+      if (hits.length) for (const e of hits) out.push([sid, name, e[1], e[2]]);
+      else if (left) out.push([sid, name, null, null]);
+    }
+    return out.sort((a, b) => a[0] - b[0] || (a[2] ?? 0) - (b[2] ?? 0));       // ORDER BY s.id, e.course_id
+  }
+  const pick = rows => rows.map(r => [r[1], r[2], r[3]]);                        // SELECT s.name, e.course_id, e.score
+  const group = (rows, f) => STUDENT.map(([sid, name]) => [name, f(rows.filter(r => r[0] === sid))]).filter((r, i) => rows.some(x => x[0] === STUDENT[i][0]));
+  const Q = {
+    inner: () => pick(join(false)),
+    left: () => pick(join(true)),
+    where: () => pick(join(true).filter(r => atLeast80(r[3]))),                  // WHERE는 조인이 끝난 뒤에 거른다
+    on: () => pick(join(true, e => atLeast80(e[2]))),                            // ON의 조건은 짝을 찾을 때 쓴다
+    countstar: () => group(join(true), rs => rs.length),                         // COUNT(*)는 행을 센다(NULL로 채운 행도)
+    countcol: () => group(join(true), rs => rs.filter(r => r[2] !== null).length), // COUNT(열)은 NULL이 아닌 값만 센다
+  };
+  const run = q => Q[q]();
+  // 결과에 한 번도 나오지 않는 학생
+  const missing = q => STUDENT.map(r => r[1]).filter(n => !run(q).some(r => r[0] === n));
+  return { STUDENT, ENROLL, run, missing, atLeast80 };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = JoinLogic;
+  const $ = id => document.getElementById(id);
+  const cell = v => (v === null ? `<td class="null mono">NULL</td>` : `<td class="mono">${v}</td>`);
+  $("ts").innerHTML = `<tr><th>id</th><th>name</th></tr>` + L.STUDENT.map(r => `<tr>${r.map(cell).join("")}</tr>`).join("");
+  $("te").innerHTML = `<tr><th>student_id</th><th>course_id</th><th>score</th></tr>` + L.ENROLL.map(r => `<tr>${r.map(cell).join("")}</tr>`).join("");
+  const BASE = "SELECT s.name, e.course_id, e.score\nFROM student s ";
+  const SQL = {
+    inner: BASE + "<b>JOIN</b> enrollment e ON e.student_id = s.id",
+    left: BASE + "<b>LEFT JOIN</b> enrollment e ON e.student_id = s.id",
+    where: BASE + "LEFT JOIN enrollment e ON e.student_id = s.id\n<b>WHERE e.score >= 80</b>",
+    on: BASE + "LEFT JOIN enrollment e ON e.student_id = s.id <b>AND e.score >= 80</b>",
+    countstar: "SELECT s.name, <b>COUNT(*)</b>\nFROM student s LEFT JOIN enrollment e ON e.student_id = s.id\nGROUP BY s.id",
+    countcol: "SELECT s.name, <b>COUNT(e.course_id)</b>\nFROM student s LEFT JOIN enrollment e ON e.student_id = s.id\nGROUP BY s.id",
+  };
+  const NOTE = {
+    inner: "INNER JOIN은 짝이 있는 행만 남긴다. 수강이 없는 최네오는 결과에서 사라졌다. \"학생마다\"를 물었다면 틀린 답이다.",
+    left: "LEFT JOIN은 왼쪽(학생)의 행을 모두 남기고, 짝이 없으면 오른쪽 열을 NULL로 채운다(파랑 행).",
+    where: "LEFT JOIN을 했는데도 이두리와 최네오가 빠졌다. WHERE는 조인이 끝난 뒤에 거르는데, NULL과 견주면 참이 아니라서 NULL로 채운 행도 버린다. 결국 INNER JOIN에 같은 조건을 건 것과 같아졌다.",
+    on: "같은 조건을 ON에 두면 짝을 찾을 때만 쓰인다. 80점 이상인 수강이 없는 이두리와 최네오도 NULL로 채워 남는다. \"학생마다, 80점 이상인 수강\"이라면 이쪽이다.",
+    countstar: "COUNT(*)는 행을 센다. 최네오는 수강이 없는데 1이 나왔다. LEFT JOIN이 NULL로 채운 행 하나를 셌기 때문이다.",
+    countcol: "COUNT(e.course_id)는 NULL이 아닌 값만 센다. 최네오는 0이다. \"학생마다 수강 수\"는 이렇게 센다.",
+  };
+  let q = "inner";
+  function render() {
+    $("sql").innerHTML = SQL[q];
+    const rows = L.run(q), counted = q.startsWith("count");
+    $("n").textContent = `(${rows.length}행)`;
+    $("res").innerHTML = (counted ? `<tr><th>name</th><th>${q === "countstar" ? "COUNT(*)" : "COUNT(e.course_id)"}</th></tr>` : `<tr><th>name</th><th>course_id</th><th>score</th></tr>`)
+      + rows.map(r => `<tr class="${!counted && r[1] === null ? "nomatch" : ""}">${r.map(cell).join("")}</tr>`).join("");
+    const miss = L.missing(q);
+    $("side").innerHTML = `<div><span class="k">결과에 없는 학생: </span>${miss.length ? `<span class="miss">${miss.join(", ")}</span>` : "없다"}</div>`;
+    $("note").textContent = NOTE[q];
+    document.querySelectorAll("[data-q]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.q === q)));
+  }
+  document.querySelectorAll("[data-q]").forEach(b => b.addEventListener("click", () => { q = b.dataset.q; render(); }));
+  const p = new URLSearchParams(location.search).get("q");
+  if (p in SQL) q = p;
+  render();
+})();
+</script>
+</body>
+</html>

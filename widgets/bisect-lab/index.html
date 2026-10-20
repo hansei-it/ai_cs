@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>반으로 나눠 망가진 커밋 찾기</title>
+<meta name="description" content="커밋 수를 고르고 가운데 커밋이나 원하는 커밋을 시험해, 처음 망가진 커밋을 몇 번 만에 찾는지와 하나씩 시험할 때의 횟수를 견준다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .track { position: relative; height: 30px; border: 1px solid var(--line); border-radius: 5px; background: var(--soft); margin: 10px 0 4px; overflow: hidden; }
+  .track .good { position: absolute; top: 0; bottom: 0; left: 0; background: var(--good-bg); border-right: 2px solid var(--good); }
+  .track .bad { position: absolute; top: 0; bottom: 0; right: 0; background: var(--write-bg); border-left: 2px solid var(--write); }
+  .track .mk { position: absolute; top: 3px; width: 2px; height: 22px; background: var(--accent); }
+  .ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .custom input { font: inherit; font-size: 13px; width: 6em; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .sum { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; margin-top: 8px; }
+  .sum b { font-size: 19px; }
+  .log { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .log .g { color: var(--good); font-weight: 700; }
+  .log .b { color: var(--write); font-weight: 700; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>반으로 나눠 망가진 커밋 찾기</h1>
+<p class="lead">커밋 1은 테스트가 통과했고, 마지막 커밋은 실패한다. 그 사이 어딘가에서 처음 망가졌다. 커밋을 하나 시험할 때마다 좋은지 나쁜지가 드러나고, 후보가 줄어든다.</p>
+<div class="row" role="group" aria-label="커밋 수">
+  <span class="label">커밋</span>
+  <button class="btn" data-n="12">12개</button>
+  <button class="btn" data-n="100">100개</button>
+  <button class="btn" data-n="1000">1,000개</button>
+  <button class="btn" id="again">새 문제</button>
+</div>
+<div class="row custom">
+  <button class="btn go" id="mid">가운데를 시험한다</button>
+  <span class="label" style="min-width:auto">또는 커밋</span>
+  <input id="pick" type="number" min="2" step="1" aria-label="시험할 커밋 번호">
+  <button class="btn" id="try">시험한다</button>
+</div>
+
+<div class="track" id="track" aria-hidden="true"></div>
+<div class="ends"><span>커밋 1 (좋음)</span><span id="last"></span></div>
+<div class="sum" id="sum"></div>
+<ul class="log" id="log"></ul>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const BisectLogic = (() => {
+  // 커밋 1..N 가운데 1은 좋고 N은 나쁘다고 안다. 처음 나빠진 커밋 b(2..N)를 찾는다.
+  // 상태 { lo, hi, tested }: lo까지는 좋고 hi부터는 나쁘다. hi - lo가 1이면 hi가 처음 나빠진 커밋이다.
+  const start = n => ({ n, lo: 1, hi: n, tested: [] });
+  const middle = s => Math.floor((s.lo + s.hi) / 2);
+  const done = s => s.hi - s.lo <= 1;
+  function test(s, m, b) {                       // 커밋 m을 시험한다(빌드하고 테스트를 돌린다)
+    if (done(s) || m <= s.lo || m >= s.hi) return s;
+    const bad = m >= b;
+    return { ...s, lo: bad ? s.lo : m, hi: bad ? m : s.hi, tested: s.tested.concat([{ m, bad }]) };
+  }
+  function halving(n, b) {                       // 늘 가운데를 시험할 때 시험한 커밋들
+    let s = start(n);
+    while (!done(s)) s = test(s, middle(s), b);
+    return { tested: s.tested.map(x => x.m), found: s.hi };
+  }
+  const linear = (n, b) => Math.min(b, n - 1) - 1;   // 2부터 하나씩 시험할 때의 시험 수(N은 이미 나쁘다고 안다)
+  return { start, middle, done, test, halving, linear };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = BisectLogic;
+  const $ = id => document.getElementById(id);
+  const num = v => v.toLocaleString("ko-KR");
+  let n = 12, b, s;
+  const newGame = () => { b = 2 + Math.floor(Math.random() * (n - 1)); s = L.start(n); render(); };   // 처음 망가진 커밋은 문제마다 바뀐다
+  function render() {
+    const pct = v => `${((v - 1) / (n - 1) * 100).toFixed(2)}%`;
+    $("track").innerHTML = `<div class="good" style="width:${pct(s.lo)}"></div><div class="bad" style="width:calc(100% - ${pct(s.hi)})"></div>`
+      + s.tested.map(t => `<div class="mk" style="left:${pct(t.m)}"></div>`).join("");
+    $("last").textContent = `커밋 ${num(n)} (나쁨)`;
+    const left = s.hi - s.lo - 1;
+    $("sum").innerHTML = `<span>시험한 수 <b class="mono">${s.tested.length}</b></span><span>남은 후보 <b class="mono">${num(Math.max(left, 0))}</b>개${left > 0 ? ` (커밋 ${num(s.lo + 1)}~${num(s.hi - 1)})` : ""}</span>`;
+    $("log").innerHTML = s.tested.map(t => `<li>커밋 ${num(t.m)}: <span class="${t.bad ? "b" : "g"}">${t.bad ? "나쁨" : "좋음"}</span></li>`).join("");
+    $("mid").textContent = L.done(s) ? "다 찾았다" : `가운데(커밋 ${num(L.middle(s))})를 시험한다`;
+    $("mid").disabled = L.done(s);
+    $("try").disabled = L.done(s);
+    $("pick").min = s.lo + 1; $("pick").max = s.hi - 1;
+    let note;
+    if (L.done(s)) note = `처음 망가진 커밋은 ${num(s.hi)}이다. ${s.tested.length}번 시험했다. 커밋 2부터 하나씩 시험했다면 ${num(L.linear(n, b))}번이었고, 늘 가운데를 시험하면 ${num(L.halving(n, b).tested.length)}번이다.`;
+    else if (!s.tested.length) note = "가운데 커밋을 시험하면 후보가 늘 절반으로 준다. 다른 커밋을 골라 시험해 보며 견준다.";
+    else note = "좋으면 그 앞쪽은 모두 좋고, 나쁘면 그 뒤쪽은 모두 나쁘다. 남은 후보 안에서 다시 가운데를 고른다.";
+    $("note").textContent = note;
+    document.querySelectorAll("[data-n]").forEach(x => x.setAttribute("aria-pressed", String(Number(x.dataset.n) === n)));
+  }
+  document.querySelectorAll("[data-n]").forEach(x => x.addEventListener("click", () => { n = Number(x.dataset.n); newGame(); }));
+  $("again").addEventListener("click", newGame);
+  $("mid").addEventListener("click", () => { s = L.test(s, L.middle(s), b); render(); });
+  $("try").addEventListener("click", () => { const m = Math.floor(Number($("pick").value)); s = L.test(s, m, b); render(); });
+  newGame();
+})();
+</script>
+</body>
+</html>

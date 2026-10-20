@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>새 판을 내보내는 세 가지 방법</title>
+<meta name="description" content="배포 방법(롤링, 블루/그린, 카나리)과 새 판에 버그가 있는지를 골라, 1분마다 새 판이 받는 요청의 몫과 실패한 요청 수, 배포를 마치는 때, 필요한 서버 수를 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .minutes { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; align-items: end; height: 120px; margin: 10px 0 2px; }
+  .minute { position: relative; height: 100%; background: var(--soft); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .minute .v2 { position: absolute; left: 0; right: 0; bottom: 0; background: var(--read-bg); border-top: 2px solid var(--read); }
+  .minute .v2.bad { background: var(--write-bg); border-top-color: var(--write); }
+  .ticks { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; font-size: 11px; color: var(--muted); text-align: center; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin: 4px 0 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid; }
+  .sum { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; }
+  .sum b { font-size: 19px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .ticks span:nth-child(odd) { visibility: hidden; } }
+</style>
+</head>
+<body>
+<h1>새 판을 내보내는 세 가지 방법</h1>
+<p class="lead">서버 10대가 1분에 요청 1,000개를 나눠 받는다. 버그가 있는 새 판은 받은 요청의 20%를 실패시키고, 운영자는 새 판이 요청을 받기 시작하고 2분 뒤에 알아채 되돌린다.</p>
+<div class="row" role="group" aria-label="배포 방법">
+  <span class="label">방법</span>
+  <button class="btn" data-s="rolling">롤링 (1분에 1대씩)</button>
+  <button class="btn" data-s="bluegreen">블루/그린 (한꺼번에 넘기기)</button>
+  <button class="btn" data-s="canary">카나리 (1대로 5분 지켜보기)</button>
+</div>
+<div class="row" role="group" aria-label="새 판의 버그">
+  <span class="label">새 판</span>
+  <button class="btn" data-bug="0">버그 없음</button>
+  <button class="btn" data-bug="1">버그 있음 (20% 실패)</button>
+</div>
+
+<div class="minutes" id="minutes" role="img" aria-label="1분마다 새 판이 받는 요청의 몫"></div>
+<div class="ticks" id="ticks"></div>
+<div class="legend"><span><i style="border-color:var(--line);background:var(--soft)"></i>옛 판이 받는 몫</span><span><i style="border-color:var(--read);background:var(--read-bg)"></i>새 판이 받는 몫</span><span><i style="border-color:var(--write);background:var(--write-bg)"></i>버그 있는 새 판이 받는 몫</span></div>
+<div class="sum" id="sum"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const DeployLogic = (() => {
+  // 서버 10대, 1분에 요청 1,000개가 받는 서버에 고르게 간다. 1분 단위로 0~15분을 본다
+  // n[m]: m번째 1분 동안 요청을 받는 새 판 서버 수. 버그가 있으면 새 판이 받은 요청의 20%가 실패한다
+  // 버그는 새 판이 요청을 받기 시작하고 2분 뒤에 알아채 그때부터 되돌린다
+  // rolling: 1분에 1대씩 바꾸고, 되돌릴 때도 1분에 1대씩 / bluegreen: 새 판 10대를 따로 띄워 0분에 한꺼번에 넘기고, 되돌리기는 다시 넘기기
+  // canary: 1대만 새 판으로 5분 지켜본다. 버그면 그 1대를 바로 빼고, 괜찮으면 5분부터 나머지를 1분에 1대씩
+  const RATE = 1000, SERVERS = 10, ERR = 0.2, DETECT = 2, MINUTES = 16;
+  const fill = (head, len) => head.concat(Array(Math.max(0, len - head.length)).fill(0)).slice(0, len);
+  function series(strategy, bug) {
+    if (strategy === "rolling") {
+      if (!bug) return Array.from({ length: MINUTES }, (_, m) => Math.min(SERVERS, m + 1));
+      const up = Array.from({ length: DETECT }, (_, m) => m + 1);
+      const down = [];
+      for (let k = up[up.length - 1] - 1; k >= 0; k--) down.push(k);
+      return fill(up.concat(down), MINUTES);
+    }
+    if (strategy === "bluegreen") return bug ? fill(Array(DETECT).fill(SERVERS), MINUTES) : Array(MINUTES).fill(SERVERS);
+    if (bug) return fill(Array(DETECT).fill(1), MINUTES);
+    return Array.from({ length: MINUTES }, (_, m) => (m < 5 ? 1 : Math.min(SERVERS, 1 + (m - 4))));
+  }
+  function run(strategy, bug) {
+    const n = series(strategy, bug);
+    const failed = Math.round(n.reduce((s, k) => s + RATE * k / SERVERS * (bug ? ERR : 0), 0));
+    const at = n.findIndex(k => k === SERVERS);
+    return { n, failed, done: bug || at < 0 ? null : at, peak: strategy === "bluegreen" ? 2 * SERVERS : SERVERS };
+  }
+  return { SERVERS, MINUTES, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = DeployLogic;
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  let strategy = q.get("s") || "rolling", bug = q.get("bug") === "1";
+  function render() {
+    const r = L.run(strategy, bug);
+    $("minutes").innerHTML = r.n.map((k, m) => `<div class="minute" title="${m}분: 새 판 ${k}대가 요청의 ${k * 10}%를 받는다"><div class="v2 ${bug ? "bad" : ""}" style="height:${k / L.SERVERS * 100}%"></div></div>`).join("");
+    $("ticks").innerHTML = r.n.map((_, m) => `<span>${m}분</span>`).join("");
+    $("sum").innerHTML = `<span>실패한 요청 <b class="mono">${r.failed}</b>개</span>`
+      + `<span>새 판으로 다 바뀐 때 <b class="mono">${r.done === null ? "되돌림" : r.done + "분"}</b></span>`
+      + `<span>가장 많을 때 서버 <b class="mono">${r.peak}</b>대</span>`;
+    const notes = {
+      rolling: bug ? "1대씩 바꾸다 2분 뒤에 알아채 1대씩 되돌렸다. 새 판이 받은 몫이 작을 때 알아채서 피해가 작지만, 되돌리는 데도 시간이 든다. 바꾸는 동안 옛 판과 새 판이 함께 돈다(3절)." : "1대씩 바꾸므로 서버를 더 두지 않아도 된다. 대신 다 바꾸는 데 시간이 걸리고, 그동안 옛 판과 새 판이 함께 돈다(3절).",
+      bluegreen: bug ? "한꺼번에 넘겨서 모든 요청이 2분 동안 버그 있는 새 판으로 갔다. 되돌리기는 다시 넘기기만 하면 되어 빠르다. 대신 배포하는 동안 서버가 두 배 필요하다." : "새 판을 따로 띄워 두고 한꺼번에 넘긴다. 옛 판과 새 판이 섞이지 않고 되돌리기도 바로 된다. 대신 배포하는 동안 서버가 두 배 필요하다.",
+      canary: bug ? "요청의 10%만 새 판으로 보내다 2분 뒤에 알아채 그 1대를 뺐다. 피해가 가장 작다. 버그를 알아챌 지표(오류율)를 지켜보고 있어야 쓸 수 있는 방법이다(72번)." : "1대로 5분 지켜본 뒤 나머지를 바꾸므로 다 바꾸는 데 가장 오래 걸린다. 그 시간이 문제를 일찍 알아챌 기회다.",
+    };
+    $("note").textContent = notes[strategy];
+    document.querySelectorAll("[data-s]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === strategy)));
+    document.querySelectorAll("[data-bug]").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.bug === "1") === bug)));
+  }
+  document.querySelectorAll("[data-s]").forEach(b => b.addEventListener("click", () => { strategy = b.dataset.s; render(); }));
+  document.querySelectorAll("[data-bug]").forEach(b => b.addEventListener("click", () => { bug = b.dataset.bug === "1"; render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

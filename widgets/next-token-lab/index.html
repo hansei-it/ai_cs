@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>다음 낱말을 확률로 고른다</title>
+<meta name="description" content="시작 낱말과 온도를 고르고 '다음 낱말 고르기'나 '100번 만들기'를 눌러, 다음 낱말의 확률과, 사실과 맞고 틀린 문장이 얼마나 나오는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .sent { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; min-height: 52px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; margin: 4px 0 8px; }
+  .tok { display: flex; flex-direction: column; align-items: center; }
+  .tok b { font-size: 17px; padding: 1px 7px; border-radius: 5px; background: var(--soft); border: 1px solid var(--line); }
+  .tok.last b { border-color: var(--accent); color: var(--accent); }
+  .tok small { color: var(--muted); font-size: 11px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: auto; align-self: center; }
+  .badge { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); }
+  .badge.ok { color: var(--good); border-color: var(--good); }
+  .badge.bad { color: var(--write); border-color: var(--write); font-weight: 700; }
+  .cands { font-size: 13px; margin-bottom: 4px; }
+  .cands .cap { color: var(--muted); margin-bottom: 4px; }
+  .bar { display: grid; grid-template-columns: 6.5em minmax(0, 1fr) 7.5em; gap: 8px; align-items: center; margin: 3px 0; }
+  .bar .w { font-weight: 700; text-align: right; }
+  .bar .track { height: 14px; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .bar .fill { display: block; height: 100%; background: var(--read); }
+  .bar .num { color: var(--muted); }
+  table.t { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 6px; }
+  table.t th, table.t td { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: left; }
+  table.t th { color: var(--muted); font-weight: 400; white-space: nowrap; }
+  table.t td.n { text-align: right; white-space: nowrap; }
+  .corpus { margin-top: 8px; font-size: 13px; }
+  .corpus summary { cursor: pointer; color: var(--muted); }
+  .corpus ul { margin: 4px 0 0; padding-left: 20px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .bar { grid-template-columns: 5.5em minmax(0, 1fr) 6.5em; } }
+</style>
+</head>
+<body>
+<h1>다음 낱말을 확률로 고른다</h1>
+<p class="lead">아주 작은 언어 모델이다. 앞 낱말 하나만 보고, 학습 글에서 그 낱말 다음에 나온 횟수로 다음 낱말의 확률을 정한다. 문장이 맞는지는 사람이 따로 만든 사실 표로 표시하며, 모델은 그 표를 보지 않는다.</p>
+<div class="row" role="group" aria-label="시작 낱말">
+  <span class="label">시작</span>
+  <span id="starts"></span>
+</div>
+<div class="row" role="group" aria-label="온도">
+  <span class="label">온도</span>
+  <button class="btn" data-temp="0">0</button>
+  <button class="btn" data-temp="0.5">0.5</button>
+  <button class="btn" data-temp="1">1</button>
+  <button class="btn" data-temp="2">2</button>
+</div>
+<div class="sent" id="sent"></div>
+<div class="cands" id="cands"></div>
+<div class="row">
+  <button class="btn go" id="step">다음 낱말 고르기</button>
+  <button class="btn" id="finish">문장 끝까지</button>
+  <button class="btn" id="many">100번 만들기</button>
+  <button class="btn" id="reset">다시</button>
+</div>
+<div id="tally"></div>
+<p class="note" id="note" aria-live="polite"></p>
+<details class="corpus"><summary>학습 글(문장과 나온 횟수)</summary><ul id="corpus"></ul></details>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const NextTokenLogic = (() => {
+  // 학습 글: (문장, 나온 횟수). 93번 본문의 next_word.py와 같다.
+  const TEXT = [["서울은 한국의 수도다 .", 2], ["서울은 한국의 가장 큰 도시다 .", 1],
+    ["도쿄는 일본의 수도다 .", 2], ["오사카는 일본의 큰 도시다 .", 1],
+    ["오타와는 캐나다의 수도다 .", 1], ["토론토는 캐나다의 가장 큰 도시다 .", 3]];
+  const STARTS = ["서울은", "도쿄는", "오사카는", "오타와는", "토론토는"];
+  // 사람이 따로 확인한 사실 표(모델은 보지 않는다)
+  const CAPITAL = { "한국의": "서울은", "일본의": "도쿄는", "캐나다의": "오타와는" };
+  const LARGEST = { "한국의": "서울은", "일본의": "도쿄는", "캐나다의": "토론토는" };
+  const BIG = ["서울은", "도쿄는", "오사카는", "토론토는"];
+
+  const follow = new Map();                      // 낱말 → Map(다음 낱말 → 횟수), 처음 나온 차례대로
+  for (const [s, n] of TEXT) {
+    const w = s.split(" ");
+    for (let i = 0; i + 1 < w.length; i++) {
+      if (!follow.has(w[i])) follow.set(w[i], new Map());
+      const m = follow.get(w[i]);
+      m.set(w[i + 1], (m.get(w[i + 1]) || 0) + n);
+    }
+  }
+
+  // 다음 낱말의 확률: 횟수의 (1/온도) 제곱에 비례한다. 온도 0이면 가장 많이 본 낱말 하나(같으면 먼저 나온 것).
+  function probs(word, temp) {
+    const m = follow.get(word);
+    if (!m) return [];
+    const items = [...m.entries()];
+    if (temp === 0) {
+      let best = items[0];
+      for (const it of items) if (it[1] > best[1]) best = it;
+      return items.map(([w, c]) => ({ word: w, count: c, p: w === best[0] ? 1 : 0 }));
+    }
+    const ws = items.map(([, c]) => Math.pow(c, 1 / temp));
+    const total = ws.reduce((a, b) => a + b, 0);
+    return items.map(([w, c], i) => ({ word: w, count: c, p: ws[i] / total }));
+  }
+
+  // u(0 이상 1 미만의 난수)로 하나를 고른다. 누적 확률이 u를 넘는 첫 낱말(Python의 random.choices와 같은 방식).
+  function pick(word, temp, u) {
+    const ps = probs(word, temp);
+    let acc = 0;
+    for (const x of ps) { acc += x.p; if (u < acc) return x.word; }
+    return ps.filter(x => x.p > 0).at(-1).word;
+  }
+
+  // 시작 낱말에서 나올 수 있는 문장 전부와 그 확률
+  function sentences(start, temp) {
+    const out = [];
+    const walk = (words, p) => {
+      const last = words[words.length - 1];
+      if (last === ".") { out.push({ text: words.join(" "), p }); return; }
+      for (const x of probs(last, temp)) if (x.p > 0) walk([...words, x.word], p * x.p);
+    };
+    walk([start], 1);
+    return out;
+  }
+
+  const seen = s => TEXT.some(([t]) => t === s);
+  function isTrue(s) {                           // "도시 나라의 수도다 ." / "도시 나라의 (가장) 큰 도시다 ."
+    const w = s.split(" ");
+    const [city, country] = w;
+    if (w[2] === "수도다") return CAPITAL[country] === city;
+    if (w[2] === "가장") return LARGEST[country] === city;
+    if (w[2] === "큰") return BIG.includes(city);
+    return false;
+  }
+
+  return { TEXT, STARTS, follow, probs, pick, sentences, seen, isTrue };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = NextTokenLogic;
+  const $ = id => document.getElementById(id);
+  const pct = p => `${Math.round(p * 100)}%`;
+  let start = "오타와는", temp = 1, words = [], chosen = [], tally = null;
+
+  $("starts").innerHTML = L.STARTS.map(s => `<button class="btn" data-start="${s}">${s}</button>`).join(" ");
+  $("corpus").innerHTML = L.TEXT.map(([s, n]) => `<li>${s} <span class="mono">(${n}번)</span></li>`).join("");
+
+  function reset() { words = [start]; chosen = [null]; tally = null; render(); }
+  function step() {
+    const last = words[words.length - 1];
+    if (last === ".") return;
+    const w = L.pick(last, temp, Math.random());
+    chosen.push(L.probs(last, temp).find(x => x.word === w).p);
+    words.push(w);
+  }
+  function describe(last) {
+    const ps = L.probs(last, temp);
+    if (ps.length === 1) return `'${last}' 다음에는 학습 글에서 '${ps[0].word}' 하나만 봤다(100%).`;
+    const seenList = ps.map(x => `'${x.word}' ${x.count}번`).join(", ");
+    const list = ps.map(x => `'${x.word}' ${pct(x.p)}`).join(", ");
+    const tail = temp === 0 ? "온도 0에서는 가장 많이 본 낱말만 고른다."
+      : temp === 1 ? `온도 1에서는 횟수에 비례해 ${list}다.`
+      : temp < 1 ? `온도 ${temp}에서는 많이 본 쪽으로 더 쏠려 ${list}다.`
+      : `온도 ${temp}에서는 덜 쏠려 ${list}다.`;
+    return `학습 글에서 '${last}' 다음에 본 낱말: ${seenList}. ${tail}`;
+  }
+  function render() {
+    const last = words[words.length - 1];
+    const done = last === ".";
+    const text = words.join(" ");
+    let html = words.map((w, i) => `<span class="tok${i === words.length - 1 ? " last" : ""}"><b>${w}</b><small>${chosen[i] === null ? "시작" : pct(chosen[i])}</small></span>`).join("");
+    if (done) {
+      const s = L.seen(text), t = L.isTrue(text);
+      html += `<span class="badges"><span class="badge">${s ? "학습 글에 있다" : "학습 글에 없다"}</span><span class="badge ${t ? "ok" : "bad"}">${t ? "사실과 맞다" : "사실과 틀리다"}</span></span>`;
+    }
+    $("sent").innerHTML = html;
+    if (done) $("cands").innerHTML = `<div class="cap">문장이 끝났다. 낱말 아래의 %는 그 낱말을 고른 확률이다.</div>`;
+    else $("cands").innerHTML = `<div class="cap">'${last}' 다음 후보(학습 글에서 본 횟수와 확률)</div>`
+      + L.probs(last, temp).map(x => `<div class="bar"><span class="w">${x.word}</span><span class="track"><span class="fill" style="width:${(x.p * 100).toFixed(1)}%"></span></span><span class="num mono">${x.count}번 · ${pct(x.p)}</span></div>`).join("");
+    $("step").disabled = done;
+    $("finish").disabled = done;
+
+    if (tally) {
+      const rows = L.sentences(start, temp).map(x => ({ ...x, n: tally.get(x.text) || 0 }));
+      $("tally").innerHTML = `<table class="t"><tr><th>100번 만든 문장</th><th>횟수(확률)</th><th>학습 글</th><th>사실</th></tr>`
+        + rows.map(r => `<tr><td>${r.text}</td><td class="n mono">${r.n}번 (${pct(r.p)})</td><td>${L.seen(r.text) ? "있다" : "없다"}</td><td class="${L.isTrue(r.text) ? "fine" : "warn"}">${L.isTrue(r.text) ? "맞다" : "틀리다"}</td></tr>`).join("") + "</table>";
+    } else $("tally").innerHTML = "";
+
+    let note;
+    if (tally) {
+      const wrong = [...tally].filter(([s]) => !L.isTrue(s)).reduce((a, [, n]) => a + n, 0);
+      const canBeWrong = L.sentences(start, temp).some(x => !L.isTrue(x.text));
+      if (temp === 0) note = wrong ? "온도 0이라 100번 모두 같은 문장이고, 100번 모두 틀렸다. 늘 같은 답이라고 맞는 답은 아니다."
+        : "온도 0이라 100번 모두 같은 문장이고, 이번에는 맞다. 그래도 늘 같은 답이 늘 맞는 것은 아니다(오사카, 오타와로 해 본다).";
+      else if (!canBeWrong) note = "100번 모두 사실과 맞는 문장이다. 이 시작에서 나올 수 있는 문장이 모두 맞기 때문이다. 다른 도시로 해 본다.";
+      else note = `100번 가운데 사실과 틀린 문장이 ${wrong}번 나왔다. 다시 누르면 표의 횟수가 조금씩 달라진다. 확률대로 뽑기 때문이다.`;
+    } else if (done) {
+      const s = L.seen(text), t = L.isTrue(text);
+      const country = words[1], w = words[2];        // 이 학습 글에서는 맞고 틀림이 셋째 낱말(수도다, 가장, 큰)에서 갈린다
+      const p = L.probs(country, temp).find(x => x.word === w).p;
+      if (s) note = "학습 글에 그대로 있는 문장이다. 같은 시작으로 다시 만들거나 '100번 만들기'로 무엇이 얼마나 나오는지 본다.";
+      else if (t) note = "학습 글에 없는 문장인데 사실과 맞다. 본 조각을 새로 이어 붙여 맞힌 것이다. 틀린 문장을 만들 때와 같은 방법이다.";
+      else note = `학습 글에 없고 사실과도 틀린 문장이다(환각). ${temp === 0 ? `'${country}' 다음에 가장 많이 본 낱말('${w}')을 고른 결과일 뿐이다.` : `'${country}' 다음 낱말을 확률대로 뽑은 결과일 뿐이다('${w}' ${pct(p)}).`} 모델에게는 맞는 문장을 만들 때와 같은 일이다.`;
+      if (temp === 0) note += " 온도 0이라 다시 만들어도 늘 이 문장이다.";
+    } else if (words.length === 1) note = "시작 낱말과 온도를 고르고 '다음 낱말 고르기'를 눌러 본다. 모델은 앞 낱말 하나만 보고, 학습 글에서 센 횟수로 확률을 정한다.";
+    else note = describe(last);
+    $("note").textContent = note;
+    document.querySelectorAll("[data-start]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.start === start)));
+    document.querySelectorAll("[data-temp]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.temp) === temp)));
+  }
+  document.querySelectorAll("[data-start]").forEach(b => b.addEventListener("click", () => { start = b.dataset.start; reset(); }));
+  document.querySelectorAll("[data-temp]").forEach(b => b.addEventListener("click", () => { temp = Number(b.dataset.temp); reset(); }));
+  $("step").addEventListener("click", () => { tally = null; step(); render(); });
+  $("finish").addEventListener("click", () => { tally = null; while (words[words.length - 1] !== ".") step(); render(); });
+  $("many").addEventListener("click", () => {
+    const m = new Map();
+    for (let i = 0; i < 100; i++) {
+      const w = [start];
+      while (w[w.length - 1] !== ".") w.push(L.pick(w[w.length - 1], temp, Math.random()));
+      const s = w.join(" ");
+      m.set(s, (m.get(s) || 0) + 1);
+    }
+    words = [start]; chosen = [null]; tally = m; render();
+  });
+  $("reset").addEventListener("click", reset);
+  reset();
+})();
+</script>
+</body>
+</html>

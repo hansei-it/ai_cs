@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>예로 해석의 차이 잡기</title>
+<meta name="description" content="수용 기준으로 쓸 예(상품 금액과 쿠폰)를 골라, 명세와 가정을 달리한 AI 구현 셋의 결제 금액을 견주고 몇 개의 잘못된 구현을 잡아내는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .presets .btn { min-width: 6.5em; }
+  .custom input[type=number] { font: inherit; font-size: 13px; width: 8em; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .custom label { font-size: 13px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 4px; font-size: 13px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 400; }
+  td.diff { background: var(--write-bg); color: var(--write); font-weight: 700; }
+  td.spec { font-weight: 700; }
+  .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+  .sum { font-size: 14px; margin-top: 6px; }
+  .sum b { font-size: 19px; }
+  .impls { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13px; }
+  .impls li { padding: 2px 0; }
+  .impls .ok { color: var(--good); font-weight: 700; }
+  .impls .no { color: var(--muted); }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } th, td { padding: 4px 3px; font-size: 12px; } }
+</style>
+</head>
+<body>
+<h1>예로 해석의 차이 잡기</h1>
+<p class="lead">명세: 쿠폰은 상품 금액의 10%(1원 미만은 버린다)를 깎되 최대 5,000원. 배송비는 3,000원이고, 할인 뒤 상품 금액이 30,000원 이상이면 받지 않는다. 구현 셋은 같은 한 줄 요구사항으로 만들었지만 저마다 하나를 다르게 가정했다.</p>
+<div class="row presets" role="group" aria-label="예 고르기">
+  <span class="label">예</span>
+  <span id="presets"></span>
+</div>
+<div class="row custom">
+  <span class="label">직접</span>
+  <input id="amount" type="number" min="1" step="1" value="31000" aria-label="상품 금액(원)">
+  <label><input id="coupon" type="checkbox"> 쿠폰</label>
+  <button class="btn" id="add">예 더하기</button>
+  <button class="btn" id="clear">모두 지우기</button>
+</div>
+
+<div id="table"></div>
+<div class="sum" id="sum"></div>
+<ul class="impls" id="impls"></ul>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const SpecLogic = (() => {
+  // 81번의 명세와, 같은 한 줄 요구사항으로 만들었지만 하나씩 다르게 가정한 구현 셋. 금액은 원.
+  // 명세: 쿠폰 할인 = min(상품 금액 // 10, 5000), 할인 뒤 금액이 30,000원 이상이면 배송비 0원, 아니면 3,000원
+  const KINDS = [
+    { key: "spec", name: "명세" },
+    { key: "a", name: "구현 1", why: "할인 전 금액으로 무료 배송을 정했다" },
+    { key: "b", name: "구현 2", why: "30,000원을 넘어야(>) 무료로 했다" },
+    { key: "c", name: "구현 3", why: "할인 상한(5,000원)을 빠뜨렸다" },
+  ];
+  function total(key, sub, coupon) {
+    const tenth = Math.floor(sub / 10);
+    const d = !coupon ? 0 : key === "c" ? tenth : Math.min(tenth, 5000);
+    const paid = sub - d;
+    const base = key === "a" ? sub : paid;                       // 무료 배송을 무엇으로 정하나
+    const free = key === "b" ? base > 30000 : base >= 30000;
+    return paid + (free ? 0 : 3000);
+  }
+  const PRESETS = [[25000, false], [29999, false], [30000, false], [33000, true], [50000, true], [60000, true]];
+  // 고른 예마다 네 결과를 내고, 명세와 다른 답을 한 번이라도 낸 구현(1~3)을 "잡았다"고 본다
+  function check(examples) {
+    const rows = examples.map(([sub, coupon]) => ({ sub, coupon, results: KINDS.map(k => total(k.key, sub, coupon)) }));
+    const caught = [1, 2, 3].filter(i => rows.some(r => r.results[i] !== r.results[0]));
+    return { rows, caught };
+  }
+  return { KINDS, PRESETS, total, check };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = SpecLogic;
+  const $ = id => document.getElementById(id);
+  const won = v => v.toLocaleString("ko-KR");
+  const label = ([sub, coupon]) => `${won(sub)}원${coupon ? " + 쿠폰" : ""}`;
+  const key = ([sub, coupon]) => `${sub},${coupon ? 1 : 0}`;
+  let chosen = [[25000, false]];                               // 처음에는 보통 경우 하나만
+  function render() {
+    $("presets").innerHTML = L.PRESETS.map((ex, i) => `<button class="btn" data-i="${i}" aria-pressed="${chosen.some(c => key(c) === key(ex))}">${label(ex)}</button> `).join("");
+    document.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", () => {
+      const ex = L.PRESETS[Number(b.dataset.i)];
+      chosen = chosen.some(c => key(c) === key(ex)) ? chosen.filter(c => key(c) !== key(ex)) : chosen.concat([ex]);
+      render();
+    }));
+    const r = L.check(chosen);
+    $("table").innerHTML = r.rows.length
+      ? `<table><thead><tr><th>예</th>${L.KINDS.map(k => `<th>${k.name}</th>`).join("")}</tr></thead><tbody>`
+        + r.rows.map(row => `<tr><td>${label([row.sub, row.coupon])}</td>${row.results.map((v, i) => `<td class="mono ${i === 0 ? "spec" : v !== row.results[0] ? "diff" : ""}">${won(v)}</td>`).join("")}</tr>`).join("")
+        + "</tbody></table>"
+      : `<div class="empty">예를 하나 이상 고른다.</div>`;
+    $("sum").innerHTML = `잡아낸 잘못된 구현 <b class="mono">${r.caught.length}</b> / 3`;
+    $("impls").innerHTML = L.KINDS.slice(1).map((k, j) => r.caught.includes(j + 1)
+      ? `<li><span class="ok">✓ ${k.name}</span>: ${k.why}</li>`
+      : `<li><span class="no">· ${k.name}: 아직 명세와 같은 답을 낸다</span></li>`).join("");
+    let note;
+    if (!r.rows.length) note = "수용 기준으로 쓸 예를 골라 본다.";
+    else if (r.caught.length === 3) note = `예 ${r.rows.length}개로 셋을 모두 잡았다. 이 예들이 그대로 수용 기준이자 테스트가 된다.`;
+    else if (r.caught.length === 0) note = "고른 예로는 세 구현이 모두 명세와 같은 답을 낸다. 해석의 차이는 보통 경우가 아니라 경계와 조합에서 드러난다.";
+    else note = "아직 명세와 구별되지 않는 구현이 있다. 어떤 해석이 갈릴 수 있는지 1절 그림의 질문에서 찾아 예를 더한다.";
+    $("note").textContent = note;
+  }
+  $("add").addEventListener("click", () => {
+    const sub = Math.floor(Number($("amount").value));
+    if (!(sub >= 1)) { $("note").textContent = "상품 금액은 1원 이상으로 넣는다. 이 위젯은 금액이 있는 상품 하나를 담은 주문만 다룬다."; return; }
+    const ex = [sub, $("coupon").checked];
+    if (!chosen.some(c => key(c) === key(ex))) chosen = chosen.concat([ex]);
+    render();
+  });
+  $("clear").addEventListener("click", () => { chosen = []; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

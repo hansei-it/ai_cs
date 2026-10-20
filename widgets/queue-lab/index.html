@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>큐가 쌓이는 속도</title>
+<meta name="description" content="1초에 들어오는 주문 수와 메일을 보내는 소비자 수, 소비자가 잠깐 멈추는 장애를 골라, 60초 동안 큐에 쌓인 메시지 수와 마지막 손님이 메일을 받기까지 기다리는 시간을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .chartwrap { overflow-x: auto; }
+  .chartwrap .chart { min-width: 520px; }   /* 휴대폰에서 글자가 너무 작아지지 않게, 줄이지 않고 옆으로 밀어 본다 */
+  .chart { width: 100%; height: auto; display: block; margin: 6px 0 2px; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .chart .axis { fill: var(--muted); font-size: 11px; }
+  .chart .line { fill: none; stroke: var(--write); stroke-width: 2.5; }
+  .chart .area { fill: var(--write-bg); }
+  .chart .outage { fill: var(--soft); }
+  .chart .outage-label { fill: var(--muted); font-size: 11px; }
+  .sum { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; }
+  .sum b { font-size: 19px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>큐가 쌓이는 속도</h1>
+<p class="lead">주문이 들어오면 확인 메일을 보낼 메시지를 큐에 넣는다. 소비자 한 명은 메일 하나에 200ms, 1초에 5개를 보낸다. 들어오는 수와 처리하는 수를 1초 단위로 셈한다.</p>
+<div class="row" role="group" aria-label="1초에 들어오는 주문">
+  <span class="label">들어오는 주문</span>
+  <button class="btn" data-rate="4">1초에 4개</button>
+  <button class="btn" data-rate="8">8개</button>
+  <button class="btn" data-rate="12">12개</button>
+</div>
+<div class="row" role="group" aria-label="소비자 수">
+  <span class="label">소비자</span>
+  <button class="btn" data-c="1">1명 (1초에 5개)</button>
+  <button class="btn" data-c="2">2명 (10개)</button>
+  <button class="btn" data-c="3">3명 (15개)</button>
+</div>
+<div class="row">
+  <span class="label">장애</span>
+  <label style="font-size:13px"><input type="checkbox" id="outage"> 10초부터 20초까지 소비자가 멈춘다(메일 서버 장애)</label>
+</div>
+
+<div class="chartwrap"><svg class="chart" id="chart" viewBox="0 0 640 210" role="img" aria-label="60초 동안 큐에 쌓인 메시지 수"></svg></div>
+<div class="sum" id="sum"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const QueueLogic = (() => {
+  // 1초마다: 주문 rate개가 큐에 들어오고, 소비자 c명이 1초에 5개씩(메일 하나 200ms) 꺼내 처리한다
+  // 장애를 고르면 10초부터 20초까지(10초 동안) 소비자가 멈춘다. 60초 동안 본다
+  // 마지막에 들어온 주문이 메일을 받기까지 기다리는 시간 = 60초의 큐 길이 ÷ (c × 5) 초
+  const PER = 5, SECONDS = 60;
+  function run(rate, c, outage) {
+    let q = 0, done = 0;
+    const series = [];
+    for (let t = 1; t <= SECONDS; t++) {
+      const cap = outage && t > 10 && t <= 20 ? 0 : c * PER;
+      q += rate;
+      const served = Math.min(q, cap);
+      q -= served;
+      done += served;
+      series.push(q);
+    }
+    return { series, final: q, max: Math.max(...series), done, wait: Math.round(q / (c * PER) * 10) / 10, stable: rate <= c * PER };
+  }
+  return { PER, SECONDS, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = QueueLogic;
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  let rate = Number(q.get("rate")) || 4, c = Number(q.get("c")) || 1;
+  if (q.get("outage") === "1") $("outage").checked = true;
+  const X0 = 46, X1 = 628, Y0 = 186, Y1 = 14;
+  function render() {
+    const outage = $("outage").checked;
+    const r = L.run(rate, c, outage);
+    const top = Math.max(50, Math.ceil(r.max / 50) * 50);
+    const x = t => X0 + (X1 - X0) * t / L.SECONDS, y = v => Y0 - (Y0 - Y1) * v / top;
+    let svg = "";
+    if (outage) svg += `<rect class="outage" x="${x(10)}" y="${Y1}" width="${x(20) - x(10)}" height="${Y0 - Y1}"/><text class="outage-label" x="${(x(10) + x(20)) / 2}" y="${Y1 + 12}" text-anchor="middle">소비자 멈춤</text>`;
+    for (let k = 0; k <= 5; k++) {
+      const v = top * k / 5;
+      svg += `<line class="grid" x1="${X0}" x2="${X1}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${X0 - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+    }
+    for (let t = 0; t <= 60; t += 10) svg += `<text class="axis" x="${x(t)}" y="${Y0 + 16}" text-anchor="middle">${t}초</text>`;
+    const pts = [[0, 0], ...r.series.map((v, i) => [i + 1, v])];
+    svg += `<path class="area" d="M${x(0)} ${y(0)} ${pts.map(([t, v]) => `L${x(t).toFixed(1)} ${y(v).toFixed(1)}`).join(" ")} L${x(60)} ${y(0)} Z"/>`;
+    svg += `<path class="line" d="${pts.map(([t, v], i) => `${i ? "L" : "M"}${x(t).toFixed(1)} ${y(v).toFixed(1)}`).join(" ")}"/>`;
+    $("chart").innerHTML = svg;
+    $("sum").innerHTML = `<span>60초 뒤 큐에 <b class="mono">${r.final}</b>개</span><span>마지막 손님이 메일을 기다리는 시간 <b class="mono">${r.wait}</b>초</span><span>60초 동안 보낸 메일 <b class="mono">${r.done}</b>개</span>`;
+    let note;
+    if (!r.stable) note = `1초에 ${rate}개가 들어오는데 ${c * L.PER}개만 처리한다. 차이만큼 큐가 끝없이 길어지고, 나중에 온 손님일수록 오래 기다린다. 소비자를 늘려 처리하는 수가 들어오는 수보다 많아야 한다.`;
+    else if (outage) note = `소비자가 멈춘 10초 동안 큐가 쌓였다가, 다시 돌기 시작하자 남는 힘(1초에 ${c * L.PER - rate}개)만큼씩 줄어든다. 동기 호출이었다면 그 10초 동안의 주문이 실패했을 것이다. 남는 힘이 작으면 비우는 데 오래 걸린다.`;
+    else note = `처리하는 수(1초에 ${c * L.PER}개)가 들어오는 수보다 많아 큐가 쌓이지 않는다. 장애를 켜 본다.`;
+    $("note").textContent = note;
+    document.querySelectorAll("[data-rate]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.rate) === rate)));
+    document.querySelectorAll("[data-c]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.c) === c)));
+  }
+  document.querySelectorAll("[data-rate]").forEach(b => b.addEventListener("click", () => { rate = Number(b.dataset.rate); render(); }));
+  document.querySelectorAll("[data-c]").forEach(b => b.addEventListener("click", () => { c = Number(b.dataset.c); render(); }));
+  $("outage").addEventListener("change", render);
+  render();
+})();
+</script>
+</body>
+</html>

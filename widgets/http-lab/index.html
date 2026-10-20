@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTTP 요청과 응답</title>
+<meta name="description" content="메서드와 경로, 쿠키를 골라 요청을 보내고, 작은 서버가 돌려준 응답의 상태 줄, 머리, 빈 줄, 본문을 날것 그대로 읽는다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  label.chk { font-size: 14px; display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+  .panes { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  .pane { flex: 1 1 280px; min-width: 0; }
+  .pane h2 { font-size: 13px; margin: 0 0 3px; color: var(--muted); font-weight: 400; }
+  pre { margin: 0; padding: 8px 10px; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 4.8em; }
+  pre .first { color: var(--accent); font-weight: 700; }
+  pre .hn { color: var(--write); }
+  pre .eol { color: var(--muted); font-size: 11px; }
+  pre .blank { color: var(--muted); font-size: 11px; }
+  pre .body { color: var(--read); }
+  pre .code2 { color: var(--good); }
+  pre .code3 { color: var(--accent); }
+  pre .code4 { color: var(--write); }
+  .bytes { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .key { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .key b.f { color: var(--accent); }
+  .key b.h { color: var(--write); }
+  .key b.b { color: var(--read); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>HTTP 요청과 응답</h1>
+<p class="lead">작은 웹 서버 <span class="mono">site.example</span>에 요청을 보낸다. 서버는 요청 하나를 받아 응답 하나를 돌려주고 잊는다.</p>
+
+<div class="row" role="group" aria-label="메서드">
+  <span class="label">메서드</span>
+  <button class="btn mono" data-m="GET">GET</button>
+  <button class="btn mono" data-m="HEAD">HEAD</button>
+  <button class="btn mono" data-m="POST">POST</button>
+</div>
+<div class="row" role="group" aria-label="경로">
+  <span class="label">경로</span>
+  <button class="btn mono" data-p="/">/</button>
+  <button class="btn mono" data-p="/hello.txt">/hello.txt</button>
+  <button class="btn mono" data-p="/old">/old</button>
+  <button class="btn mono" data-p="/login">/login</button>
+  <button class="btn mono" data-p="/mypage">/mypage</button>
+  <button class="btn mono" data-p="/nope">/nope</button>
+</div>
+<div class="row">
+  <label class="chk"><input type="checkbox" id="cookie"> 브라우저가 받아 둔 쿠키를 붙인다</label>
+  <button class="btn go" id="send">보내기</button>
+</div>
+
+<div class="panes">
+  <div class="pane"><h2>보낸 요청</h2><pre class="mono" id="req"></pre><div class="bytes" id="reqb"></div></div>
+  <div class="pane"><h2>받은 응답</h2><pre class="mono" id="res"></pre><div class="bytes" id="resb"></div></div>
+</div>
+<div class="key"><b class="f">첫 줄</b>, <b class="h">머리</b>(이름: 값), 빈 줄(머리 끝), <b class="b">본문</b>. ↵는 줄 끝의 두 바이트 <span class="mono">\r\n</span>이다.</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const HttpLogic = (() => {
+  const TEXT = { 200: "OK", 301: "Moved Permanently", 401: "Unauthorized", 404: "Not Found", 405: "Method Not Allowed" };
+  const FORM = "id=student&pw=1234";
+  const utf8 = s => new TextEncoder().encode(s).length;
+  // 요청 글: 첫 줄, 머리, 빈 줄, 본문. 줄 끝은 \r\n
+  function request(method, path, cookie) {
+    const lines = [`${method} ${path} HTTP/1.1`, "Host: site.example"];
+    if (cookie) lines.push("Cookie: session=abc123");
+    let body = "";
+    if (method === "POST") {
+      if (path === "/login") { lines.push("Content-Type: application/x-www-form-urlencoded"); body = FORM; }
+      lines.push(`Content-Length: ${utf8(body)}`);
+    }
+    return { lines, body, text: lines.join("\r\n") + "\r\n\r\n" + body };
+  }
+  // 서버의 규칙. 쿠키 session=abc123이 있으면 로그인한 사람으로 본다(서버는 그 밖에 아무것도 기억하지 않는다)
+  function respond(method, path, cookie) {
+    let code, ctype = null, body = "", extra = [];
+    const html = "text/html; charset=utf-8", text = "text/plain; charset=utf-8";
+    const known = ["/", "/login", "/hello.txt", "/old", "/mypage"];
+    if (!known.includes(path)) { code = 404; ctype = text; body = "없는 페이지"; }          // 없는 경로는 메서드와 상관없이 404
+    else if (method === "POST" && path !== "/login") { code = 405; extra = ["Allow: GET, HEAD"]; }
+    else if (path === "/login") {
+      ctype = html;
+      if (method === "POST") { code = 200; body = "<p>로그인했다</p>"; extra = ["Set-Cookie: session=abc123; HttpOnly"]; }
+      else { code = 200; body = "<form method=post>로그인</form>"; }
+    } else if (path === "/") { code = 200; ctype = html; body = "<h1>환영</h1>"; }
+    else if (path === "/hello.txt") { code = 200; ctype = text; body = "안녕, HTTP"; }
+    else if (path === "/old") { code = 301; extra = ["Location: /hello.txt"]; }
+    else if (path === "/mypage") {
+      if (cookie) { code = 200; ctype = html; body = "<p>내 페이지</p>"; }
+      else { code = 401; ctype = text; body = "로그인이 필요하다"; }
+    }
+    const lines = [`HTTP/1.1 ${code} ${TEXT[code]}`, ...(ctype ? [`Content-Type: ${ctype}`] : []), `Content-Length: ${utf8(body)}`, ...extra];
+    if (method === "HEAD") body = "";    // HEAD는 머리만 돌려준다
+    const head = lines.join("\r\n") + "\r\n\r\n";
+    return { code, lines, body, headBytes: utf8(head), bodyBytes: utf8(body), setCookie: extra.some(h => h.startsWith("Set-Cookie")) };
+  }
+  return { request, respond, utf8 };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = HttpLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let method = "GET", path = "/hello.txt";
+  const eol = `<span class="eol">↵</span>`;
+  const show = (lines, body, codeCls) => lines.map((l, i) => {
+    if (i === 0) return `<span class="first ${codeCls || ""}">${esc(l)}</span>${eol}`;
+    const k = l.indexOf(":");
+    return `<span class="hn">${esc(l.slice(0, k))}</span>${esc(l.slice(k))}${eol}`;
+  }).join("\n") + `\n<span class="blank">↵ (빈 줄: 머리 끝)</span>` + (body ? `\n<span class="body">${esc(body)}</span>` : "");
+
+  function send() {
+    const cookie = $("cookie").checked;
+    const q = L.request(method, path, cookie), r = L.respond(method, path, cookie);
+    $("req").innerHTML = show(q.lines, q.body);
+    $("reqb").textContent = `${L.utf8(q.text)}바이트`;
+    $("res").innerHTML = show(r.lines, r.body, `code${String(r.code)[0]}`);
+    $("resb").textContent = `머리 ${r.headBytes}바이트 + 본문 ${r.bodyBytes}바이트`;
+    let note;
+    if (r.code === 200 && method === "HEAD") note = "HEAD는 GET과 같은 머리만 돌려주고 본문은 보내지 않는다. 내려받기 전에 크기(Content-Length)나 종류를 알아볼 때 쓴다.";
+    else if (r.setCookie) { note = "로그인했다. 서버가 Set-Cookie 머리로 쿠키를 주었고, 브라우저는 이 쿠키를 받아 두었다가 다음 요청마다 Cookie 머리로 붙인다(체크 상자가 켜졌다). 서버는 요청 사이를 기억하지 않으므로 쿠키로 누구인지 알아본다(47번 항목)."; $("cookie").checked = true; }
+    else if (r.code === 200 && path === "/mypage") note = "Cookie 머리가 있어서 로그인한 사람의 페이지를 주었다. 체크 상자를 끄고 다시 보내면, 방금 로그인했어도 서버는 모른다.";
+    else if (r.code === 200) note = `2xx는 성공이다. Content-Type은 본문의 종류, Content-Length는 본문의 바이트 수다. 한글 한 글자는 UTF-8로 3바이트라 본문 "${r.body}"의 길이는 ${r.bodyBytes}바이트다.`;
+    else if (r.code === 301) note = "3xx는 \"다른 곳으로 가라\"다. Location 머리에 새 주소가 있고, 브라우저는 그 주소로 다시 요청한다(curl은 -L을 주어야 따라간다).";
+    else if (r.code === 401) note = "4xx는 요청 쪽 잘못이다. 401은 누구인지 밝혀야 한다는 뜻이다. 쿠키 없이 보냈으니 서버는 이 요청이 누구 것인지 모른다. /login에 POST로 로그인한 뒤 다시 보내 본다.";
+    else if (r.code === 404) note = "404는 그런 경로가 없다는 뜻이다. 서버는 응답했으므로 연결과 서버는 멀쩡하다. 주소의 경로를 다시 본다.";
+    else note = "405는 그 경로가 이 메서드를 받지 않는다는 뜻이다. Allow 머리가 받는 메서드를 알려 준다.";
+    $("note").textContent = note;
+  }
+  function mark() {
+    document.querySelectorAll("[data-m]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === method)));
+    document.querySelectorAll("[data-p]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.p === path)));
+  }
+  document.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => { method = b.dataset.m; mark(); send(); }));
+  document.querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => { path = b.dataset.p; mark(); send(); }));
+  $("send").addEventListener("click", send);
+  $("cookie").addEventListener("change", send);
+  mark();
+  send();
+})();
+</script>
+</body>
+</html>

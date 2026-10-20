@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스위치가 MAC 주소를 배운다</title>
+<meta name="description" content="보내는 컴퓨터와 받는 컴퓨터를 골라 프레임을 보내며, 스위치가 MAC 주소 표를 채우고 보낼 포트를 고르는 과정과 허브와의 차이를 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .wrap { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+  .net { flex: 1 1 380px; min-width: 0; overflow-x: auto; }
+  .net svg { display: block; width: 100%; min-width: 480px; height: auto; }
+  svg text { fill: var(--fg); font-size: 13px; text-anchor: middle; }
+  svg .sub { fill: var(--muted); font-size: 11px; font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; }
+  svg .box { fill: var(--soft); stroke: var(--line); stroke-width: 1.5; }
+  svg .sw { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 2; }
+  svg .port { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; }
+  svg .wire { stroke: var(--line); stroke-width: 3; }
+  svg .wire.in { stroke: var(--read); stroke-width: 4; }
+  svg .wire.out { stroke: var(--write); stroke-width: 4; }
+  svg .box.src { stroke: var(--read); stroke-width: 2.5; fill: var(--read-bg); }
+  svg .box.acc { stroke: var(--write); stroke-width: 2.5; fill: var(--write-bg); }
+  svg .box.drop { stroke-dasharray: 5 4; }
+  svg .tag { font-size: 11px; font-weight: 700; }
+  svg .tag.acc { fill: var(--write); }
+  svg .tag.drop, svg .tag.src { fill: var(--muted); }
+  .side { flex: 0 1 220px; min-width: 200px; }
+  .side h2 { font-size: 13px; margin: 0 0 4px; color: var(--muted); font-weight: 400; }
+  table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 400; }
+  tr.new td { background: var(--read-bg); }
+  .empty { color: var(--muted); font-size: 13px; }
+  .stat { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .stat b { color: var(--fg); }
+  .frame { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .legend { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .legend .i { color: var(--read); font-weight: 700; }
+  .legend .o { color: var(--write); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>스위치가 MAC 주소를 배운다</h1>
+<p class="lead">컴퓨터 A~D가 장비의 포트 1~4에 하나씩 꽂혀 있다. 보내는 쪽과 받는 쪽을 골라 프레임을 보내고, 프레임이 나간 선과 스위치의 MAC 주소 표를 본다.</p>
+
+<div class="row" role="group" aria-label="장비">
+  <span class="label">장비</span>
+  <button class="btn" data-mode="switch">스위치</button>
+  <button class="btn" data-mode="hub">허브 (옛 장비)</button>
+</div>
+<div class="row" role="group" aria-label="보내는 쪽">
+  <span class="label">보내는 쪽</span>
+  <button class="btn" data-from="A">A</button>
+  <button class="btn" data-from="B">B</button>
+  <button class="btn" data-from="C">C</button>
+  <button class="btn" data-from="D">D</button>
+</div>
+<div class="row" role="group" aria-label="받는 쪽">
+  <span class="label">받는 쪽</span>
+  <button class="btn" data-to="A">A</button>
+  <button class="btn" data-to="B">B</button>
+  <button class="btn" data-to="C">C</button>
+  <button class="btn" data-to="D">D</button>
+  <button class="btn" data-to="*">모두 (브로드캐스트)</button>
+</div>
+<div class="row">
+  <button class="btn go" id="send">보내기</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+
+<div class="wrap">
+  <div class="net">
+    <svg id="net" viewBox="0 0 600 214" role="img" aria-label="장비와 컴퓨터 네 대의 연결"></svg>
+    <div class="legend"><span class="i">파랑</span>: 프레임이 들어온 선, <span class="o">주황</span>: 장비가 내보낸 선</div>
+  </div>
+  <div class="side">
+    <h2 id="tabletitle">스위치의 MAC 주소 표</h2>
+    <div id="table"></div>
+    <div class="stat" id="stat"></div>
+    <div class="frame" id="frame"></div>
+  </div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const SwitchLogic = (() => {
+  // 컴퓨터 A~D가 포트 1~4에 하나씩 있다. MAC은 직접 정한 주소(첫 바이트 02)로 둔다
+  const HOSTS = ["A", "B", "C", "D"];
+  const MAC = { A: "02-00-00-00-00-0A", B: "02-00-00-00-00-0B", C: "02-00-00-00-00-0C", D: "02-00-00-00-00-0D", "*": "FF-FF-FF-FF-FF-FF" };
+  // table: 배운 컴퓨터 → 포트 (배운 차례대로). links: 지금까지 장비가 포트로 내보낸 프레임 수
+  const initial = mode => ({ mode, table: {}, links: 0, sent: 0 });
+  // src가 dst에게 프레임 하나를 보낸다. dst가 "*"이면 브로드캐스트
+  function send(s, src, dst) {
+    const inp = HOSTS.indexOf(src) + 1;
+    const table = { ...s.table };
+    let learned = false;
+    if (s.mode === "switch") {          // 스위치는 보낸 쪽 MAC과 들어온 포트를 짝지어 적는다
+      learned = table[src] !== inp;
+      table[src] = inp;
+    }
+    const others = [1, 2, 3, 4].filter(p => p !== inp);
+    let ports, kind;
+    if (s.mode === "hub") { ports = others; kind = "hub"; }              // 허브는 배우지 않고 늘 모두에게
+    else if (dst === "*") { ports = others; kind = "broadcast"; }
+    else if (dst in table) { ports = [table[dst]]; kind = "forward"; }    // 아는 곳이면 그 포트로만
+    else { ports = others; kind = "flood"; }                              // 모르면 들어온 포트를 뺀 모두에게
+    const got = ports.map(p => HOSTS[p - 1]);
+    const accepted = got.filter(h => dst === "*" || h === dst);
+    const dropped = got.filter(h => !(dst === "*" || h === dst));         // 자기 MAC이 아니면 랜 카드가 버린다
+    return { state: { mode: s.mode, table, links: s.links + ports.length, sent: s.sent + 1 }, inp, kind, ports, accepted, dropped, learned };
+  }
+  return { HOSTS, MAC, initial, send };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = SwitchLogic;
+  const $ = id => document.getElementById(id);
+  const PORT_X = [195, 265, 335, 405], HOST_X = [75, 225, 375, 525];
+  // 조사: 포트 번호를 읽은 끝소리로 고른다 (1 일은 ㄹ이라 "로", 3 삼은 "으로")
+  const ro = n => `${n}${String(n).slice(-1) === "3" ? "으로" : "로"}`;
+  let s, src = "A", dst = "B", last = null, msg = "";
+
+  function render() {
+    const hub = s.mode === "hub";
+    let g = `<rect class="sw" x="150" y="12" width="300" height="60" rx="8"/>
+      <text x="300" y="38" style="font-weight:700">${hub ? "허브" : "스위치"}</text>`;
+    for (let i = 0; i < 4; i++) {
+      const out = last && last.ports.includes(i + 1), inn = last && last.inp === i + 1;
+      g += `<line class="wire${inn ? " in" : out ? " out" : ""}" x1="${PORT_X[i]}" y1="72" x2="${HOST_X[i]}" y2="138"/>`;
+    }
+    for (let i = 0; i < 4; i++) {
+      g += `<rect class="port" x="${PORT_X[i] - 11}" y="50" width="22" height="18" rx="3"/><text x="${PORT_X[i]}" y="64" class="sub" style="fill:var(--accent)">${i + 1}</text>`;
+    }
+    L.HOSTS.forEach((h, i) => {
+      let cls = "", tag = "";
+      if (last) {
+        if (last.src === h) { cls = "src"; tag = "보냄"; }
+        else if (last.accepted.includes(h)) { cls = "acc"; tag = "받음"; }
+        else if (last.dropped.includes(h)) { cls = "drop"; tag = "받았지만 버림"; }
+      }
+      g += `<rect class="box ${cls}" x="${HOST_X[i] - 62}" y="138" width="124" height="50" rx="7"/>
+        <text x="${HOST_X[i]}" y="158" style="font-weight:700">${h}</text>
+        <text x="${HOST_X[i]}" y="177" class="sub">${L.MAC[h]}</text>`;
+      if (tag) g += `<text x="${HOST_X[i]}" y="205" class="tag ${cls}">${tag}</text>`;
+    });
+    $("net").innerHTML = g;
+
+    $("tabletitle").textContent = hub ? "허브는 표가 없다" : "스위치의 MAC 주소 표";
+    const keys = Object.keys(s.table);
+    $("table").innerHTML = hub ? `<div class="empty">들어온 신호를 그대로 모든 포트로 내보낸다.</div>`
+      : keys.length ? `<table><thead><tr><th>MAC 주소</th><th>포트</th></tr></thead><tbody>${keys.map(h =>
+          `<tr class="${last && last.learned && last.src === h ? "new" : ""}"><td class="mono">${L.MAC[h]} (${h})</td><td class="mono">${s.table[h]}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="empty">비어 있다. 아직 아무것도 배우지 않았다.</div>`;
+    $("stat").innerHTML = `보낸 프레임 <b>${s.sent}</b>개, 장비가 내보낸 프레임 <b>${s.links}</b>개`;
+    $("frame").innerHTML = last ? `마지막 프레임의 머리<br>받는 MAC <span class="mono">${L.MAC[last.dst]}</span><br>보내는 MAC <span class="mono">${L.MAC[last.src]}</span>` : "";
+    $("note").textContent = msg;
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === s.mode)));
+    document.querySelectorAll("[data-from]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.from === src)));
+    document.querySelectorAll("[data-to]").forEach(b => {
+      b.setAttribute("aria-pressed", String(b.dataset.to === dst));
+      b.disabled = b.dataset.to === src;
+    });
+  }
+  function start(mode) {
+    s = L.initial(mode); last = null;
+    msg = mode === "hub" ? "허브는 배우지 않는다. 몇 번을 보내도 들어온 신호를 모든 포트로 내보낸다."
+      : "켜자마자 표는 비어 있다. A에서 B로 보내 본다.";
+    render();
+  }
+  function send() {
+    if (src === dst) return;
+    const r = L.send(s, src, dst);
+    s = r.state;
+    last = { ...r, src, dst };
+    const learn = s.mode === "hub" ? "" : r.learned ? `스위치는 ${src}의 MAC이 포트 ${r.inp}에 있다고 적었다. ` : `${src}의 자리(포트 ${r.inp})는 이미 안다. `;
+    const drop = r.dropped.length ? ` ${r.dropped.join(", ")}는 받는 MAC이 자기 것이 아니라서 버렸다.` : "";
+    const outs = r.ports.join(", ");
+    if (r.kind === "hub") msg = `허브는 포트 ${ro(outs)} 모두 내보냈다.${drop}`;
+    else if (r.kind === "broadcast") msg = `${learn}받는 MAC이 FF-FF-FF-FF-FF-FF(브로드캐스트)라서 들어온 포트를 뺀 모든 포트(${outs})로 보냈고, 모두 받아 읽는다. IP 주소의 MAC을 물을 때(ARP, 40번 항목) 이렇게 보낸다.`;
+    else if (r.kind === "forward") msg = `${learn}${dst}의 MAC이 표에 있어서 포트 ${ro(outs)}만 보냈다. 다른 선에는 아무것도 흐르지 않는다.`;
+    else msg = `${learn}${dst}의 MAC은 아직 표에 없어서, 들어온 포트를 뺀 모든 포트(${outs})로 보냈다(플러딩).${drop}`;
+    render();
+  }
+  document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => start(b.dataset.mode)));
+  document.querySelectorAll("[data-from]").forEach(b => b.addEventListener("click", () => {
+    src = b.dataset.from;
+    if (dst === src) dst = L.HOSTS.find(h => h !== src);
+    render();
+  }));
+  document.querySelectorAll("[data-to]").forEach(b => b.addEventListener("click", () => { dst = b.dataset.to; render(); }));
+  $("send").addEventListener("click", send);
+  $("reset").addEventListener("click", () => start(s.mode));
+  const q = new URLSearchParams(location.search).get("mode");
+  start(q === "hub" ? "hub" : "switch");
+})();
+</script>
+</body>
+</html>

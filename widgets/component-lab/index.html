@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>상태가 바뀌면 다시 그리는 컴포넌트</title>
+<meta name="description" content="장바구니의 단추를 눌러 상태를 바꾸며, 어느 컴포넌트가 다시 그려지는지와 합계를 따로 저장할 때(복사본)와 계산할 때 화면이 어떻게 달라지는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --ok: #2b8a3e;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --ok: #69db7c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .panel { border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; }
+  .panel h2 { font-size: 12.5px; color: var(--muted); margin: 0 0 4px; }
+  .state { font-size: 12px; white-space: pre-wrap; margin: 0; }
+  .comp { border: 1px solid var(--line); border-radius: 5px; padding: 3px 7px; margin: 4px 0; font-size: 13px; display: flex; justify-content: space-between; gap: 6px; }
+  .comp .cnt { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .comp.again { border-color: var(--accent); background: var(--accent-bg); }
+  .comp.indent { margin-left: 14px; }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--ok); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 520px) { .cols { grid-template-columns: 1fr; } body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>상태가 바뀌면 다시 그리는 컴포넌트</h1>
+<p class="lead">장바구니 화면은 App, 상품마다 줄 하나, 합계 컴포넌트로 그린다. 단추를 누르면 상태를 새 객체로 바꾸고, React의 memo처럼 받은 값이 바뀐 컴포넌트만 다시 그린다(남색). 합계를 상태에 따로 저장할지, 그릴 때 계산할지 골라 본다.</p>
+<div class="row" role="group" aria-label="합계">
+  <span class="label">합계는</span>
+  <button class="btn" data-design="stored">상태에 따로 저장한다</button>
+  <button class="btn" data-design="derived">그릴 때 계산한다</button>
+</div>
+<div class="row" role="group" aria-label="할 일">
+  <span class="label">누르기</span>
+  <button class="btn go" data-act="qty">우유 하나 더</button>
+  <button class="btn go" data-act="add">사과 담기</button>
+  <button class="btn" data-act="reset">처음으로</button>
+</div>
+<div class="cols">
+  <div class="panel"><h2>상태 (한곳에 둔 데이터)</h2><pre class="state mono" id="state"></pre></div>
+  <div class="panel"><h2>컴포넌트와 그린 횟수</h2><div id="tree"></div></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ComponentLogic = (() => {
+  const START = { items: [{ id: 1, name: "우유", price: 1500, qty: 1 }, { id: 2, name: "빵", price: 3000, qty: 1 }], total: 4500 };
+  const sum = items => items.reduce((s, i) => s + i.price * i.qty, 0);
+  // 상태를 바꾸는 일. 늘 새 객체를 만든다. stored 설계는 합계를 손으로 맞추는데, qty를 바꿀 때 맞추는 것을 잊었다(흔한 실수)
+  function act(state, action, design) {
+    if (action === "qty") return { ...state, items: state.items.map(i => i.id === 1 ? { ...i, qty: i.qty + 1 } : i) };
+    if (action === "add") {
+      if (state.items.some(i => i.id === 3)) return state;
+      const apple = { id: 3, name: "사과", price: 2000, qty: 1 };
+      return { ...state, items: [...state.items, apple], total: design === "stored" ? state.total + apple.price : state.total };
+    }
+    return START;
+  }
+  // 컴포넌트: 받은 값(props)으로 화면 조각을 돌려준다
+  const Row = item => `${item.name} ${item.price}원 × ${item.qty}`;
+  const Total = total => `합계 ${total}원`;
+  // 받은 값이 앞과 같으면(===) 다시 그리지 않는다. 그린 횟수와 이번에 다시 그린 것을 돌려준다
+  function render(state, design, memo) {
+    const total = design === "stored" ? state.total : sum(state.items);
+    const parts = [{ key: "App", props: state, out: "App" }]
+      .concat(state.items.map(i => ({ key: `Row ${i.id}`, props: i, out: Row(i) })))
+      .concat([{ key: "Total", props: total, out: Total(total) }]);
+    const again = [], counts = { ...memo.counts }, last = { ...memo.last };
+    for (const p of parts) {
+      if (!(p.key in last) || last[p.key] !== p.props) { again.push(p.key); counts[p.key] = (counts[p.key] || 0) + 1; last[p.key] = p.props; }
+    }
+    return { parts, again, counts, last, shownTotal: total, realTotal: sum(state.items) };
+  }
+  // 차례로 누른 단추들을 처음부터 다시 돌린다
+  function play(design, actions) {
+    let state = START, memo = { counts: {}, last: {} };
+    let r = render(state, design, memo);
+    memo = r;
+    for (const a of actions) {
+      state = act(state, a, design);
+      if (a === "reset") memo = { counts: {}, last: {} };
+      r = render(state, design, memo);
+      memo = r;
+    }
+    return { state, ...r };
+  }
+  return { START, sum, act, render, play, Row, Total };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ComponentLogic;
+  const $ = id => document.getElementById(id);
+  let design = "stored", actions = [];
+  function render() {
+    const r = L.play(design, actions);
+    const shown = design === "stored" ? r.state : { items: r.state.items };
+    $("state").textContent = JSON.stringify(shown, null, 1).replace(/\n\s+([}\]])/g, " $1").replace(/\{\n\s+/g, "{ ").replace(/,\n\s+(?=")/g, ", ");
+    $("tree").innerHTML = r.parts.map(p => `<div class="comp ${p.key === "App" ? "" : "indent"} ${r.again.includes(p.key) && actions.length ? "again" : ""}"><span>${p.key === "App" ? "App" : p.out}</span><span class="cnt">${r.counts[p.key]}번 그림</span></div>`).join("");
+    const ok = r.shownTotal === r.realTotal;
+    const last = actions.at(-1);
+    let note = "단추를 누른다. 상태를 바꾸면 그 상태를 받는 컴포넌트만 다시 그린다.";
+    const nameOf = key => key === "App" ? "App" : key === "Total" ? "합계" : `${r.state.items.find(i => `Row ${i.id}` === key).name} 줄`;
+    if (last && last !== "reset") note = r.again.length ? `다시 그린 것: ${r.again.map(nameOf).join(", ")}. ` : "상태가 앞과 같은 객체라 아무것도 다시 그리지 않았다(사과는 이미 담겨 있다). ";
+    note += ok ? "" : `화면의 합계 ${r.shownTotal}원이 실제 합계 ${r.realTotal}원과 다르다. 합계를 따로 저장하고, 수량을 바꿀 때 맞추는 것을 잊었다.`;
+    if (ok && design === "derived" && actions.length) note += "합계는 그릴 때마다 상태에서 계산해서 어긋날 수 없다.";
+    $("note").innerHTML = note.replace(/(화면의 합계 .*다르다\.)/, '<span class="warn">$1</span>');
+    document.querySelectorAll("[data-design]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.design === design)));
+  }
+  document.querySelectorAll("[data-design]").forEach(b => b.addEventListener("click", () => { design = b.dataset.design; actions = []; render(); }));
+  document.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => { const a = b.dataset.act; actions = a === "reset" ? [] : [...actions, a]; render(); }));
+  const q = new URLSearchParams(location.search).get("design");
+  if (q === "stored" || q === "derived") design = q;
+  render();
+})();
+</script>
+</body>
+</html>

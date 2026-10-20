@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON으로 보내면 무엇이 남나</title>
+<meta name="description" content="자바스크립트 값을 하나 골라, JSON.stringify가 만든 글과 그 글을 다시 읽은 값(자바스크립트와 Python)을 견주며 무엇이 바뀌거나 사라지는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --ok: #2b8a3e;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --ok: #69db7c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .flow { display: grid; gap: 6px; }
+  .cell { border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; }
+  .cell .k { display: block; font-size: 12.5px; color: var(--muted); }
+  .cell .v { display: block; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
+  .cell.src { background: var(--soft); }
+  .cell.json { border-color: var(--accent); background: var(--accent-bg); }
+  .cell.js { border-color: var(--read); }
+  .cell.py { border-color: var(--read); }
+  .cell.err .v { color: var(--write); font-weight: 700; }
+  .arrow { text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.2; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--write); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .note.same { border-left-color: var(--ok); }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .pair { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>JSON으로 보내면 무엇이 남나</h1>
+<p class="lead">값을 고르면 이 브라우저가 JSON.stringify로 글을 만들고, JSON.parse로 다시 읽는다. Python 칸은 같은 글을 Python 3.14의 json.loads로 읽은 결과다.</p>
+<div class="row" role="group" aria-label="보낼 값" id="picks"></div>
+<div class="flow">
+  <div class="cell src"><span class="k">자바스크립트 값</span><span class="v mono" id="src"></span></div>
+  <div class="arrow">JSON.stringify ↓</div>
+  <div class="cell json" id="jsonCell"><span class="k">보내는 글 (JSON)</span><span class="v mono" id="json"></span></div>
+  <div class="arrow">받는 쪽이 읽는다 ↓</div>
+  <div class="pair">
+    <div class="cell js"><span class="k">자바스크립트 JSON.parse</span><span class="v mono" id="back"></span></div>
+    <div class="cell py"><span class="k">Python json.loads</span><span class="v mono" id="py"></span></div>
+  </div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const JsonLogic = (() => {
+  // 고를 수 있는 값. py는 같은 JSON 글을 Python 3.14의 json.loads로 읽어 repr로 찍은 것(글을 못 만들면 null)
+  const ROWS = [
+    { key: "basic", label: "문자열과 수", src: '{ name: "김하나", age: 21 }', make: () => ({ name: "김하나", age: 21 }),
+      py: "{'name': '김하나', 'age': 21}", note: "그대로 돌아온다. 문자열, 수, 불리언, null, 배열, 객체는 JSON에 있는 값이다." },
+    { key: "undefObj", label: "객체 속 undefined", src: "{ a: 1, b: undefined }", make: () => ({ a: 1, b: undefined }),
+      py: "{'a': 1}", note: "값이 undefined인 속성은 글에서 빠진다. 받는 쪽은 b가 있었는지 모른다." },
+    { key: "undefArr", label: "배열 속 undefined", src: "[1, undefined, 3]", make: () => [1, undefined, 3],
+      py: "[1, None, 3]", note: "배열에서는 빼면 자리가 바뀌므로 null로 바뀐다." },
+    { key: "fn", label: "함수", src: "{ id: 1, f: () => 1 }", make: () => ({ id: 1, f: () => 1 }),
+      py: "{'id': 1}", note: "함수는 보낼 수 없어서 빠진다. 데이터만 보낸다." },
+    { key: "nan", label: "NaN, Infinity, -0", src: "[NaN, Infinity, -0]", make: () => [NaN, Infinity, -0],
+      py: "[None, None, 0]", note: "JSON의 수에는 NaN과 Infinity가 없어서 null이 되고, -0은 0이 된다." },
+    { key: "date", label: "날짜", src: "{ at: new Date(0) }", make: () => ({ at: new Date(0) }),
+      py: "{'at': '1970-01-01T00:00:00.000Z'}", note: "Date는 UTC 시각의 문자열이 된다. 받는 쪽에는 날짜가 아니라 문자열로 온다." },
+    { key: "mapset", label: "Map과 Set", src: '{ m: new Map([["a", 1]]), s: new Set([1]) }', make: () => ({ m: new Map([["a", 1]]), s: new Set([1]) }),
+      py: "{'m': {}, 's': {}}", note: "Map과 Set은 내용이 사라지고 빈 객체가 된다. 오류도 나지 않아서 알아채기 어렵다." },
+    { key: "bigint", label: "BigInt", src: "{ n: 10n }", make: () => ({ n: 10n }),
+      py: null, note: "BigInt는 JSON.stringify가 오류를 낸다. 글을 만들지 못한다." },
+    { key: "cycle", label: "자기를 가리키는 객체", src: 'o = { name: "o" }; o.self = o', make: () => { const o = { name: "o" }; o.self = o; return o; },
+      py: null, note: "자기를 가리키면 끝없이 이어지므로 오류가 난다." },
+  ];
+  // JSON.stringify 결과. 오류면 { error }
+  function send(row) {
+    try { return { text: JSON.stringify(row.make()) }; } catch (e) { return { error: `${e.name}: ${e.message.split("\n")[0]}` }; }
+  }
+  // JSON.parse로 다시 만든 값을 자바스크립트 모양으로 적는다(문자열은 큰따옴표)
+  function show(v) {
+    if (v === null) return "null";
+    if (typeof v === "string") return JSON.stringify(v);
+    if (Array.isArray(v)) return `[${v.map(show).join(", ")}]`;
+    if (typeof v === "object") { const ks = Object.keys(v); return ks.length ? `{ ${ks.map(k => `${k}: ${show(v[k])}`).join(", ")} }` : "{}"; }
+    return Object.is(v, -0) ? "-0" : String(v);
+  }
+  const back = text => show(JSON.parse(text));
+  return { ROWS, send, show, back };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = JsonLogic;
+  const $ = id => document.getElementById(id);
+  let cur = "undefObj";
+  $("picks").innerHTML = L.ROWS.map(r => `<button class="btn" data-key="${r.key}">${r.label}</button>`).join("");
+  function render() {
+    const row = L.ROWS.find(r => r.key === cur);
+    const sent = L.send(row);
+    $("src").textContent = row.src;
+    $("jsonCell").classList.toggle("err", !!sent.error);
+    $("json").textContent = sent.error ? sent.error : `${sent.text}   (${new TextEncoder().encode(sent.text).length}바이트, UTF-8)`;
+    $("back").textContent = sent.error ? "받을 글이 없다" : L.back(sent.text);
+    $("py").textContent = row.py ?? "받을 글이 없다";
+    $("note").textContent = row.note;
+    $("note").classList.toggle("same", row.key === "basic");
+    document.querySelectorAll("[data-key]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.key === cur)));
+  }
+  $("picks").addEventListener("click", e => { const b = e.target.closest("[data-key]"); if (b) { cur = b.dataset.key; render(); } });
+  const q = new URLSearchParams(location.search).get("value");
+  if (L.ROWS.some(r => r.key === q)) cur = q;
+  render();
+})();
+</script>
+</body>
+</html>

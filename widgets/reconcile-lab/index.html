@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>원하는 상태에 맞추는 조정 루프</title>
+<meta name="description" content="파드를 지우거나 노드를 끄거나 원하는 수와 판을 바꾼 뒤 '조정 루프 한 번'을 눌러, 쿠버네티스가 실제 상태를 원하는 상태로 한 단계씩 맞추는 모습을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .big { font-size: 18px; min-width: 1.2em; text-align: center; }
+  .nodes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+  .node { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-height: 92px; }
+  .node h3 { margin: 0 0 6px; font-size: 13px; display: flex; justify-content: space-between; }
+  .node.off { opacity: .45; border-style: dashed; }
+  .node.off h3::after { content: "꺼짐"; color: var(--write); }
+  .pod { display: inline-block; margin: 2px 4px 2px 0; padding: 1px 6px; border-radius: 5px; font-size: 12px; border: 1.5px solid; }
+  .pod.v1 { background: var(--read-bg); border-color: var(--read); color: var(--read); }
+  .pod.v2 { background: var(--good-bg); border-color: var(--good); color: var(--good); }
+  .pod.starting { border-style: dashed; }
+  .sum { font-size: 14px; }
+  .sum b { font-size: 16px; }
+  .log { margin: 6px 0 0; padding-left: 1.2em; font-size: 13px; min-height: 1.4em; }
+  .log li { margin: 1px 0; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .nodes { gap: 5px; } .node { padding: 5px; } }
+</style>
+</head>
+<body>
+<h1>원하는 상태에 맞추는 조정 루프</h1>
+<p class="lead">쿠버네티스를 작게 흉내 낸 것이다. 노드 셋(한 노드에 파드 3개까지)에 같은 컨테이너를 띄운 파드를 원하는 수만큼 둔다. 새로 띄운 파드는 다음 단계에 준비된다. 판을 바꾸면 새 판을 하나 더 띄우고, 준비되면 옛 판 하나를 내린다.</p>
+<div class="row" role="group" aria-label="원하는 상태">
+  <span class="label">원하는 상태</span>
+  <button class="btn" id="dminus" aria-label="원하는 수 줄이기">−</button>
+  <b class="mono big" id="desired"></b>개
+  <button class="btn" id="dplus" aria-label="원하는 수 늘리기">+</button>
+  <button class="btn" data-ver="v1">판 v1</button>
+  <button class="btn" data-ver="v2">판 v2</button>
+</div>
+<div class="row" role="group" aria-label="일어나는 일">
+  <span class="label">일어나는 일</span>
+  <button class="btn" id="kill">파드 하나 죽이기</button>
+  <button class="btn" data-node="A">노드 A 끄기</button>
+  <button class="btn" data-node="B">노드 B 끄기</button>
+  <button class="btn" data-node="C">노드 C 끄기</button>
+</div>
+<div class="row">
+  <button class="btn go" id="tick">조정 루프 한 번</button>
+  <button class="btn" id="reset">처음 상태로</button>
+</div>
+<div class="nodes" id="nodes"></div>
+<div class="sum" id="sum"></div>
+<ul class="log" id="log"></ul>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ReconcileLogic = (() => {
+  // 노드 셋, 한 노드에 파드 3개까지. 파드 { name, node, ver, ready }. 새로 띄운 파드는 다음 단계에 준비된다(ready).
+  const NODES = ["A", "B", "C"];
+  const CAP = 3;
+  function start() {
+    return { up: { A: true, B: true, C: true }, desired: 3, version: "v1", next: 4,
+      pods: NODES.map((n, i) => ({ name: `p${i + 1}`, node: n, ver: "v1", ready: true })), log: [] };
+  }
+  const clone = s => JSON.parse(JSON.stringify(s));
+  function place(s) {                            // 켜진 노드 가운데 파드가 가장 적은 곳(같으면 이름 차례)
+    let best = null;
+    for (const n of NODES) {
+      if (!s.up[n]) continue;
+      const c = s.pods.filter(p => p.node === n).length;
+      if (c < CAP && (!best || c < best.c)) best = { n, c };
+    }
+    return best ? best.n : null;
+  }
+  function create(s, why) {
+    const node = place(s);
+    if (!node) { s.log.push(`${why} → 띄울 자리가 없어 기다림`); return false; }
+    const name = `p${s.next++}`;
+    s.pods.push({ name, node, ver: s.version, ready: false });
+    s.log.push(`${why} → 새로 띄움: ${name}(${s.version}), 노드 ${node}`);
+    return true;
+  }
+  function remove(s, pod, why) {
+    s.pods = s.pods.filter(p => p.name !== pod.name);
+    s.log.push(`${why} → 내림: ${pod.name}(${pod.ver})`);
+  }
+  function tick(s0) {                            // 조정 루프 한 번: 실제 상태를 보고 원하는 상태와의 차이를 하나씩 메운다
+    const s = clone(s0);
+    s.log = [];
+    for (const p of s.pods) if (!p.ready) { p.ready = true; s.log.push(`준비됨: ${p.name}`); }
+    const cur = s.pods.filter(p => p.ver === s.version), old = s.pods.filter(p => p.ver !== s.version);
+    if (old.length) {                            // 롤링 업데이트
+      if (cur.length + old.length > s.desired) remove(s, old[0], `파드 ${cur.length + old.length}개 > 원하는 ${s.desired}개`);
+      const n = s.pods.filter(p => p.ver === s.version).length;
+      if (n < s.desired && s.pods.length <= s.desired) create(s, `새 판 ${s.version}: ${n}/${s.desired}개`);
+    } else if (cur.length < s.desired) {
+      for (let k = cur.length; k < s.desired; k++) if (!create(s, `실제 ${cur.length}개 < 원하는 ${s.desired}개`)) break;
+    } else if (cur.length > s.desired) {
+      for (const p of cur.slice(s.desired).reverse()) remove(s, p, `실제 ${cur.length}개 > 원하는 ${s.desired}개`);
+    }
+    if (!s.log.length) s.log.push(`실제가 원하는 상태(${s.desired}개, ${s.version})와 같다. 할 일이 없다`);
+    return s;
+  }
+  // 조정 루프 밖에서 일어나는 일
+  function killPod(s0) {
+    const s = clone(s0);
+    const p = s.pods.find(x => x.ready);
+    s.log = p ? [`죽은 파드: ${p.name}(노드 ${p.node})`] : ["죽일 준비된 파드가 없다"];
+    if (p) s.pods = s.pods.filter(x => x.name !== p.name);
+    return s;
+  }
+  function toggleNode(s0, n) {
+    const s = clone(s0);
+    s.up[n] = !s.up[n];
+    const lost = s.pods.filter(p => p.node === n);
+    if (!s.up[n]) s.pods = s.pods.filter(p => p.node !== n);
+    s.log = [s.up[n] ? `노드 ${n} 켜짐` : `노드 ${n} 꺼짐${lost.length ? `. 사라진 파드: ${lost.map(p => p.name).join(", ")}` : ""}`];
+    return s;
+  }
+  const setDesired = (s0, d) => ({ ...clone(s0), desired: d, log: [`원하는 수: ${d}개`] });
+  const setVersion = (s0, v) => ({ ...clone(s0), version: v, log: [`원하는 판: ${v}`] });
+  const ready = s => s.pods.filter(p => p.ready).length;
+  const show = s => s.pods.map(p => `${p.name}:${p.node}:${p.ver}${p.ready ? "" : "*"}`).join(" ");
+  return { NODES, CAP, start, tick, killPod, toggleNode, setDesired, setVersion, ready, show };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ReconcileLogic;
+  const $ = id => document.getElementById(id);
+  let s = L.start();
+  function render() {
+    $("nodes").innerHTML = L.NODES.map(n => `<div class="node${s.up[n] ? "" : " off"}"><h3><span>노드 ${n}</span></h3>`
+      + s.pods.filter(p => p.node === n).map(p => `<span class="pod ${p.ver}${p.ready ? "" : " starting"}">${p.name} ${p.ver}${p.ready ? "" : " 시작 중"}</span>`).join("")
+      + "</div>").join("");
+    const cur = s.pods.filter(p => p.ver === s.version && p.ready).length;
+    $("sum").innerHTML = `원하는 상태 <b class="mono">${s.desired}</b>개(${s.version}) · 실제 준비된 파드 <b class="mono">${L.ready(s)}</b>개, 그 가운데 ${s.version} <b class="mono">${cur}</b>개`;
+    $("log").innerHTML = s.log.map(x => `<li>${x}</li>`).join("");
+    $("desired").textContent = s.desired;
+    $("dminus").disabled = s.desired <= 1;
+    $("dplus").disabled = s.desired >= 9;
+    const done = s.pods.length === s.desired && s.pods.every(p => p.ready && p.ver === s.version);
+    let note;
+    if (done) note = "실제 상태가 원하는 상태와 같다. 파드를 죽이거나 노드를 끄거나 원하는 상태를 바꾼 뒤, 조정 루프가 무엇을 할지 짐작하고 눌러 본다.";
+    else if (s.log.some(x => x.includes("자리가 없어"))) note = "남는 자리가 없어 새 파드를 띄우지 못한다. 노드를 켜거나 원하는 수를 줄여 본다. 실제 쿠버네티스도 자리가 날 때까지 기다린다.";
+    else if (s.pods.some(p => p.ver !== s.version)) note = L.ready(s) >= s.desired
+      ? "판을 바꾸는 중이다. 새 판이 준비되기 전에는 옛 판을 내리지 않아, 판 바꾸기 때문에 준비된 파드가 원하는 수 아래로 내려가지는 않는다."
+      : "판을 바꾸는 중에 파드를 잃어 준비된 파드가 원하는 수보다 적다. 조정 루프를 돌리면 새 판으로 차이를 메운다.";
+    else note = "실제 상태가 원하는 상태와 다르다. 사람이 무엇을 하라고 명령하지 않아도, 조정 루프를 돌리면 차이를 메운다.";
+    $("note").textContent = note;
+    document.querySelectorAll("[data-ver]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.ver === s.version)));
+    document.querySelectorAll("[data-node]").forEach(b => { b.textContent = `노드 ${b.dataset.node} ${s.up[b.dataset.node] ? "끄기" : "켜기"}`; });
+  }
+  $("tick").addEventListener("click", () => { s = L.tick(s); render(); });
+  $("reset").addEventListener("click", () => { s = L.start(); render(); });
+  $("kill").addEventListener("click", () => { s = L.killPod(s); render(); });
+  $("dminus").addEventListener("click", () => { s = L.setDesired(s, s.desired - 1); render(); });
+  $("dplus").addEventListener("click", () => { s = L.setDesired(s, s.desired + 1); render(); });
+  document.querySelectorAll("[data-ver]").forEach(b => b.addEventListener("click", () => { if (b.dataset.ver !== s.version) { s = L.setVersion(s, b.dataset.ver); render(); } }));
+  document.querySelectorAll("[data-node]").forEach(b => b.addEventListener("click", () => { s = L.toggleNode(s, b.dataset.node); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

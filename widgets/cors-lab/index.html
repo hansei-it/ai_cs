@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CORS: 브라우저가 막는 것</title>
+<meta name="description" content="요청의 메서드와 머리, 쿠키, 서버가 붙이는 Access-Control 머리를 골라 보내고, 사전 요청이 가는지, 서버가 무엇을 받았는지, 페이지의 JS가 응답을 읽을 수 있는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  h2 { font-size: 13px; margin: 10px 0 4px; color: var(--muted); font-weight: 400; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 6.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  label.chk { font-size: 13px; display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+  label.chk.off { opacity: .45; }
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .steps li { padding: 4px 8px; margin-bottom: 3px; border-left: 3px solid var(--line); background: var(--soft); border-radius: 0 6px 6px 0; font-size: 13.5px; }
+  .steps li.pre { border-left-color: var(--accent); }
+  .steps li.real { border-left-color: var(--read); }
+  .steps li.skip { color: var(--muted); border-left-style: dashed; }
+  .result { margin-top: 8px; padding: 7px 10px; border-radius: 6px; font-size: 14px; }
+  .result.ok { background: var(--good-bg); }
+  .result.ok b { color: var(--good); }
+  .result.no { background: var(--write-bg); }
+  .result.no b { color: var(--write); }
+  .console { margin-top: 6px; font-size: 12px; color: var(--write); overflow-wrap: anywhere; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>CORS: 브라우저가 막는 것</h1>
+<p class="lead">페이지 <span class="mono">http://127.0.0.1:8001</span>의 JS가 <span class="mono">fetch</span>로 요청을 보낸다. 규칙과 오류 문장은 이 PC의 Chrome에서 같은 조합을 실제로 실행한 결과와 같다.</p>
+
+<div class="row" role="group" aria-label="보내는 곳">
+  <span class="label">보내는 곳</span>
+  <button class="btn" data-same="1">같은 출처 <span class="mono">:8001/x</span></button>
+  <button class="btn" data-same="0">다른 출처 <span class="mono">:8002/data</span></button>
+</div>
+<div class="row" role="group" aria-label="메서드">
+  <span class="label">메서드</span>
+  <button class="btn mono" data-m="GET">GET</button>
+  <button class="btn mono" data-m="POST">POST</button>
+  <button class="btn mono" data-m="PUT">PUT</button>
+</div>
+<div class="row" role="group" aria-label="Content-Type">
+  <span class="label">Content-Type</span>
+  <button class="btn" data-ct="">없음</button>
+  <button class="btn mono" data-ct="text/plain">text/plain</button>
+  <button class="btn mono" data-ct="application/json">application/json</button>
+</div>
+<div class="row">
+  <span class="label">쿠키</span>
+  <label class="chk"><input type="checkbox" id="cred"> 함께 보낸다 <span class="mono">(credentials: "include")</span></label>
+</div>
+<h2>8002 서버가 응답에 붙이는 머리</h2>
+<div class="row" role="group" aria-label="Access-Control-Allow-Origin">
+  <span class="label mono" style="font-size:12px">Allow-Origin</span>
+  <button class="btn" data-acao="none">없음</button>
+  <button class="btn mono" data-acao="star">*</button>
+  <button class="btn" data-acao="origin">요청한 출처 그대로</button>
+</div>
+<div class="row" id="more">
+  <label class="chk" id="l-acac"><input type="checkbox" id="acac"> <span class="mono">Allow-Credentials: true</span></label>
+  <label class="chk" id="l-acam"><input type="checkbox" id="acam"> <span class="mono">Allow-Methods: PUT</span></label>
+  <label class="chk" id="l-acah"><input type="checkbox" id="acah"> <span class="mono">Allow-Headers: content-type</span></label>
+</div>
+
+<h2>오간 요청</h2>
+<ol class="steps" id="steps"></ol>
+<div class="result" id="result"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CorsLogic = (() => {
+  const PAGE = "http://127.0.0.1:8001", OTHER = "http://127.0.0.1:8002";
+  // 사전 요청 없이 보내는 요청: 메서드 GET, HEAD, POST이고 Content-Type이 이 셋 중 하나(또는 없음)
+  const SIMPLE_METHODS = ["GET", "HEAD", "POST"];
+  const SIMPLE_CT = ["", "text/plain", "application/x-www-form-urlencoded", "multipart/form-data"];
+  const PRE = "Response to preflight request doesn't pass access control check: ";
+  const MSG = {
+    noAcao: "No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+    wildcard: "The value of the 'Access-Control-Allow-Origin' header in the response must not be the wildcard '*' when the request's credentials mode is 'include'.",
+    acac: "The value of the 'Access-Control-Allow-Credentials' header in the response is '' which must be 'true' when the request's credentials mode is 'include'.",
+    method: m => `Method ${m} is not allowed by Access-Control-Allow-Methods in preflight response.`,
+    header: "Request header field content-type is not allowed by Access-Control-Allow-Headers in preflight response.",
+  };
+  // 응답의 Allow-Origin과 쿠키 규칙을 본다. 맞으면 null, 아니면 오류 문장
+  function originCheck(o) {
+    if (o.acao === "none") return MSG.noAcao;
+    if (o.cred && o.acao === "star") return MSG.wildcard;
+    if (o.cred && !o.acac) return MSG.acac;
+    return null;
+  }
+  // o: { same, method, ct, cred, acao: "none" | "star" | "origin", acac, acam, acah }
+  function simulate(o) {
+    const url = o.same ? `${PAGE}/x` : `${OTHER}/data`;
+    if (o.same) return { url, preflight: false, server: [`${o.method} /x`], read: true, error: null };
+    const preflight = !SIMPLE_METHODS.includes(o.method) || !SIMPLE_CT.includes(o.ct || "");
+    const server = [];
+    if (preflight) {
+      server.push("OPTIONS /data");            // 사전 요청: 이 메서드와 머리로 보내도 되는지 먼저 묻는다
+      let err = originCheck(o);
+      if (err) err = PRE + err;
+      else if (!SIMPLE_METHODS.includes(o.method) && !o.acam) err = MSG.method(o.method);
+      else if (!SIMPLE_CT.includes(o.ct || "") && !o.acah) err = MSG.header;
+      if (err) return { url, preflight, server, read: false, error: err };
+    }
+    server.push(`${o.method} /data`);          // 실제 요청은 서버에 닿는다. 읽어도 되는지는 응답을 받은 뒤 브라우저가 정한다
+    const err = originCheck(o);
+    return { url, preflight, server, read: !err, error: err };
+  }
+  const consoleText = (url, err) => `Access to fetch at '${url}' from origin '${PAGE}' has been blocked by CORS policy: ${err}`;
+  return { PAGE, OTHER, simulate, consoleText, MSG };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CorsLogic;
+  const $ = id => document.getElementById(id);
+  const o = { same: false, method: "GET", ct: "", cred: false, acao: "none", acac: false, acam: false, acah: false };
+  function render() {
+    o.cred = $("cred").checked; o.acac = $("acac").checked; o.acam = $("acam").checked; o.acah = $("acah").checked;
+    if (o.method === "GET") o.ct = "";
+    const r = L.simulate(o);
+    const steps = [];
+    if (r.preflight) {
+      steps.push(`<li class="pre">① 사전 요청 <span class="mono">OPTIONS /data</span>: 보내도 되는지 먼저 묻는다 (메서드 <span class="mono">${o.method}</span>${o.ct ? `, Content-Type <span class="mono">${o.ct}</span>` : ""})</li>`);
+      if (!r.server.includes(`${o.method} /data`)) steps.push(`<li class="skip">② 실제 요청 <span class="mono">${o.method} /data</span>는 보내지 않았다</li>`);
+    }
+    if (r.server.some(s => !s.startsWith("OPTIONS"))) steps.push(`<li class="real">${r.preflight ? "②" : "①"} 실제 요청 <span class="mono">${o.method} ${o.same ? "/x" : "/data"}</span>${o.cred ? " (쿠키와 함께)" : ""}: 서버가 받아 처리하고 응답했다</li>`);
+    $("steps").innerHTML = steps.join("");
+    $("result").className = "result " + (r.read ? "ok" : "no");
+    $("result").innerHTML = r.read
+      ? `<b>JS가 응답을 읽었다.</b> <span class="mono">read: secret data</span>`
+      : `<b>막았다.</b> <span class="mono">fetch</span>는 <span class="mono">TypeError: Failed to fetch</span>로 실패한다.<div class="console mono">${L.consoleText(r.url, r.error)}</div>`;
+    let note;
+    if (o.same) note = "같은 출처(스킴, 호스트, 포트가 같다)라 CORS를 따지지 않는다.";
+    else if (r.read) note = r.preflight ? "사전 요청에 서버가 허락하는 머리를 붙여 답했으므로, 브라우저가 실제 요청을 보내고 응답을 JS에 넘겼다." : "응답에 Allow-Origin이 맞게 있어서 브라우저가 응답을 JS에 넘겼다.";
+    else if (r.server.length === 1 && r.preflight) note = "사전 요청에서 허락을 받지 못해 실제 요청은 아예 가지 않았다. PUT, DELETE나 JSON 본문처럼 단순하지 않은 요청이 이렇게 미리 묻는다.";
+    else note = "서버는 요청을 받아 처리하고 응답까지 했다. 브라우저가 그 응답을 페이지의 JS에 넘기지 않았을 뿐이다. CORS는 서버를 지키는 것이 아니라, 다른 사이트가 내 이름으로 받은 응답을 읽지 못하게 하는 브라우저의 규칙이다.";
+    $("note").textContent = note;
+    document.querySelectorAll("[data-same]").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.same === "1") === o.same)));
+    document.querySelectorAll("[data-m]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === o.method)));
+    document.querySelectorAll("[data-ct]").forEach(b => { b.setAttribute("aria-pressed", String(b.dataset.ct === o.ct)); b.disabled = o.method === "GET" && b.dataset.ct !== ""; });
+    document.querySelectorAll("[data-acao]").forEach(b => { b.setAttribute("aria-pressed", String(b.dataset.acao === o.acao)); b.disabled = o.same; });
+    ["acac", "acam", "acah"].forEach(k => { $(k).disabled = o.same; $("l-" + k).classList.toggle("off", o.same); });
+  }
+  document.querySelectorAll("[data-same]").forEach(b => b.addEventListener("click", () => { o.same = b.dataset.same === "1"; render(); }));
+  document.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => { o.method = b.dataset.m; render(); }));
+  document.querySelectorAll("[data-ct]").forEach(b => b.addEventListener("click", () => { o.ct = b.dataset.ct; render(); }));
+  document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", () => { o.acao = b.dataset.acao; render(); }));
+  ["cred", "acac", "acam", "acah"].forEach(k => $(k).addEventListener("change", render));
+  render();
+})();
+</script>
+</body>
+</html>

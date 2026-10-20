@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>요청 여러 개 기다리기</title>
+<meta name="description" content="요청 묶음과 처리 방법(하나씩 블로킹, 폴링, 비동기 알림, 스레드 여러 개) 단추를 눌러, 전체 시간과 기다리는 동안 쓰는 CPU, 스레드 수가 어떻게 바뀌는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .lanes { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; align-items: center; margin-top: 8px; }
+  .lname { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .lane { position: relative; height: 20px; background: var(--soft); border-radius: 3px; }
+  .bar { position: absolute; top: 2px; height: 16px; border-radius: 3px; font-size: 11px; line-height: 16px; text-align: center; color: #fff; overflow: hidden; white-space: nowrap; }
+  :root[data-theme="dark"] .bar { color: #1e2129; }
+  .bar.wait { background: var(--read); }
+  .bar.idle { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+  .bar.busy { background: var(--write); }
+  .bar.free { background: var(--accent-bg); border: 1px solid var(--accent); color: var(--accent); }
+  .ticks { position: relative; height: 14px; font-size: 11px; color: var(--muted); }
+  .ticks span { position: absolute; transform: translateX(-50%); }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+  .stat { background: var(--soft); border-radius: 6px; padding: 6px 8px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 17px; font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .stats { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<h1>요청 여러 개 기다리기</h1>
+<p class="lead">요청마다 답이 늦게 온다(파란 막대가 답을 기다리는 시간). 맨 아래 줄은 요청을 처리하는 스레드가 그동안 무엇을 하는지다.</p>
+
+<div class="row" role="group" aria-label="요청 묶음">
+  <span class="label">요청</span>
+  <button class="btn" data-set="0">30, 120, 60ms</button>
+  <button class="btn" data-set="1">100ms 다섯 개</button>
+  <button class="btn" data-set="2">10ms 일곱 개 + 200ms 하나</button>
+</div>
+<div class="row" role="group" aria-label="처리 방법">
+  <span class="label">방법</span>
+  <button class="btn" data-m="blocking">하나씩 블로킹</button>
+  <button class="btn" data-m="polling">폴링 (논블로킹)</button>
+  <button class="btn" data-m="async">비동기 알림</button>
+  <button class="btn" data-m="threads">요청마다 스레드</button>
+</div>
+
+<div class="lanes" id="lanes"></div>
+<div class="stats">
+  <div class="stat"><div class="k">전체 시간</div><div class="v mono" id="total"></div></div>
+  <div class="stat"><div class="k">기다리며 쓴 CPU</div><div class="v mono" id="cpu"></div></div>
+  <div class="stat"><div class="k">스레드</div><div class="v mono" id="threads"></div></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const IoLogic = (() => {
+  const SETS = [[30, 120, 60], [100, 100, 100, 100, 100], [10, 10, 10, 10, 10, 10, 10, 200]];
+  // 요청마다 [보낸 때, 답이 온 때]. 블로킹은 앞 요청의 답이 와야 다음 요청을 보낸다. 나머지는 모두 0ms에 보낸다
+  function plan(delays, m) {
+    let t = 0;
+    const req = delays.map(d => {
+      const start = m === "blocking" ? t : 0;
+      if (m === "blocking") t += d;
+      return [start, start + d];
+    });
+    const total = Math.max(...req.map(r => r[1]));
+    // 기다리는 동안 CPU: 폴링만 내내 쓴다 (나머지는 운영체제가 재워 두었다가 깨운다)
+    const cpu = m === "polling" ? total : 0;
+    const threads = m === "threads" ? delays.length : 1;
+    return { req, total, cpu, threads };
+  }
+  return { SETS, plan };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = IoLogic;
+  const $ = id => document.getElementById(id);
+  let set = 0, m = "blocking";
+
+  function render() {
+    const delays = L.SETS[set], p = L.plan(delays, m);
+    const span = delays.reduce((a, b) => a + b, 0);   // 하나씩 할 때의 길이로 눈금을 고정한다 (방법을 바꿔도 같은 눈금)
+    const pct = v => (v / span) * 100;
+    let html = p.req.map(([s, e], i) => `<div class="lname">요청 ${i + 1}</div><div class="lane"><div class="bar wait" style="left:${pct(s)}%;width:${pct(e - s)}%">${e - s}ms</div></div>`).join("");
+    // 처리하는 스레드가 하는 일
+    const rows = m === "threads" ? delays.map((_, i) => [`스레드 ${i + 1}`, [[0, p.req[i][1], "idle", "잠들어 기다림"]]]) :
+      [["스레드", m === "blocking" ? [[0, p.total, "idle", "답이 올 때까지 멈춤"]] : m === "polling" ? [[0, p.total, "busy", "\"왔나?\"를 계속 묻는다"]] : [[0, p.total, "free", "다른 일을 할 수 있다"]]]];
+    html += rows.map(([name, bars]) => `<div class="lname">${name}</div><div class="lane">${bars.map(([s, e, cls, txt]) => `<div class="bar ${cls}" style="left:${pct(s)}%;width:${pct(e - s)}%">${txt}</div>`).join("")}</div>`).join("");
+    const ticks = [];
+    const step = span > 300 ? 100 : 50;
+    for (let v = 0; v <= span; v += step) ticks.push(`<span style="left:${pct(v)}%">${v}</span>`);
+    html += `<div></div><div class="ticks mono">${ticks.join("")}</div>`;
+    $("lanes").innerHTML = html;
+    $("total").textContent = `${p.total}ms`;
+    $("cpu").textContent = `${p.cpu}ms`;
+    $("threads").textContent = `${p.threads}개`;
+    let note;
+    if (m === "blocking") note = `하나를 보내고 답이 올 때까지 멈췄다가 다음을 보낸다. 전체 시간이 모든 요청의 합(${p.total}ms)이다. 이 PC에서 30, 120, 60ms 요청 셋을 C로 처리하니 211~213ms였다.`;
+    else if (m === "polling") note = "모두 보내 두고 왔는지 계속 묻는다. 가장 늦은 답이 올 때 끝나지만, 묻느라 기다리는 내내 CPU를 쓴다. 이 PC에서 30, 120, 60ms 요청 셋을 C로 처리하니 약 121ms 동안 CPU를 119~120ms 썼다(코어 하나를 내내 썼다).";
+    else if (m === "async") note = "모두 걸어 두고 끝났다는 알림을 기다린다. 가장 늦은 답이 올 때 끝나고, 기다리는 동안 CPU를 거의 쓰지 않으며, 그동안 스레드가 다른 일을 할 수도 있다. 이 PC에서 30, 120, 60ms 요청 셋을 C로 처리하니 약 121ms, CPU 0.1~0.2ms였다.";
+    else note = `요청마다 스레드를 두고 각자 블로킹으로 기다린다. 시간은 비동기와 같지만 스레드가 ${p.threads}개 필요하다. 스레드마다 1MiB씩 스택을 받으므로(30번 항목), 요청이 1만 개면 스택 예약만 약 10GiB다.`;
+    $("note").textContent = note;
+    document.querySelectorAll("[data-set]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.set) === set)));
+    document.querySelectorAll("[data-m]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === m)));
+  }
+  document.querySelectorAll("[data-set]").forEach(b => b.addEventListener("click", () => { set = Number(b.dataset.set); render(); }));
+  document.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => { m = b.dataset.m; render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

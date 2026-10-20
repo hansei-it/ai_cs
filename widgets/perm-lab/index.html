@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>계정마다 권한을 얼마나 줄까</title>
+<meta name="description" content="주문 서비스의 계정 넷에 권한을 켜고 끄며, 맡은 일이 되는지와 그 계정을 잃었을 때 생기는 일을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .role { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  .role h2 { font-size: 14px; margin: 0 0 4px; }
+  .role .duties { margin: 0 0 6px; }
+  .role .duty { display: inline-block; margin-right: 8px; }
+  .role .perms { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  .role .perms .btn { font-size: 12px; padding: 1px 7px; }
+  .role .perms .btn[aria-pressed="true"] { background: var(--accent-bg); }
+  .role .perms .btn.spare { border-style: dashed; border-color: var(--write); }
+  .role .loss { margin: 0; padding-left: 18px; color: var(--write); }
+  .role .loss li { margin: 1px 0; }
+  .role .cap { color: var(--muted); }
+  @media (max-width: 560px) { .roles { grid-template-columns: 1fr; } }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>계정마다 권한을 얼마나 줄까</h1>
+<p class="lead">섹션 8의 주문 서비스에 계정이 넷 있다(이 강의가 만든 예). 계정마다 권한을 켜고 끄면, 맡은 일이 되는지와 그 계정을 누가 훔쳤을 때 할 수 있는 일이 바뀐다.</p>
+<div class="row" role="group" aria-label="권한 한꺼번에 고르기">
+  <span class="label">한꺼번에</span>
+  <button class="btn" data-preset="full">모두에게 전부</button>
+  <button class="btn" data-preset="min">맡은 일만큼</button>
+  <button class="btn" data-preset="none">모두 빼기</button>
+</div>
+<div class="roles" id="roles"></div>
+<div class="cap legend">점선 테두리: 켜져 있지만 맡은 일에 쓰지 않는 권한</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const PermLogic = (() => {
+  // 권한 여섯 가지와, 그 권한을 가진 계정을 누가 훔쳤을 때 할 수 있는 일
+  const PERMS = [
+    { key: "own", label: "내 주문 읽기", loss: "그 손님 한 명의 주문을 본다" },
+    { key: "all", label: "모든 주문 읽기", loss: "모든 손님의 주문을 본다" },
+    { key: "refund", label: "환불", loss: "환불로 돈을 빼낸다" },
+    { key: "coupon", label: "쿠폰 만들기", loss: "할인 쿠폰을 마음대로 만든다" },
+    { key: "edit", label: "주문 고치기·지우기", loss: "주문 기록을 고치거나 지운다" },
+    { key: "grant", label: "권한 주기", loss: "자기나 다른 계정에 어떤 권한이든 준다" },
+  ];
+  // 계정과 맡은 일. 일마다 필요한 권한 하나
+  const ROLES = [
+    { key: "customer", label: "손님 kim", duties: [["내 주문 보기", "own"]] },
+    { key: "agent", label: "상담원", duties: [["손님 주문 찾아보기", "all"], ["환불하기", "refund"]] },
+    { key: "report", label: "보고서 프로그램", duties: [["하루 매출 합계", "all"]] },
+    { key: "marketer", label: "마케터", duties: [["쿠폰 만들기", "coupon"]] },
+  ];
+  const grants = f => Object.fromEntries(PERMS.map(p => [p.key, f(p.key)]));
+  const PRESETS = {
+    full: Object.fromEntries(ROLES.map(r => [r.key, grants(() => true)])),
+    min: Object.fromEntries(ROLES.map(r => [r.key, grants(k => r.duties.some(d => d[1] === k))])),
+    none: Object.fromEntries(ROLES.map(r => [r.key, grants(() => false)])),
+  };
+
+  // 모든 주문 읽기가 있으면 내 주문 읽기도 된다(맡은 일과 피해를 같은 기준으로 센다)
+  const has = (g, p) => Boolean(g[p] || (p === "own" && g.all));
+
+  // 계정 하나를 본다. granted: { 권한: true/false }
+  // 권한 주기가 있으면 스스로 모든 권한을 줄 수 있으므로, 잃었을 때의 피해는 모든 권한의 피해와 같다.
+  // 모든 주문 읽기가 있으면 한 명의 주문을 보는 것은 그 안에 든다.
+  function check(role, granted) {
+    const missing = role.duties.filter(([, p]) => !has(granted, p)).map(([d]) => d);
+    const needed = new Set(role.duties.map(([, p]) => p));
+    const extra = PERMS.filter(p => granted[p.key] && !needed.has(p.key)).map(p => p.label);
+    const eff = granted.grant ? grants(() => true) : granted;
+    const losses = PERMS.filter(p => eff[p.key] && !(p.key === "own" && eff.all)).map(p => p.loss);
+    return { missing, extra, losses };
+  }
+
+  return { PERMS, ROLES, PRESETS, has, check };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = PermLogic;
+  const $ = id => document.getElementById(id);
+  let state = JSON.parse(JSON.stringify(L.PRESETS.full));
+  // 받침에 맞춘 조사: 마지막 글자가 한글이면 받침을 보고, 영문으로 끝나면(kim) 받침이 있는 것으로 읽는다
+  const josa = (w, withB, without) => { const c = w.charCodeAt(w.length - 1); return w + (c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 === 0 ? without : withB); };
+
+  function render() {
+    $("roles").innerHTML = L.ROLES.map(r => {
+      const c = L.check(r, state[r.key]);
+      const duties = r.duties.map(([d, p]) => `<span class="duty">${L.has(state[r.key], p) ? '<span class="fine">✓</span>' : '<span class="warn">✗</span>'} ${d}</span>`).join("");
+      const perms = L.PERMS.map(p => { const spare = c.extra.includes(p.label);   // 켜져 있지만 맡은 일에 쓰지 않는 권한
+        return `<button class="btn${spare ? " spare" : ""}" data-r="${r.key}" data-p="${p.key}" aria-pressed="${state[r.key][p.key]}"${spare ? ' title="맡은 일에 쓰지 않는다"' : ""}>${p.label}</button>`; }).join("");
+      const loss = c.losses.length ? `<ul class="loss">${c.losses.map(x => `<li>${x}</li>`).join("")}</ul>` : '<div class="fine">할 수 있는 일이 없다</div>';
+      return `<section class="role"><h2>${r.label}</h2><div class="duties"><span class="cap">맡은 일:</span> ${duties}</div>`
+        + `<div class="perms" role="group" aria-label="${r.label}의 권한">${perms}</div><div class="cap">이 계정을 누가 훔치면:</div>${loss}`
+        + (state[r.key].grant ? '<div class="cap">권한 주기가 있어, 꺼 둔 권한도 스스로 다시 켤 수 있다.</div>' : "") + "</section>";
+    }).join("");
+    document.querySelectorAll("[data-r]").forEach(b => b.addEventListener("click", () => {
+      state[b.dataset.r][b.dataset.p] = !state[b.dataset.r][b.dataset.p];
+      render();
+      document.querySelector(`[data-r="${b.dataset.r}"][data-p="${b.dataset.p}"]`).focus();
+    }));
+    document.querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-pressed",
+      String(L.ROLES.every(r => L.PERMS.every(p => L.PRESETS[b.dataset.preset][r.key][p.key] === state[r.key][p.key])))));
+
+    const checks = L.ROLES.map(r => [r, L.check(r, state[r.key])]);
+    const missing = checks.filter(([, c]) => c.missing.length);
+    const extra = checks.reduce((n, [, c]) => n + c.extra.length, 0);
+    let note;
+    if (missing.length) note = `${missing.map(([r, c]) => `${josa(r.label, "은", "는")} ${josa(c.missing.join(", "), "을", "를")} 못 한다`).join(". ")}. 맡은 일에 필요한 권한은 준다.`;
+    else if (extra) note = `맡은 일은 모두 되지만, 쓰지 않는 권한이 ${extra}개 있다. 쓰지 않는 권한도 계정을 잃으면 피해가 된다. 일에 필요 없는 권한을 하나씩 꺼 본다.`;
+    else note = "모든 계정이 맡은 일을 하고, 남는 권한이 없다. 이것이 최소 권한이다. 계정 하나를 잃어도 피해는 그 계정이 맡은 일로 그친다. 그래도 남는 피해(환불, 모든 주문 읽기)는 기록과 한도로 줄인다.";
+    $("note").textContent = note;
+  }
+  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => {
+    state = JSON.parse(JSON.stringify(L.PRESETS[b.dataset.preset]));
+    render();
+  }));
+  render();
+})();
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>비트 탐색기</title>
+<meta name="description" content="비트를 눌러 켜고 끄거나 값을 넣어, 같은 비트가 정수·실수·문자로 어떻게 읽히는지 본다">
 <style>
   :root {
     --bg: #ffffff;
@@ -364,7 +365,9 @@ const BitLogic = (() => {
       next.focus();
     });
   });
-  select(tabs[0]);
+  // 페이지가 ?tab=int|float|text 로 처음 보여 줄 탭을 정할 수 있다
+  const want = { int: 0, float: 1, text: 2 }[new URLSearchParams(location.search).get("tab")] ?? 0;
+  select(tabs[want]);
 })();
 
 // ---- 정수 ----

@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>맥락이 빠지면 무엇이 깨질까</title>
+<meta name="description" content="작업 지시서에 넣을 맥락 다섯 가지를 켜고 끄며, 받은 답의 코드가 어떻게 바뀌고 완료 기준의 어느 줄이 깨지는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .ctx { display: grid; gap: 4px; margin-bottom: 8px; }
+  .ctx label { display: grid; grid-template-columns: auto 6em minmax(0, 1fr); gap: 8px; align-items: start; font-size: 13px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .ctx label.on { border-color: var(--accent); background: var(--accent-bg); }
+  .ctx label b { font-size: 13px; }
+  .ctx input { accent-color: var(--accent); margin-top: 3px; }
+  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .cap { font-size: 13px; color: var(--muted); margin: 6px 0 3px; }
+  .box { margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 9em; }
+  table.t { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.t td { border-bottom: 1px solid var(--line); padding: 3px 6px; white-space: nowrap; }
+  table.t td.msg { white-space: normal; }
+  @media (max-width: 560px) { .two { grid-template-columns: 1fr; } }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .ctx label { grid-template-columns: auto 5em minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<h1>맥락이 빠지면 무엇이 깨질까</h1>
+<p class="lead">쿠폰 만료일 판단 함수를 AI에게 맡긴다. 맥락이 빠지면 AI는 그럴듯한 기본값으로 채운다. 받은 답은 흔한 어긋남을 하나씩 담아 이 강의가 쓴 흉내이고, 결과는 그 코드를 실제로 실행한 것과 같다(테스트가 대조한다). 목표는 요청 첫 줄이고, 켜고 끄는 다섯 가지는 AI가 모르는 것들이다. 완료 기준(check_expiry.py)은 아래에서 돌린다.</p>
+<div class="ctx" id="ctx" role="group" aria-label="작업 지시서에 넣을 맥락"></div>
+<div class="row">
+  <button class="btn" id="all">모두 넣기</button>
+  <button class="btn" id="none">모두 빼기</button>
+</div>
+<div class="two">
+  <div>
+    <div class="cap">작업 지시서</div>
+    <pre class="box mono" id="brief"></pre>
+  </div>
+  <div>
+    <div class="cap">받은 답(expiry.py, 흉내)</div>
+    <pre class="box mono" id="code"></pre>
+  </div>
+</div>
+<div class="cap">완료 기준(check_expiry.py)을 돌린 결과</div>
+<div id="result"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ContextLogic = (() => {
+  // 작업 지시서에 넣을 수 있는 맥락 다섯 가지. 빠지면 AI가 그럴듯한 기본값으로 채운다(흔한 어긋남을 하나씩 담은 흉내).
+  // 요청 첫 줄이 함수 이름(is_valid)을 알려 주므로, 이름은 늘 맞는다.
+  const ITEMS = [
+    { key: "A", label: "기존 코드", text: "order.py의 COUPONS 표를 붙이고, 새 파일 expiry.py에 둔다" },
+    { key: "B", label: "함수의 꼴", text: "is_valid(code, today) -> bool. 오늘 날짜는 datetime.date 값으로 받는다" },
+    { key: "C", label: "경계 규칙", text: "만료일 당일까지 쓸 수 있다" },
+    { key: "D", label: "예외 규칙", text: "만료일이 없는 쿠폰(FREESHIP)은 늘 쓸 수 있고, COUPONS에 없는 쿠폰은 False다" },
+    { key: "E", label: "제약", text: "Python 3.14 표준 라이브러리만 쓴다" },
+  ];
+  const REQUEST = "WELCOME10 쿠폰에 만료일(2026-12-31)을 두고, 쿠폰을 쓸 수 있는지 판단하는 is_valid 함수를 만들어 줘.";
+  // 완료 기준(check_expiry.py와 같다): (쿠폰, 오늘, 쓸 수 있나)
+  const CASES = [["WELCOME10", "2026-12-30", true], ["WELCOME10", "2026-12-31", true], ["WELCOME10", "2027-01-01", false],
+    ["FREESHIP", "2030-01-01", true], ["NOPE", "2026-10-01", false]];
+  const COUPONS = ["WELCOME10", "FREESHIP"];
+  const EXPIRES = { WELCOME10: "2026-12-31" };
+
+  // 고른 맥락(ctx.A~E가 true면 줌)으로 받은 답의 코드
+  function code(ctx) {
+    const L = [ctx.E ? "from datetime import date" : "from dateutil.parser import parse"];
+    if (!ctx.E && !ctx.B) L.push("from datetime import date");
+    if (ctx.A) L.push("", "from order import COUPONS");
+    const table = ctx.A ? "EXPIRES" : "COUPON_EXPIRY";
+    L.push("", `${table} = {"WELCOME10": ${ctx.E ? "date(2026, 12, 31)" : 'parse("2026-12-31").date()'}}`, "", "");
+    L.push(`def is_valid(${ctx.B ? "code, today" : "code"}):`);
+    if (!ctx.B) L.push("    today = date.today()");
+    const cmp = ctx.C ? "<=" : "<";
+    if (ctx.D) {
+      if (ctx.A) L.push("    if code not in COUPONS:", "        return False");
+      L.push(`    expires = ${table}.get(code)`, `    return expires is None or today ${cmp} expires`);
+    } else L.push(`    return today ${cmp} ${table}[code]`);
+    return L.join("\n");
+  }
+
+  // 완료 기준을 돌린 결과. 앞에서 막히면(불러오기, 꼴) 뒤의 어긋남은 드러나지 않는다.
+  function run(ctx) {
+    const blocker = ctx.E ? null : "ModuleNotFoundError: No module named 'dateutil'";
+    const rows = CASES.map(([c, today, want]) => {
+      let got;
+      if (blocker) got = blocker.split(":")[0];
+      else if (!ctx.B) got = "TypeError";
+      else if (!ctx.D) got = c in EXPIRES ? (ctx.C ? today <= EXPIRES[c] : today < EXPIRES[c]) : "KeyError";
+      else if (ctx.A && !COUPONS.includes(c)) got = false;
+      else got = !(c in EXPIRES) || (ctx.C ? today <= EXPIRES[c] : today < EXPIRES[c]);
+      return { code: c, today, want, got, pass: got === want };
+    });
+    return { blocker, rows };
+  }
+
+  return { ITEMS, REQUEST, CASES, code, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ContextLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const ctx = { A: false, B: false, C: false, D: false, E: false };
+  const WHY = {
+    A: "기존 코드(COUPONS 표)를 주지 않아, AI가 만료일 표만 보고 판단했다. 표에 없는 쿠폰(NOPE)도 만료일이 없으니 쓸 수 있다고 답한다.",
+    B: "함수의 꼴을 정하지 않아 AI가 is_valid(code)로 짓고 오늘 날짜를 함수 안에서 읽었다. 완료 기준은 (쿠폰, 날짜)로 부르므로 TypeError가 나고, 날짜를 바꿔 시험할 수도 없다.",
+    C: "경계 규칙이 없어 AI가 만료일 당일에는 못 쓰게 했다(<). \"만료일\"이 그날을 포함하는지는 해석이 갈린다.",
+    D: "예외 규칙이 없어 만료일이 없는 쿠폰(FREESHIP)과 표에 없는 쿠폰(NOPE)에서 KeyError가 난다.",
+    E: "표준 라이브러리만 쓰라는 제약이 없어 AI가 dateutil을 썼다. 따로 깔아야 하는 패키지라 새로 깐 Python에서는 불러오지 못한다. 내 PC에 마침 깔려 있으면 지나가지만, 다른 PC나 서버에서 터진다.",
+  };
+
+  $("ctx").innerHTML = L.ITEMS.map(it => `<label data-k="${it.key}"><input type="checkbox" data-k="${it.key}"><b>${it.label}</b><span>${esc(it.text)}</span></label>`).join("");
+
+  function render() {
+    document.querySelectorAll("label[data-k]").forEach(l => l.classList.toggle("on", ctx[l.dataset.k]));
+    document.querySelectorAll("input[data-k]").forEach(c => { c.checked = ctx[c.dataset.k]; });
+    const given = L.ITEMS.filter(it => ctx[it.key]);
+    $("brief").textContent = L.REQUEST
+      + (given.length ? "\n\n" + given.map(it => `- ${it.label}: ${it.text}`).join("\n") : "");
+    $("code").textContent = L.code(ctx);
+    const r = L.run(ctx);
+    $("result").innerHTML = r.blocker
+      ? `<table class="t"><tr><td class="warn">실패 불러오기</td><td class="msg mono">${esc(r.blocker.replace(": ", " "))}</td></tr></table>`
+      : `<table class="t">${r.rows.map(x => `<tr><td class="${x.pass ? "fine" : "warn"}">${x.pass ? "통과" : "실패"}</td><td class="mono">${x.code}</td><td class="mono">${x.today}</td><td class="mono">${esc(x.got === true ? "True" : x.got === false ? "False" : x.got)}</td></tr>`).join("")}</table>`;
+
+    const missing = L.ITEMS.filter(it => !ctx[it.key]).map(it => it.key);
+    const order = ["E", "B", "C", "D", "A"].filter(k => missing.includes(k));
+    let note;
+    if (!missing.length) note = "다섯 가지를 모두 주니 완료 기준을 모두 통과했다. 하나씩 빼 보며 무엇이 깨지는지 본다.";
+    else if (missing.length === L.ITEMS.length) note = "맥락 없이 요청 한 줄만 보냈다. '모두 넣기'를 누른 뒤 하나씩 빼 보거나, 하나씩 넣어 본다. " + WHY.E;
+    else {
+      note = WHY[order[0]];
+      const hidden = order.slice(1);
+      if (hidden.length && ["E", "B"].includes(order[0])) note += ` 이것을 고쳐도 빠진 맥락이 ${hidden.length}가지 더 있어, 고칠 때마다 다음 문제가 드러난다.`;
+      else if (hidden.length) note += " " + hidden.filter(k => !(k === "A" && missing.includes("D"))).map(k => WHY[k]).join(" ")
+        + (hidden.includes("A") && missing.includes("D") ? " 기존 코드가 빠진 탓은 예외 규칙을 넣어야 드러난다." : "");
+    }
+    $("note").textContent = note;
+  }
+  document.querySelectorAll("input[data-k]").forEach(c => c.addEventListener("change", () => { ctx[c.dataset.k] = c.checked; render(); }));
+  $("all").addEventListener("click", () => { for (const k in ctx) ctx[k] = true; render(); });
+  $("none").addEventListener("click", () => { for (const k in ctx) ctx[k] = false; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,4968 @@
+
+<!doctype html>
+<html lang="ko" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI 시대 컴퓨터공학 전공자가 4년간 익혀야 할 핵심 항목">
+      
+      
+      
+        <link rel="canonical" href="https://hansei-it.github.io/ai_cs/10-engineering/080-sdlc/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../081-requirements/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>80. 소프트웨어 개발 생명주기 - AI 시대 컴퓨터공학 전공 100</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans+KR:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Noto Sans KR";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="https://unpkg.com/katex@0.16.11/dist/katex.min.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#80-소프트웨어-개발-생명주기-폭포수에서-애자일로-그리고-ai가-바꾸는-개발-주기" class="md-skip">
+          콘텐츠로 이동
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="상단/헤더">
+    <a href="../.." title="AI 시대 컴퓨터공학 전공 100" class="md-header__button md-logo" aria-label="AI 시대 컴퓨터공학 전공 100" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            AI 시대 컴퓨터공학 전공 100
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              80. 소프트웨어 개발 생명주기
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="어두운 화면으로 전환"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="어두운 화면으로 전환" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="밝은 화면으로 전환"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="밝은 화면으로 전환" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="검색" placeholder="검색" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="검색">
+        
+        <button type="reset" class="md-search__icon md-icon" title="지우기" aria-label="지우기" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            검색 초기화
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="네비게이션" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="AI 시대 컴퓨터공학 전공 100" class="md-nav__button md-logo" aria-label="AI 시대 컴퓨터공학 전공 100" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    AI 시대 컴퓨터공학 전공 100
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    소개
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    실습 환경
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../01-foundations/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    컴퓨터 기초와 하드웨어 <span class="cs-nav-count">(5)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    컴퓨터 기초와 하드웨어 <span class="cs-nav-count">(5)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/001-why-cs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    1. AI 시대 컴퓨터 전공자는 무엇을 배우는가
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/002-von-neumann/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2. 소프트웨어 동작의 물리적 본질
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/003-computer-components/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3. 컴퓨터 핵심 구성 요소
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/004-data-representation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    4. 데이터 표현
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../01-foundations/005-memory-hierarchy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    5. 메모리 계층 구조
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../02-languages/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    프로그래밍 언어와 메모리 <span class="cs-nav-count">(13)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    프로그래밍 언어와 메모리 <span class="cs-nav-count">(13)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/006-language-execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    6. 언어의 추상화 계층과 실행 방식
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/007-compilation-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    7. 소스코드가 기계어가 되기까지
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/008-process-memory-layout/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    8. 프로세스의 메모리 레이아웃
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/009-call-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    9. 함수 호출과 메모리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/010-pointers-references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10. 메모리 참조의 본질
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/011-heap-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11. 힙 메모리 관리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/012-garbage-collection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12. 가비지 컬렉션
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/013-paradigms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    13. 프로그래밍 패러다임
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/014-oop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    14. 객체 지향 4대 특징과 인터페이스
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/015-solid-design-patterns/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    15. SOLID 원칙과 디자인 패턴
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/016-type-systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    16. 타입 시스템
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/017-package-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    17. 패키지 생태계와 의존성 관리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../02-languages/018-library-vs-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    18. 라이브러리와 프레임워크의 차이
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../03-algorithms/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    자료구조와 알고리즘 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    자료구조와 알고리즘 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/019-complexity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    19. 알고리즘 효율성 분석
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/020-array-vs-linked-list/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    20. 자료구조의 필요성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/021-stack-queue-deque/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    21. 선형 자료구조
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/022-hash-table/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    22. 해시 테이블
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/023-bst/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    23. 트리와 이진 탐색 트리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/024-heap-priority-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    24. 힙과 우선순위 큐
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/025-graph-representation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    25. 그래프의 표현 방식
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/026-sorting-binary-search/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    26. 정렬 알고리즘과 이진 탐색
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/027-dfs-bfs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    27. 그래프 탐색 (DFS·BFS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../03-algorithms/028-dp-greedy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    28. 최적화 기법 (DP·그리디)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../04-os/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    운영체제 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    운영체제 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/029-os-essence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    29. 운영체제의 본질
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/030-process-thread/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    30. 프로그램, 프로세스, 스레드
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/031-ipc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    31. 프로세스 간 통신(IPC)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/032-cpu-scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    32. CPU 스케줄링과 컨텍스트 스위칭
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/033-concurrency-vs-parallelism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    33. 동시성과 병렬성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/034-synchronization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    34. 스레드 동기화
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/035-deadlock/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    35. 교착 상태
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/036-io-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    36. I/O 모델
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/037-virtual-memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    37. 가상 메모리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../04-os/038-locality-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    38. 참조 지역성과 캐시 적중률
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../05-network/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    컴퓨터 네트워크 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    컴퓨터 네트워크 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/039-network-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    39. 네트워크 계층 모델
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/040-ip-nat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    40. IP 주소 체계와 NAT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/041-tcp-udp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    41. 전송 계층 (TCP·UDP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/042-dns/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    42. DNS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/043-http/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    43. HTTP
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/044-url-to-render/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    44. URL 입력부터 렌더링까지
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/045-https-tls/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    45. HTTPS와 TLS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/046-sop-cors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    46. 동일 출처 정책과 CORS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/047-cookie-session-jwt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    47. 쿠키, 세션, 토큰(JWT)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../05-network/048-realtime-communication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    48. 실시간 양방향 통신
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../06-database/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    데이터베이스 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    데이터베이스 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/049-rdbms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    49. RDBMS의 장점과 데이터 독립성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/050-data-modeling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    50. 데이터 모델링과 ERD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/051-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    51. 정규화와 반정규화
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/052-sql/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    52. SQL 작성과 검증
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/053-transactions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    53. 트랜잭션과 락
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/054-isolation-levels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    54. 트랜잭션 격리 수준
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/055-indexes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    55. 인덱스와 실행 계획
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/056-db-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    56. 애플리케이션과 DB 연동
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/057-nosql/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    57. NoSQL 데이터베이스
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../06-database/058-backup-recovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    58. 백업과 복구
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../07-web/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    웹과 애플리케이션 개발 <span class="cs-nav-count">(6)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9" id="__nav_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    웹과 애플리케이션 개발 <span class="cs-nav-count">(6)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/059-html-css-js/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    59. HTML, CSS, JavaScript
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/060-event-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    60. 이벤트 루프와 비동기
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/061-rendering-path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    61. 브라우저 렌더링 경로
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/062-components-rendering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    62. 컴포넌트 기반 UI와 렌더링
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/063-json-serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    63. JSON과 직렬화
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../07-web/064-rest-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    64. REST API 설계
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../08-architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    아키텍처·분산 시스템·운영 <span class="cs-nav-count">(9)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10" id="__nav_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    아키텍처·분산 시스템·운영 <span class="cs-nav-count">(9)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-architecture/065-scaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    65. 수직 확장 vs 수평 확장
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-architecture/066-monolith-vs-microservices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    66. 모놀리식 vs 마이크로서비스
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-architecture/067-request-path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    67. 요청 경로의 구성 요소
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-architecture/068-caching/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    68. 캐싱 전략과 캐시 무효화
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-architecture/069-messaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    69. 비동기 메시징
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-architecture/070-distributed-systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    70. 분산 시스템의 근본 문제
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-architecture/071-high-availability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    71. 이중화와 무중단 배포
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-architecture/072-observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    72. 관측성
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../08-architecture/073-incident-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    73. 장애 대응과 포스트모템
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../09-security/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    보안 <span class="cs-nav-count">(6)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11" id="__nav_11_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    보안 <span class="cs-nav-count">(6)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/074-web-vulnerabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    74. 웹 취약점과 방어
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/075-authn-authz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    75. 인증과 인가
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/076-secrets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    76. 비밀 정보 관리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/077-supply-chain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    77. 의존성 공급망 보안
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/078-threat-modeling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    78. 위협 모델링
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../09-security/079-ai-security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    79. AI 시스템 고유의 보안 위협
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    소프트웨어 공학과 실천 <span class="cs-nav-count">(10)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_12" id="__nav_12_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    소프트웨어 공학과 실천 <span class="cs-nav-count">(10)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    80. 소프트웨어 개발 생명주기
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    80. 소프트웨어 개발 생명주기
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="목차">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      목차
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#이-항목에서-배우는-것" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        이 항목에서 배우는 것
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-폭포수는-단계를-한-번씩-반복형은-작은-조각마다-끝까지-돈다" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 폭포수는 단계를 한 번씩, 반복형은 작은 조각마다 끝까지 돈다
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-주기가-짧을수록-틀린-것을-일찍-안다" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 주기가 짧을수록 틀린 것을 일찍 안다
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-ai가-구현을-빠르게-해도-주기는-나머지-단계가-정한다" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. AI가 구현을 빠르게 해도, 주기는 나머지 단계가 정한다
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#예측해-보기" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        예측해 보기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ai와-함께-확인하기" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI와 함께 확인하기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#더-알아보기" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        더 알아보기
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#정리" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        정리
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#관련-항목" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        관련 항목
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#더-읽을거리" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        더 읽을거리
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../081-requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    81. 요구사항과 명세
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../082-adr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    82. 설계 결정 기록(ADR)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../083-git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    83. Git 실천
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../084-testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    84. 테스트 설계
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../085-debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    85. 디버깅 방법론
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../086-reading-codebases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    86. 코드베이스 읽기
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../087-code-review-refactoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    87. 코드 리뷰와 리팩토링
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../088-profiling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    88. 성능 측정과 프로파일링
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../089-ci-cd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    89. CI/CD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_13" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../11-cloud/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    클라우드 인프라 <span class="cs-nav-count">(3)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_13" id="__nav_13_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    클라우드 인프라 <span class="cs-nav-count">(3)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../11-cloud/090-cloud-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    90. 클라우드 서비스 모델
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../11-cloud/091-vm-vs-container/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    91. 가상머신과 컨테이너
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../11-cloud/092-kubernetes-serverless/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    92. 쿠버네티스와 서버리스
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../12-ai/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI의 원리와 AI 기반 SW <span class="cs-nav-count">(3)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_14" id="__nav_14_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    AI의 원리와 AI 기반 SW <span class="cs-nav-count">(3)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../12-ai/093-llm-principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    93. LLM의 동작 원리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../12-ai/094-ai-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    94. AI를 소프트웨어에 결합하기
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../12-ai/095-ai-evals/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    95. AI 기능의 평가
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../13-ai-engineering/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI와 함께하는 엔지니어링 <span class="cs-nav-count">(5)</span>
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_15" id="__nav_15_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_15_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    AI와 함께하는 엔지니어링 <span class="cs-nav-count">(5)</span>
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/096-task-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    96. 작업 분해와 맥락 제공
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/097-ai-output-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    97. AI 출력 검증
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/098-agent-supervision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    98. AI 에이전트 감독
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/099-responsibility-ethics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    99. 책임과 윤리
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../13-ai-engineering/100-continuous-growth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    100. 지속적인 성장
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../appendix/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    부록
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_16" id="__nav_16_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_16">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    부록
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendix/a-teaching-by-layer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    A. 유형별 수업·평가 방식
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../appendix/b-ai-policy-by-year/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    B. 학년별 AI 사용 정책
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    업데이트
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="80-소프트웨어-개발-생명주기-폭포수에서-애자일로-그리고-ai가-바꾸는-개발-주기">80. 소프트웨어 개발 생명주기: 폭포수에서 애자일로, 그리고 AI가 바꾸는 개발 주기<a class="headerlink" href="#80-소프트웨어-개발-생명주기-폭포수에서-애자일로-그리고-ai가-바꾸는-개발-주기" title="Permanent link">&para;</a></h1>
+<p class="item-meta"><span class="layer layer-principle">원리</span> <span class="layer-hint">동작을 예측하고 이상을 알아챌 수 있어야 하는 항목</span></p>
+
+<p>소프트웨어 개발 생명주기(SDLC)는 요구사항에서 배포와 운영까지, 소프트웨어가 만들어지고 바뀌는 단계들이다. 단계는 어느 방식이나 거의 같다. 그 단계를 얼마나 큰 덩어리로 몇 번 도느냐가 폭포수와 애자일을 가른다. AI가 구현을 빠르게 하면서 주기의 모양도 바뀌고 있다. 원리형 항목이므로 그림과 위젯으로 주기의 길이가 무엇을 바꾸는지 예측해 본다. 이 섹션의 나머지 항목(81~89번)이 한 바퀴의 각 단계다.</p>
+<h2 id="이-항목에서-배우는-것">이 항목에서 배우는 것<a class="headerlink" href="#이-항목에서-배우는-것" title="Permanent link">&para;</a></h2>
+<ul>
+<li>폭포수와 반복형(애자일)이 같은 단계를 어떻게 다르게 도는지 설명할 수 있다.</li>
+<li>주기의 길이가 틀린 것을 알기까지의 시간과 다시 볼 일의 양을 정한다는 것을 예측할 수 있다.</li>
+<li>AI가 구현만 빠르게 할 때 주기 전체가 얼마나 줄고 병목이 어디로 옮겨 가는지 예측할 수 있다.</li>
+</ul>
+<h2 id="1-폭포수는-단계를-한-번씩-반복형은-작은-조각마다-끝까지-돈다">1. 폭포수는 단계를 한 번씩, 반복형은 작은 조각마다 끝까지 돈다<a class="headerlink" href="#1-폭포수는-단계를-한-번씩-반복형은-작은-조각마다-끝까지-돈다" title="Permanent link">&para;</a></h2>
+<figure class="cs-figure">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 368" role="img" aria-labelledby="sdlc-models-title">
+<title id="sdlc-models-title">폭포수와 반복형. 폭포수는 12주 동안 요구사항(1~2주), 설계(3~4주), 구현(5~9주), 테스트(10~11주), 배포(12주)를 차례대로 한 번씩 지나가고, 손님은 12주 끝에 처음 본다. 반복형(애자일)은 2주마다 작은 조각 하나를 요구사항, 설계, 구현, 테스트, 배포까지 끝내고 시연해 보여 주며, 시연에서 들은 것이 다음 조각의 요구사항이 된다. 12주에 조각 6개와 시연 6번이다. 두 방식 모두 같은 단계를 지나고, 다른 것은 한 바퀴의 크기와 손님이 결과를 보고 말해 주는 횟수다.</title>
+<defs><marker id="sm-head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="f-head-green" d="M0 0 L8 4 L0 8 z"/></marker></defs>
+<text x="10.0" y="18.0" text-anchor="start" class="f-small f-bold">폭포수: 단계를 차례대로 한 번씩</text>
+<rect class="f-box-read" x="97.0" y="28.0" width="93.3" height="18.0" rx="3"/>
+<text x="143.7" y="41.0" text-anchor="middle" class="f-small">요구사항</text>
+<rect class="f-box-read" x="192.3" y="48.0" width="93.3" height="18.0" rx="3"/>
+<text x="239.0" y="61.0" text-anchor="middle" class="f-small">설계</text>
+<rect class="f-box-read" x="287.7" y="68.0" width="236.3" height="18.0" rx="3"/>
+<text x="405.8" y="81.0" text-anchor="middle" class="f-small">구현</text>
+<rect class="f-box-read" x="526.0" y="88.0" width="93.3" height="18.0" rx="3"/>
+<text x="572.7" y="101.0" text-anchor="middle" class="f-small">테스트</text>
+<rect class="f-box-read" x="621.3" y="108.0" width="45.7" height="18.0" rx="3"/>
+<text x="644.2" y="121.0" text-anchor="middle" class="f-small">배포</text>
+<text x="666.0" y="142.0" text-anchor="end" class="f-small f-bold f-write">손님이 처음 보는 때: 12주 끝</text>
+<line class="f-line" x1="96.0" y1="150" x2="96.0" y2="155"/>
+<line class="f-line" x1="143.7" y1="150" x2="143.7" y2="155"/>
+<line class="f-line" x1="191.3" y1="150" x2="191.3" y2="155"/>
+<line class="f-line" x1="239.0" y1="150" x2="239.0" y2="155"/>
+<line class="f-line" x1="286.7" y1="150" x2="286.7" y2="155"/>
+<line class="f-line" x1="334.3" y1="150" x2="334.3" y2="155"/>
+<line class="f-line" x1="382.0" y1="150" x2="382.0" y2="155"/>
+<line class="f-line" x1="429.7" y1="150" x2="429.7" y2="155"/>
+<line class="f-line" x1="477.3" y1="150" x2="477.3" y2="155"/>
+<line class="f-line" x1="525.0" y1="150" x2="525.0" y2="155"/>
+<line class="f-line" x1="572.7" y1="150" x2="572.7" y2="155"/>
+<line class="f-line" x1="620.3" y1="150" x2="620.3" y2="155"/>
+<line class="f-line" x1="668.0" y1="150" x2="668.0" y2="155"/>
+<text x="119.8" y="168.0" text-anchor="middle" class="f-small f-muted">1</text>
+<text x="167.5" y="168.0" text-anchor="middle" class="f-small f-muted">2</text>
+<text x="215.2" y="168.0" text-anchor="middle" class="f-small f-muted">3</text>
+<text x="262.8" y="168.0" text-anchor="middle" class="f-small f-muted">4</text>
+<text x="310.5" y="168.0" text-anchor="middle" class="f-small f-muted">5</text>
+<text x="358.2" y="168.0" text-anchor="middle" class="f-small f-muted">6</text>
+<text x="405.8" y="168.0" text-anchor="middle" class="f-small f-muted">7</text>
+<text x="453.5" y="168.0" text-anchor="middle" class="f-small f-muted">8</text>
+<text x="501.2" y="168.0" text-anchor="middle" class="f-small f-muted">9</text>
+<text x="548.8" y="168.0" text-anchor="middle" class="f-small f-muted">10</text>
+<text x="596.5" y="168.0" text-anchor="middle" class="f-small f-muted">11</text>
+<text x="644.2" y="168.0" text-anchor="middle" class="f-small f-muted">12</text>
+<text x="88.0" y="168.0" text-anchor="end" class="f-small f-muted">주</text>
+<text x="10.0" y="214.0" text-anchor="start" class="f-small f-bold">반복형(애자일): 작은 조각을 2주마다 끝까지 만들어 보여 준다</text>
+<rect class="f-box-green" x="99.0" y="226.0" width="89.3" height="34.0" rx="4"/>
+<rect class="f-box-read" x="103.0" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="111.1" y="242.0" text-anchor="middle" class="f-small">요</text>
+<rect class="f-box-read" x="119.3" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="127.4" y="242.0" text-anchor="middle" class="f-small">설</text>
+<rect class="f-box-read" x="135.5" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="143.7" y="242.0" text-anchor="middle" class="f-small">구</text>
+<rect class="f-box-read" x="151.8" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="159.9" y="242.0" text-anchor="middle" class="f-small">테</text>
+<rect class="f-box-read" x="168.1" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="176.2" y="242.0" text-anchor="middle" class="f-small">배</text>
+<text x="143.7" y="256.0" text-anchor="middle" class="f-small f-muted">조각 1</text>
+<text x="187.3" y="276.0" text-anchor="end" class="f-small f-write">▲ 시연</text>
+<path class="f-arrow-green" d="M174.33333333333331 282 Q192.33333333333331 296 207.33333333333331 264" marker-end="url(#sm-head)"/>
+<rect class="f-box-green" x="194.3" y="226.0" width="89.3" height="34.0" rx="4"/>
+<rect class="f-box-read" x="198.3" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="206.5" y="242.0" text-anchor="middle" class="f-small">요</text>
+<rect class="f-box-read" x="214.6" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="222.7" y="242.0" text-anchor="middle" class="f-small">설</text>
+<rect class="f-box-read" x="230.9" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="239.0" y="242.0" text-anchor="middle" class="f-small">구</text>
+<rect class="f-box-read" x="247.1" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="255.3" y="242.0" text-anchor="middle" class="f-small">테</text>
+<rect class="f-box-read" x="263.4" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="271.5" y="242.0" text-anchor="middle" class="f-small">배</text>
+<text x="239.0" y="256.0" text-anchor="middle" class="f-small f-muted">조각 2</text>
+<text x="282.7" y="276.0" text-anchor="end" class="f-small f-write">▲ 시연</text>
+<path class="f-arrow-green" d="M269.66666666666663 282 Q287.66666666666663 296 302.66666666666663 264" marker-end="url(#sm-head)"/>
+<rect class="f-box-green" x="289.7" y="226.0" width="89.3" height="34.0" rx="4"/>
+<rect class="f-box-read" x="293.7" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="301.8" y="242.0" text-anchor="middle" class="f-small">요</text>
+<rect class="f-box-read" x="309.9" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="318.1" y="242.0" text-anchor="middle" class="f-small">설</text>
+<rect class="f-box-read" x="326.2" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="334.3" y="242.0" text-anchor="middle" class="f-small">구</text>
+<rect class="f-box-read" x="342.5" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="350.6" y="242.0" text-anchor="middle" class="f-small">테</text>
+<rect class="f-box-read" x="358.7" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="366.9" y="242.0" text-anchor="middle" class="f-small">배</text>
+<text x="334.3" y="256.0" text-anchor="middle" class="f-small f-muted">조각 3</text>
+<text x="378.0" y="276.0" text-anchor="end" class="f-small f-write">▲ 시연</text>
+<path class="f-arrow-green" d="M365.0 282 Q383.0 296 398.0 264" marker-end="url(#sm-head)"/>
+<rect class="f-box-green" x="385.0" y="226.0" width="89.3" height="34.0" rx="4"/>
+<rect class="f-box-read" x="389.0" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="397.1" y="242.0" text-anchor="middle" class="f-small">요</text>
+<rect class="f-box-read" x="405.3" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="413.4" y="242.0" text-anchor="middle" class="f-small">설</text>
+<rect class="f-box-read" x="421.5" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="429.7" y="242.0" text-anchor="middle" class="f-small">구</text>
+<rect class="f-box-read" x="437.8" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="445.9" y="242.0" text-anchor="middle" class="f-small">테</text>
+<rect class="f-box-read" x="454.1" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="462.2" y="242.0" text-anchor="middle" class="f-small">배</text>
+<text x="429.7" y="256.0" text-anchor="middle" class="f-small f-muted">조각 4</text>
+<text x="473.3" y="276.0" text-anchor="end" class="f-small f-write">▲ 시연</text>
+<path class="f-arrow-green" d="M460.3333333333333 282 Q478.3333333333333 296 493.3333333333333 264" marker-end="url(#sm-head)"/>
+<rect class="f-box-green" x="480.3" y="226.0" width="89.3" height="34.0" rx="4"/>
+<rect class="f-box-read" x="484.3" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="492.5" y="242.0" text-anchor="middle" class="f-small">요</text>
+<rect class="f-box-read" x="500.6" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="508.7" y="242.0" text-anchor="middle" class="f-small">설</text>
+<rect class="f-box-read" x="516.9" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="525.0" y="242.0" text-anchor="middle" class="f-small">구</text>
+<rect class="f-box-read" x="533.1" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="541.3" y="242.0" text-anchor="middle" class="f-small">테</text>
+<rect class="f-box-read" x="549.4" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="557.5" y="242.0" text-anchor="middle" class="f-small">배</text>
+<text x="525.0" y="256.0" text-anchor="middle" class="f-small f-muted">조각 5</text>
+<text x="568.7" y="276.0" text-anchor="end" class="f-small f-write">▲ 시연</text>
+<path class="f-arrow-green" d="M555.6666666666666 282 Q573.6666666666666 296 588.6666666666666 264" marker-end="url(#sm-head)"/>
+<rect class="f-box-green" x="575.7" y="226.0" width="89.3" height="34.0" rx="4"/>
+<rect class="f-box-read" x="579.7" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="587.8" y="242.0" text-anchor="middle" class="f-small">요</text>
+<rect class="f-box-read" x="595.9" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="604.1" y="242.0" text-anchor="middle" class="f-small">설</text>
+<rect class="f-box-read" x="612.2" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="620.3" y="242.0" text-anchor="middle" class="f-small">구</text>
+<rect class="f-box-read" x="628.5" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="636.6" y="242.0" text-anchor="middle" class="f-small">테</text>
+<rect class="f-box-read" x="644.7" y="231.0" width="15.3" height="14.0" rx="2"/>
+<text x="652.9" y="242.0" text-anchor="middle" class="f-small">배</text>
+<text x="620.3" y="256.0" text-anchor="middle" class="f-small f-muted">조각 6</text>
+<text x="664.0" y="276.0" text-anchor="end" class="f-small f-write">▲ 시연</text>
+<line class="f-line" x1="96.0" y1="292" x2="96.0" y2="297"/>
+<line class="f-line" x1="143.7" y1="292" x2="143.7" y2="297"/>
+<line class="f-line" x1="191.3" y1="292" x2="191.3" y2="297"/>
+<line class="f-line" x1="239.0" y1="292" x2="239.0" y2="297"/>
+<line class="f-line" x1="286.7" y1="292" x2="286.7" y2="297"/>
+<line class="f-line" x1="334.3" y1="292" x2="334.3" y2="297"/>
+<line class="f-line" x1="382.0" y1="292" x2="382.0" y2="297"/>
+<line class="f-line" x1="429.7" y1="292" x2="429.7" y2="297"/>
+<line class="f-line" x1="477.3" y1="292" x2="477.3" y2="297"/>
+<line class="f-line" x1="525.0" y1="292" x2="525.0" y2="297"/>
+<line class="f-line" x1="572.7" y1="292" x2="572.7" y2="297"/>
+<line class="f-line" x1="620.3" y1="292" x2="620.3" y2="297"/>
+<line class="f-line" x1="668.0" y1="292" x2="668.0" y2="297"/>
+<text x="119.8" y="310.0" text-anchor="middle" class="f-small f-muted">1</text>
+<text x="167.5" y="310.0" text-anchor="middle" class="f-small f-muted">2</text>
+<text x="215.2" y="310.0" text-anchor="middle" class="f-small f-muted">3</text>
+<text x="262.8" y="310.0" text-anchor="middle" class="f-small f-muted">4</text>
+<text x="310.5" y="310.0" text-anchor="middle" class="f-small f-muted">5</text>
+<text x="358.2" y="310.0" text-anchor="middle" class="f-small f-muted">6</text>
+<text x="405.8" y="310.0" text-anchor="middle" class="f-small f-muted">7</text>
+<text x="453.5" y="310.0" text-anchor="middle" class="f-small f-muted">8</text>
+<text x="501.2" y="310.0" text-anchor="middle" class="f-small f-muted">9</text>
+<text x="548.8" y="310.0" text-anchor="middle" class="f-small f-muted">10</text>
+<text x="596.5" y="310.0" text-anchor="middle" class="f-small f-muted">11</text>
+<text x="644.2" y="310.0" text-anchor="middle" class="f-small f-muted">12</text>
+<text x="88.0" y="310.0" text-anchor="end" class="f-small f-muted">주</text>
+<text x="10.0" y="338.0" text-anchor="start" class="f-small">두 방식 모두 같은 단계를 지난다. 다른 것은 한 바퀴의 크기와, 손님이 결과를 보고 말해 주는 횟수다.</text>
+<text x="10.0" y="358.0" text-anchor="start" class="f-small f-muted">요: 요구사항, 설: 설계, 구: 구현, 테: 테스트, 배: 배포. 시연에서 들은 것이 다음 조각의 요구사항이 된다.</text>
+</svg>
+<figcaption>폭포수와 반복형</figcaption></figure>
+
+<ul>
+<li><strong>폭포수</strong>는 요구사항을 모두 정하고, 설계를 끝내고, 구현한 뒤 테스트해 내보낸다. 단계마다 문서와 승인이 있어 계획을 세우기 쉽지만, 손님은 끝에서야 결과를 본다.</li>
+<li><strong>반복형</strong>은 기능을 작은 조각으로 나누어 조각마다 요구사항부터 배포까지 끝낸다. 2001년의 애자일 선언은 계획과 문서보다 동작하는 소프트웨어와 변화에 대응하는 일을 더 중요하게 보자고 했고, 스크럼과 칸반은 그것을 하는 방법이다.</li>
+</ul>
+<h2 id="2-주기가-짧을수록-틀린-것을-일찍-안다">2. 주기가 짧을수록 틀린 것을 일찍 안다<a class="headerlink" href="#2-주기가-짧을수록-틀린-것을-일찍-안다" title="Permanent link">&para;</a></h2>
+<figure class="cs-figure">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 246" role="img" aria-labelledby="feedback-delay-title">
+<title id="feedback-delay-title">3주가 끝날 때 요구사항을 잘못 알아들었다면 언제 드러날까. 폭포수는 손님에게 12주 끝에 처음 보여 주므로 오해가 12주 끝에 드러나고, 그 사이 오해 위에 쌓은 일이 9주다. 2주마다 시연하면 2, 4, 6, 8, 10, 12주 끝에 보여 주므로 4주 끝 시연에서 드러나고, 오해 위에 쌓은 일은 1주다. 오해는 손님이 결과를 볼 때 드러나고, 그 사이에 쌓은 일은 다시 볼 일이 된다. 반복형은 시연을 6번(폭포수는 1번) 하므로 시연 준비에 하루씩 들면 5일을 더 쓰지만, 9주치 일을 다시 보는 것보다 싸다.</title>
+<text x="10.0" y="18.0" text-anchor="start" class="f-small f-bold">3주가 끝날 때 요구사항을 잘못 알아들었다면, 언제 드러날까?</text>
+<text x="10.0" y="60.0" text-anchor="start" class="f-small f-bold">폭포수</text>
+<rect class="f-box" x="96.0" y="46.0" width="572.0" height="22.0" rx="3"/>
+<rect class="f-box-write" x="239.0" y="46.0" width="429.0" height="22.0" rx="3"/>
+<text x="453.5" y="61.0" text-anchor="middle" class="f-small f-bold">오해 위에 쌓은 일 9주</text>
+<text x="668.0" y="84.0" text-anchor="middle" class="f-small f-write">▲</text>
+<text x="668.0" y="98.0" text-anchor="end" class="f-small f-write f-halo">12주 끝 시연에서 드러남</text>
+<text x="230.0" y="61.0" text-anchor="middle" class="f-small f-bold f-write">✕</text>
+<text x="10.0" y="122.0" text-anchor="start" class="f-small f-bold">2주마다 시연</text>
+<rect class="f-box" x="96.0" y="108.0" width="572.0" height="22.0" rx="3"/>
+<rect class="f-box-write" x="239.0" y="108.0" width="47.7" height="22.0" rx="3"/>
+<text x="262.8" y="123.0" text-anchor="middle" class="f-small f-bold">1주</text>
+<text x="191.3" y="146.0" text-anchor="middle" class="f-small f-green">▲</text>
+<text x="286.7" y="146.0" text-anchor="middle" class="f-small f-write">▲</text>
+<text x="382.0" y="146.0" text-anchor="middle" class="f-small f-green">▲</text>
+<text x="477.3" y="146.0" text-anchor="middle" class="f-small f-green">▲</text>
+<text x="572.7" y="146.0" text-anchor="middle" class="f-small f-green">▲</text>
+<text x="668.0" y="146.0" text-anchor="middle" class="f-small f-green">▲</text>
+<text x="286.7" y="160.0" text-anchor="start" class="f-small f-write f-halo">4주 끝 시연에서 드러남</text>
+<text x="230.0" y="123.0" text-anchor="middle" class="f-small f-bold f-write">✕</text>
+<line class="f-line" x1="96.0" y1="168" x2="96.0" y2="173"/>
+<line class="f-line" x1="143.7" y1="168" x2="143.7" y2="173"/>
+<line class="f-line" x1="191.3" y1="168" x2="191.3" y2="173"/>
+<line class="f-line" x1="239.0" y1="168" x2="239.0" y2="173"/>
+<line class="f-line" x1="286.7" y1="168" x2="286.7" y2="173"/>
+<line class="f-line" x1="334.3" y1="168" x2="334.3" y2="173"/>
+<line class="f-line" x1="382.0" y1="168" x2="382.0" y2="173"/>
+<line class="f-line" x1="429.7" y1="168" x2="429.7" y2="173"/>
+<line class="f-line" x1="477.3" y1="168" x2="477.3" y2="173"/>
+<line class="f-line" x1="525.0" y1="168" x2="525.0" y2="173"/>
+<line class="f-line" x1="572.7" y1="168" x2="572.7" y2="173"/>
+<line class="f-line" x1="620.3" y1="168" x2="620.3" y2="173"/>
+<line class="f-line" x1="668.0" y1="168" x2="668.0" y2="173"/>
+<text x="119.8" y="186.0" text-anchor="middle" class="f-small f-muted">1</text>
+<text x="167.5" y="186.0" text-anchor="middle" class="f-small f-muted">2</text>
+<text x="215.2" y="186.0" text-anchor="middle" class="f-small f-muted">3</text>
+<text x="262.8" y="186.0" text-anchor="middle" class="f-small f-muted">4</text>
+<text x="310.5" y="186.0" text-anchor="middle" class="f-small f-muted">5</text>
+<text x="358.2" y="186.0" text-anchor="middle" class="f-small f-muted">6</text>
+<text x="405.8" y="186.0" text-anchor="middle" class="f-small f-muted">7</text>
+<text x="453.5" y="186.0" text-anchor="middle" class="f-small f-muted">8</text>
+<text x="501.2" y="186.0" text-anchor="middle" class="f-small f-muted">9</text>
+<text x="548.8" y="186.0" text-anchor="middle" class="f-small f-muted">10</text>
+<text x="596.5" y="186.0" text-anchor="middle" class="f-small f-muted">11</text>
+<text x="644.2" y="186.0" text-anchor="middle" class="f-small f-muted">12</text>
+<text x="88.0" y="186.0" text-anchor="end" class="f-small f-muted">주</text>
+<text x="10.0" y="216.0" text-anchor="start" class="f-small">✕ 3주 끝의 오해, ▲ 손님에게 보여 주는 때. 오해는 손님이 결과를 볼 때 드러나고, 그 사이에 쌓은 일은 다시 볼 일이 된다.</text>
+<text x="10.0" y="236.0" text-anchor="start" class="f-small f-muted">반복형은 시연을 6번 한다(폭포수는 1번). 시연 준비에 하루씩 들면 5일을 더 쓰지만, 9주치 일을 다시 보는 것보다 싸다.</text>
+</svg>
+<figcaption>오해가 드러나는 때</figcaption></figure>
+
+<ul>
+<li>요구사항을 잘못 알아들은 것은 손님이 결과를 볼 때 드러난다. 그 사이 오해 위에 쌓은 일은 다시 봐야 한다(문제 1).</li>
+<li>짧은 주기도 공짜는 아니다. 시연과 회의, 일을 작게 나누는 데 시간이 든다. 그래도 요구사항이 불확실할수록 짧은 주기가 싸다.</li>
+</ul>
+<h2 id="3-ai가-구현을-빠르게-해도-주기는-나머지-단계가-정한다">3. AI가 구현을 빠르게 해도, 주기는 나머지 단계가 정한다<a class="headerlink" href="#3-ai가-구현을-빠르게-해도-주기는-나머지-단계가-정한다" title="Permanent link">&para;</a></h2>
+<div class="cs-widget">
+<div class="cs-widget-label"><svg class="cs-widget-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.2V4.5a1.5 1.5 0 0 1 3 0v5.3l.6-.1a1.5 1.5 0 0 1 2.4.9l.5-.1a1.5 1.5 0 0 1 2.3 1.1l.4-.1a1.5 1.5 0 0 1 1.8 1.5V17a5 5 0 0 1-5 5h-1.6a5 5 0 0 1-4-2l-3.2-4.3a1.5 1.5 0 0 1 2.3-1.9z"/><path d="M6.2 6.6a4.6 4.6 0 0 1 8.6-2.2" fill="none" stroke-width="1.6" stroke-linecap="round"/></svg><strong>직접 해 보기</strong><span class="cs-widget-name">AI가 빨라지면 주기는 얼마나 짧아질까</span><span class="cs-widget-hint">기능 하나가 손님에게 닿기까지의 단계별 날수를 정하고 AI로 구현을 몇 배 빠르게 할지 골라, 한 바퀴의 길이와 가장 긴 단계가 어떻게 바뀌는지 본다</span></div>
+<iframe src="../../widgets/cycle-lab/index.html" title="AI가 빨라지면 주기는 얼마나 짧아질까" loading="lazy"></iframe>
+<a class="cs-widget-open" href="../../widgets/cycle-lab/index.html" target="_blank" rel="noopener">새 창에서 크게 열기</a>
+</div>
+
+<ul>
+<li>한 바퀴의 길이는 단계 시간의 합이다. 구현만 빨라지면 나머지 단계가 그대로 남아 줄어드는 데 한계가 있다(<a href="../../04-os/033-concurrency-vs-parallelism/">33번(동시성과 병렬성)</a>의 암달의 법칙과 같은 계산, 문제 2).</li>
+<li>AI가 코드를 더 많이 쓰면 읽고 검증할 것도 는다. 병목은 요구사항 확인(<a href="../081-requirements/">81번(요구사항과 명세)</a>), 리뷰(<a href="../087-code-review-refactoring/">87번(코드 리뷰와 리팩토링)</a>), 테스트(<a href="../084-testing/">84번(테스트 설계)</a>), 배포(<a href="../089-ci-cd/">89번(CI/CD)</a>)로 옮겨 간다(문제 3).</li>
+<li>구현이 싸지면 시제품을 먼저 만들어 보여 주고 요구사항을 확인할 수 있다. AI로 아낀 구현 시간은 이렇게 손님에게 더 자주 보여 주는 데 쓴다.</li>
+</ul>
+<h2 id="예측해-보기">예측해 보기<a class="headerlink" href="#예측해-보기" title="Permanent link">&para;</a></h2>
+<p><strong>문제 1.</strong> 그림의 오해가 3주 끝이 아니라 1주 끝(첫 요구사항 회의)에 생겼다면, 폭포수(12주 끝에 처음 보여 준다)와 2주마다 보여 주는 방식에서 오해 위에 쌓은 일은 각각 몇 주일까?</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">wasted</span><span class="p">(</span><span class="n">week</span><span class="p">,</span> <span class="n">every</span><span class="p">,</span> <span class="n">total</span><span class="o">=</span><span class="mi">12</span><span class="p">):</span>               <span class="c1"># week주가 끝날 때 오해가 생기고, every주마다 손님에게 보여 줄 때</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">seen</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">total</span><span class="p">,</span> <span class="n">math</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">week</span> <span class="o">/</span> <span class="n">every</span><span class="p">)</span> <span class="o">*</span> <span class="n">every</span><span class="p">)</span>   <span class="c1"># 오해 뒤 처음 보여 주는 주</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="k">return</span> <span class="n">seen</span> <span class="o">-</span> <span class="n">week</span>                           <span class="c1"># 오해 위에 쌓은 일(주)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nb">print</span><span class="p">(</span><span class="n">wasted</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">12</span><span class="p">),</span> <span class="n">wasted</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+</code></pre></div>
+<details class="success">
+<summary>정답과 해설</summary>
+<p><strong><code>11 1</code>.</strong> 폭포수에서는 11주다. 오해가 일찍 생길수록 폭포수에서는 더 비싸다. 그런데 요구사항은 처음에 정하므로, 요구사항의 오해는 대개 처음에 생긴다. 2주마다 보여 주면 1주다. 오해가 언제 생겨도 그 위에 쌓는 일은 다음 시연까지, 곧 한 주기(2주)를 넘지 않는다. 대신 시연을 6번 하므로(폭포수는 끝에 한 번), 시연 준비에 하루씩 들면 5일을 더 쓴다. 손님이 처음부터 무엇을 원하는지 분명하고 바뀌지 않는다면 이 5일이 아깝겠지만, 그런 경우는 드물다.</p>
+</details>
+<p><strong>문제 2.</strong> 위젯의 기본값(요구사항 확인 2일, 설계 1일, 구현 5일, 리뷰 1일, 테스트 2일, 배포 1일)에서 AI로 구현을 5배 빠르게 하면 한 바퀴는 며칠이 되고 몇 배 빨라질까? 위젯을 누르기 전에 적는다.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">stages</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"요구사항 확인"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">"설계"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">"구현"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s2">"리뷰"</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">"테스트"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">"배포"</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>   <span class="c1"># 날수</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">before</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">stages</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">after</span> <span class="o">=</span> <span class="n">before</span> <span class="o">-</span> <span class="n">stages</span><span class="p">[</span><span class="s2">"구현"</span><span class="p">]</span> <span class="o">+</span> <span class="n">stages</span><span class="p">[</span><span class="s2">"구현"</span><span class="p">]</span> <span class="o">/</span> <span class="mi">5</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">before</span><span class="p">,</span> <span class="n">after</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">before</span> <span class="o">/</span> <span class="n">after</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+</code></pre></div>
+<details class="success">
+<summary>정답과 해설</summary>
+<p><strong><code>12 8.0 1.5</code>.</strong> 구현이 5배 빨라져도 한 바퀴는 1.5배 빨라질 뿐이다. 구현이 0일이 되어도 7일이 남아 1.71배가 끝이다. 구현은 한 바퀴의 5/12이고, 나머지 7일은 AI가 손대지 않았기 때문이다. <a href="../../04-os/033-concurrency-vs-parallelism/">33번(동시성과 병렬성)</a>에서 일의 10%가 혼자 해야 하는 부분이면 스레드를 아무리 늘려도 10배를 넘지 못한 것과 같은 계산이다.</p>
+</details>
+<p><strong>문제 3.</strong> 위젯에서 "AI가 코드를 2배 많이 써서 리뷰와 테스트도 2배 걸린다"를 켠다. 구현을 2배 빠르게 하면 한 바퀴는 어떻게 될까? 10배면?</p>
+<details class="success">
+<summary>정답과 해설</summary>
+<p><strong>2배면 12일이 12.5일로 오히려 길어지고, 10배여도 10.5일(1.14배)이다.</strong> 가장 긴 단계는 테스트(4일)가 된다. 리뷰와 테스트가 코드 양에 비례해 는다는 것은 가정이다. 그래도 큰 변경일수록 읽기 오래 걸리고 놓치기 쉬운 것은 리뷰에서 흔히 겪는 일이다. 그래서 AI와 함께일수록 변경을 작게 나누고(<a href="../083-git/">83번(Git 실천)</a>), 테스트를 자동으로 돌리고(<a href="../084-testing/">84번(테스트 설계)</a>, <a href="../089-ci-cd/">89번(CI/CD)</a>), 요구사항을 수용 기준으로 미리 정해 두는(<a href="../081-requirements/">81번(요구사항과 명세)</a>) 쪽이 주기를 줄인다.</p>
+</details>
+<h2 id="ai와-함께-확인하기">AI와 함께 확인하기<a class="headerlink" href="#ai와-함께-확인하기" title="Permanent link">&para;</a></h2>
+<div class="admonition tip">
+<p class="admonition-title">AI 활용 과제: 우리 팀의 주기를 줄이는 제안 따져 보기</p>
+<ol>
+<li>최근에 만든 기능 하나(조별 과제도 된다)를 골라, 요구사항 확인부터 배포까지 단계별로 며칠 걸렸는지 적는다.</li>
+<li>AI에게 그 표를 주고 "AI를 써서 이 주기를 줄일 방법"을 묻는다.</li>
+<li>제안마다 어느 단계를 줄이는지 표시하고, 위젯에 날수를 넣어 한 바퀴가 실제로 얼마나 줄어드는지 계산한다.</li>
+</ol>
+</div>
+<details class="success">
+<summary>확인할 점</summary>
+<ul>
+<li>AI의 제안이 코드 생성, 자동 완성처럼 구현을 줄이는 쪽에만 몰려 있는지 본다. 구현을 아무리 줄여도 한 바퀴는 구현이 차지하던 몫까지만 줄어든다(문제 2).</li>
+<li>요구사항 확인을 줄이는 제안(시제품을 빨리 만들어 보여 주기, 수용 기준을 그대로 테스트로 바꾸기)과 검증을 줄이는 제안(테스트 자동화, CI, 작은 PR)이 있는지 본다.</li>
+<li>"애자일로 바꾸면 2배 빨라진다"처럼 근거 없는 숫자가 나오면, 어느 단계가 며칠 줄어 그렇게 되는지 계산해 보라고 되묻는다.</li>
+</ul>
+</details>
+<h2 id="더-알아보기">더 알아보기<a class="headerlink" href="#더-알아보기" title="Permanent link">&para;</a></h2>
+<details class="note">
+<summary>폭포수라는 이름과 1970년의 논문</summary>
+<p>단계를 차례로 내려가는 그림은 1970년 Winston Royce의 논문으로 널리 알려졌다. 그런데 그 논문은 그림을 보인 바로 뒤에 이대로 하면 위험하다고 쓰고, 앞 단계로 돌아가는 고리와 손님의 참여, 시험 삼아 한 번 먼저 만들어 보기를 권했다. "폭포수"라는 이름도 논문이 아니라 나중에 붙었다. 처음부터 단계를 한 번만 지나가자는 주장은 아니었던 셈이다.</p>
+</details>
+<details class="note">
+<summary>폭포수가 맞는 곳</summary>
+<p>요구사항이 법과 규격으로 정해져 잘 바뀌지 않고, 한 번 내보내면 고치기 어려운 소프트웨어(의료 기기, 항공, 하드웨어와 함께 나가는 펌웨어)는 단계마다 문서와 승인을 남기는 방식을 여전히 쓴다. 그 안에서도 단계마다 작은 반복을 둔다. 어느 방식이 옳은지보다, 틀린 것을 알게 되는 때와 고치는 비용을 보고 주기의 크기를 고른다.</p>
+</details>
+<details class="note">
+<summary>스크럼과 칸반</summary>
+<p>스크럼은 한 달 이하(흔히 2주)의 스프린트마다 계획, 개발, 검토(시연), 회고를 되풀이한다. 칸반은 할 일을 카드로 보이게 늘어놓고, 동시에 진행하는 일의 수를 제한해 일이 막히는 곳을 드러낸다. 둘 다 짧은 주기로 결과를 보이고 고친다는 같은 생각에서 나왔다.</p>
+</details>
+<details class="note">
+<summary>주기를 재는 지표</summary>
+<p>DORA 연구는 팀이 변경을 내보내는 능력을 다섯 지표로 잰다(처음에는 네 지표였고, 2026년 10월 현재 다섯이다). 커밋에서 운영 배포까지 걸리는 시간(변경 리드 타임), 배포 빈도, 실패한 배포에서 복구하는 시간은 처리량을 본다. 배포 직후 바로 손을 써야 했던 배포의 비율(변경 실패율), 운영 장애 때문에 계획에 없이 한 배포의 비율(배포 재작업률)은 안정성을 본다. 빠르기만 하고 자주 깨지면 주기가 짧아진 것이 아니다(<a href="../../08-architecture/071-high-availability/">71번(이중화와 무중단 배포)</a>, <a href="../../08-architecture/072-observability/">72번(관측성)</a>, <a href="../089-ci-cd/">89번(CI/CD)</a>).</p>
+</details>
+<h2 id="정리">정리<a class="headerlink" href="#정리" title="Permanent link">&para;</a></h2>
+<ul>
+<li>폭포수와 반복형은 같은 단계를 지난다. 다른 것은 한 바퀴의 크기와 손님이 결과를 보는 횟수다.</li>
+<li>주기가 짧을수록 틀린 것을 일찍 알고 다시 볼 일이 적다. 대신 시연과 나누는 일에 비용이 든다.</li>
+<li>AI가 구현을 빠르게 해도 주기는 나머지 단계가 정한다. 병목은 요구사항 확인과 검증(리뷰, 테스트, 배포)으로 옮겨 간다.</li>
+</ul>
+<h2 id="관련-항목">관련 항목<a class="headerlink" href="#관련-항목" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../04-os/033-concurrency-vs-parallelism/">33번(동시성과 병렬성)</a>: 일부만 빨라질 때의 한계(암달의 법칙)</li>
+<li><a href="../081-requirements/">81번(요구사항과 명세)</a>: 한 바퀴의 첫 단계, 요구사항과 수용 기준</li>
+<li><a href="../083-git/">83번(Git 실천)</a>: 변경을 작게 나누어 자주 합치기</li>
+<li><a href="../084-testing/">84번(테스트 설계)</a>: 검증을 빠르게 하는 테스트</li>
+<li><a href="../089-ci-cd/">89번(CI/CD)</a>: 빌드, 테스트, 배포를 자동으로 되풀이하는 파이프라인</li>
+</ul>
+<h2 id="더-읽을거리">더 읽을거리<a class="headerlink" href="#더-읽을거리" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://agilemanifesto.org/iso/ko/manifesto.html">애자일 소프트웨어 개발 선언 (한국어)</a></li>
+<li><a href="https://scrumguides.org/scrum-guide.html">The Scrum Guide</a></li>
+<li><a href="https://dora.dev/guides/dora-metrics/">DORA: 소프트웨어 전달 성과 지표</a></li>
+</ul>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  맨위로
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="하단/푸터" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="이전: 소프트웨어 공학과 실천">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                이전
+              </span>
+              <div class="md-ellipsis">
+                소프트웨어 공학과 실천
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../081-requirements/" class="md-footer__link md-footer__link--next" aria-label="다음: 81. 요구사항과 명세">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                다음
+              </span>
+              <div class="md-ellipsis">
+                81. 요구사항과 명세
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      글·그림 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ko">CC BY-NC-SA 4.0</a> · 코드 MIT
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.highlight", "content.code.copy", "toc.follow", "toc.integrate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\ud074\ub9bd\ubcf4\ub4dc\uc5d0 \ubcf5\uc0ac\ub428", "clipboard.copy": "\ud074\ub9bd\ubcf4\ub4dc\ub85c \ubcf5\uc0ac", "search.result.more.one": "\uc774 \ubb38\uc11c\uc5d0\uc11c 1\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.more.other": "\uc774 \ubb38\uc11c\uc5d0\uc11c #\uac1c\uc758 \uac80\uc0c9 \uacb0\uacfc \ub354 \ubcf4\uae30", "search.result.none": "\uac80\uc0c9\uc5b4\uc640 \uc77c\uce58\ud558\ub294 \ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4", "search.result.one": "1\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.other": "#\uac1c\uc758 \uc77c\uce58\ud558\ub294 \ubb38\uc11c", "search.result.placeholder": "\uac80\uc0c9\uc5b4\ub97c \uc785\ub825\ud558\uc138\uc694", "search.result.term.missing": "\ud3ec\ud568\ub418\uc9c0 \uc54a\uc740 \uac80\uc0c9\uc5b4", "select.version": "\ubc84\uc804 \uc120\ud0dd"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/layout.js"></script>
+      
+        <script src="../../javascripts/katex.js"></script>
+      
+        <script src="https://unpkg.com/katex@0.16.11/dist/katex.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+      
+    
+  </body>
+</html>

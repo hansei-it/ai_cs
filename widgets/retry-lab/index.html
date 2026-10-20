@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>다시 보내면 주문이 몇 개 생기나</title>
+<meta name="description" content="어디서 실패하는지(요청이 사라짐, 첫 요청만 느림, 처리 뒤 응답이 사라짐), 다시 보낼지, 멱등 키를 보낼지를 골라, 주고받은 차례와 만들어진 주문 수, 손님이 본 결과를 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .steps { list-style: none; margin: 8px 0 4px; padding: 0; }
+  .steps li { display: grid; grid-template-columns: 3.6em 1fr; gap: 6px; padding: 4px 8px; margin-bottom: 3px; border-left: 3px solid var(--line); background: var(--soft); border-radius: 0 6px 6px 0; font-size: 14px; }
+  .steps li .who { color: var(--muted); font-size: 12px; padding-top: 2px; }
+  .steps li.client { border-left-color: var(--accent); }
+  .steps li.server { border-left-color: var(--read); }
+  .steps li.save { border-left-color: var(--good); background: var(--good-bg); }
+  .steps li.lost { border-left-color: var(--write); background: var(--write-bg); }
+  .sum { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; margin-top: 4px; }
+  .sum b { font-size: 19px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>다시 보내면 주문이 몇 개 생기나</h1>
+<p class="lead">손님(클라이언트)이 주문을 보내고 2초 안에 답이 없으면 포기하거나 한 번 다시 보낸다. 손님은 답이 오지 않은 까닭을 알 수 없다. 멱등 키는 손님이 주문마다 정해 보내는 이름표이고, 서버는 받자마자 그 키를 적어 둔다.</p>
+<div class="row" role="group" aria-label="실패하는 곳">
+  <span class="label">실패</span>
+  <button class="btn" data-fail="none">없음</button>
+  <button class="btn" data-fail="request">요청이 가다 사라짐</button>
+  <button class="btn" data-fail="slow">첫 요청만 느림(3초)</button>
+  <button class="btn" data-fail="response">처리 뒤 응답이 사라짐</button>
+</div>
+<div class="row" role="group" aria-label="다시 보내기">
+  <span class="label">다시 보내기</span>
+  <button class="btn" data-retry="0">하지 않음</button>
+  <button class="btn" data-retry="1">한 번 다시 보냄</button>
+</div>
+<div class="row" role="group" aria-label="멱등 키">
+  <span class="label">멱등 키</span>
+  <button class="btn" data-key="0">없음</button>
+  <button class="btn" data-key="1">있음</button>
+</div>
+
+<ol class="steps" id="steps"></ol>
+<div class="sum" id="sum"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const RetryLogic = (() => {
+  // 손님은 2초 안에 답이 없으면 포기하거나(retry=false) 한 번 다시 보낸다(retry=true)
+  // fail: none(실패 없음), request(첫 요청이 가다 사라짐), response(첫 요청을 처리해 저장한 뒤 응답이 사라짐),
+  //       slow(첫 요청의 처리가 3초 걸려 손님이 2초에 포기한 뒤 저장된다)
+  // key: 멱등 키를 보낸다. 서버는 받자마자 키를 적어 두고, 같은 키가 다시 오면 새로 만들지 않고 첫 처리의 응답을 준다(처리 중이면 끝날 때까지 기다린다)
+  function run(fail, retry, key) {
+    const steps = [], s = (who, cls, text) => steps.push({ who, cls, text });
+    let orders = 0, client = null;
+    const k = key ? " (키 a1b2)" : "";
+    s("손님", "client", `0초: 주문을 보낸다${k}`);
+    if (fail === "none") {
+      orders++; s("서버", "save", "주문 1을 저장한다"); s("서버", "server", "201 응답"); client = "성공";
+    } else if (fail === "request") {
+      s("망", "lost", "요청이 서버에 닿기 전에 사라졌다");
+      s("손님", "client", "2초: 답이 없다. 처리됐는지 모른다");
+    } else if (fail === "response") {
+      orders++; s("서버", "save", "주문 1을 저장한다"); s("망", "lost", "201 응답이 손님에게 가다 사라졌다");
+      s("손님", "client", "2초: 답이 없다. 처리됐는지 모른다");
+    } else {
+      s("서버", "server", "처리 중(이 요청만 3초 걸린다)");
+      s("손님", "client", "2초: 답이 없다. 처리됐는지 모른다");
+    }
+    if (fail !== "none") {
+      if (!retry) {
+        if (fail === "slow") { orders++; s("서버", "save", "3초: 주문 1을 저장한다. 응답을 보냈지만 손님은 이미 떠났다"); }
+        client = "실패로 안다";
+      } else {
+        s("손님", "client", `2초: 같은 주문을 다시 보낸다${k}`);
+        if (fail === "request") {
+          orders++; s("서버", "save", "주문 1을 저장한다"); s("서버", "server", "201 응답"); client = "성공";
+        } else if (fail === "response") {
+          if (key) { s("서버", "server", "같은 키를 이미 처리했다: 새로 만들지 않고 처음의 응답(주문 1)을 다시 준다"); }
+          else { orders++; s("서버", "save", "주문 2를 저장한다(같은 주문이 하나 더)"); s("서버", "server", "201 응답(주문 2)"); }
+          client = "성공";
+        } else {
+          if (key) {
+            s("서버", "server", "같은 키가 처리 중이다: 끝날 때까지 기다린다");
+            orders++; s("서버", "save", "3초: 첫 요청이 주문 1을 저장한다");
+            s("서버", "server", "다시 온 요청에도 같은 응답(주문 1)");
+          } else {
+            orders++; s("서버", "save", "2초: 다시 온 요청이 주문을 저장한다");
+            orders++; s("서버", "save", "3초: 첫 요청도 주문을 저장한다(같은 주문이 둘)");
+          }
+          client = "성공";
+        }
+      }
+    }
+    return { steps, orders, client };
+  }
+  return { run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = RetryLogic;
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  let fail = q.get("fail") || "none",   // 처음에는 실패 없이(문제 1의 답을 먼저 보이지 않게)
+      retry = q.get("retry") !== "0", key = q.get("key") === "1";
+  function render() {
+    const r = L.run(fail, retry, key);
+    $("steps").innerHTML = r.steps.map(x => `<li class="${x.cls}"><span class="who">${x.who}</span><span>${x.text}</span></li>`).join("");
+    $("sum").innerHTML = `<span>만들어진 주문 <b class="mono">${r.orders}</b>개</span><span>손님이 본 결과 <b>${r.client}</b></span>`;
+    let note;
+    if (fail === "none") note = "실패가 없으면 어느 방법이든 같다. 실패를 하나 골라 본다.";
+    else if (!retry) note = r.orders ? "손님은 실패로 알지만 주문은 만들어졌다. 손님이 다시 주문하면 둘이 된다. 답이 없다는 것만으로는 처리됐는지 알 수 없다." : "요청이 사라져 주문이 없다. 손님은 실패로 알고, 이번에는 그것이 맞다. 그러나 손님은 어느 경우인지 구별할 수 없다.";
+    else if (r.orders > 1) note = "다시 보낸 요청을 서버가 새 주문으로 처리해 같은 주문이 둘이 되었다. 결제였다면 두 번 결제된다. 멱등 키를 켜 본다.";
+    else if (fail === "request") note = "이번에는 첫 요청이 서버에 닿지 않아 다시 보내도 하나다. 다른 실패를 골라 같은 설정으로 해 본다.";
+    else note = "서버가 키를 보고 같은 주문임을 알아, 다시 보내도 주문은 하나다. 키는 손님이 주문마다 새로 정하고, 다시 보낼 때는 같은 키를 쓴다.";
+    $("note").textContent = note;
+    document.querySelectorAll("[data-fail]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.fail === fail)));
+    document.querySelectorAll("[data-retry]").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.retry === "1") === retry)));
+    document.querySelectorAll("[data-key]").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.key === "1") === key)));
+  }
+  document.querySelectorAll("[data-fail]").forEach(b => b.addEventListener("click", () => { fail = b.dataset.fail; render(); }));
+  document.querySelectorAll("[data-retry]").forEach(b => b.addEventListener("click", () => { retry = b.dataset.retry === "1"; render(); }));
+  document.querySelectorAll("[data-key]").forEach(b => b.addEventListener("click", () => { key = b.dataset.key === "1"; render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

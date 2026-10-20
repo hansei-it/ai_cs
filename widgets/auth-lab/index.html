@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>세션과 JWT</title>
+<meta name="description" content="로그인, 요청, 로그아웃, 훔치기, 서버 다시 켜기, 시간 보내기, 내용 바꾸기를 눌러, 세션 방식과 JWT 방식에서 서버와 브라우저가 무엇을 갖고 요청이 어떻게 되는지 나란히 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.bad { color: var(--write); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .clock { font-size: 13px; color: var(--muted); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 560px) { .cols { grid-template-columns: 1fr; } }
+  .col { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+  .col h2 { font-size: 14px; margin: 0 0 6px; color: var(--accent); }
+  .part { font-size: 13px; margin-bottom: 6px; }
+  .part .k { color: var(--muted); font-size: 12px; }
+  .part .v { overflow-wrap: anywhere; }
+  .res { margin-top: 6px; padding: 5px 8px; border-radius: 6px; font-size: 13.5px; font-weight: 700; min-height: 2em; }
+  .res.ok { background: var(--good-bg); color: var(--good); }
+  .res.no { background: var(--write-bg); color: var(--write); }
+  .tok b.h { color: var(--write); } .tok b.p { color: var(--accent); } .tok b.s { color: var(--good); }
+  .tok .broken { color: var(--write); text-decoration: line-through; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>세션과 JWT</h1>
+<p class="lead">같은 일을 두 방식으로 나란히 한다. 로그인은 30분 동안 유효하다. 공격자는 브라우저가 가진 쿠키나 토큰을 몰래 복사할 수 있다고 하자.</p>
+
+<div class="row">
+  <span class="label">나</span>
+  <button class="btn" data-a="login">로그인</button>
+  <button class="btn" data-a="me">내 정보 요청</button>
+  <button class="btn" data-a="logout">로그아웃</button>
+  <button class="btn" data-a="tamper">내용을 admin으로 바꾸기</button>
+</div>
+<div class="row">
+  <span class="label">공격자</span>
+  <button class="btn bad" data-a="steal">몰래 복사해 둔다</button>
+  <button class="btn bad" data-a="thief">복사한 것으로 요청</button>
+</div>
+<div class="row">
+  <span class="label">서버</span>
+  <button class="btn" data-a="restart">서버 다시 켜기 (메모리 비움)</button>
+  <button class="btn" data-a="wait">30분 지나기</button>
+  <button class="btn" id="reset">처음으로</button>
+  <span class="clock" id="clock"></span>
+</div>
+
+<div class="cols">
+  <div class="col" id="c-session"></div>
+  <div class="col" id="c-jwt"></div>
+</div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const AuthLogic = (() => {
+  const TTL = 30;   // 분
+  const initial = () => ({
+    now: 0,
+    session: { table: {}, n: 0, browser: null, thief: null },   // 서버가 세션 표를 기억한다
+    jwt: { browser: null, thief: null },                          // 서버는 서명 열쇠만 갖는다
+  });
+  const clone = s => JSON.parse(JSON.stringify(s));
+  function checkSession(s, cred) {
+    if (cred === null) return "no-credential";
+    const r = s.session.table[cred];
+    if (!r) return "unknown";
+    if (r.exp <= s.now) return "expired";
+    return "ok";
+  }
+  function checkJwt(s, cred) {
+    if (cred === null) return "no-credential";
+    if (!cred.sig) return "bad-signature";        // 내용이 바뀌면 서명이 맞지 않는다
+    if (cred.exp <= s.now) return "expired";
+    return "ok";
+  }
+  // a: login | me | logout | tamper | steal | thief | restart | wait. 요청이면 두 방식의 결과를 돌려준다
+  function act(s0, a) {
+    const s = clone(s0), S = s.session, J = s.jwt;
+    let result = null;
+    if (a === "login") {
+      S.n += 1;
+      const sid = `s${S.n}`;
+      S.table[sid] = { user: "student", exp: s.now + TTL };
+      S.browser = sid;
+      J.browser = { sub: "student", role: "user", exp: s.now + TTL, sig: true };
+    } else if (a === "me") result = [checkSession(s, S.browser), checkJwt(s, J.browser)];
+    else if (a === "thief") result = [checkSession(s, S.thief), checkJwt(s, J.thief)];
+    else if (a === "logout") {
+      if (S.browser !== null) delete S.table[S.browser];   // 세션은 서버의 표에서 지운다
+      S.browser = null;
+      J.browser = null;                                      // JWT는 브라우저가 버릴 뿐이다
+    } else if (a === "tamper") {
+      if (S.browser !== null) S.browser += "x";
+      if (J.browser !== null) J.browser = { ...J.browser, role: "admin", sig: false };
+    } else if (a === "steal") { S.thief = S.browser; J.thief = J.browser ? { ...J.browser } : null; }
+    else if (a === "restart") S.table = {};
+    else if (a === "wait") s.now += TTL;
+    return { state: s, result };
+  }
+  return { TTL, initial, act };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = AuthLogic;
+  const $ = id => document.getElementById(id);
+  const TEXT = {
+    ok: ["ok", "200: student의 정보를 준다"],
+    "no-credential": ["no", "401: 보낸 쿠키나 토큰이 없다"],
+    unknown: ["no", "401: 서버의 표에 그런 세션이 없다"],
+    expired: ["no", "401: 만료됐다"],
+    "bad-signature": ["no", "401: 서명이 맞지 않는다"],
+  };
+  let s = L.initial(), last = null, who = "me", msg = "";
+  const left = exp => (exp - s.now > 0 ? `${exp - s.now}분 남음` : "만료");
+  const tok = t => t === null ? "없음"
+    : `<span class="tok mono"><b class="h">머리</b>.<b class="p">{"sub":"${t.sub}","role":"${t.role}"}</b>.<b class="s ${t.sig ? "" : "broken"}">서명</b></span><br><span class="k">${left(t.exp)}${t.sig ? "" : ", 서명이 내용과 맞지 않는다"}</span>`;
+  const part = (k, v) => `<div class="part"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  function render() {
+    const S = s.session, J = s.jwt;
+    const rows = Object.entries(S.table).map(([id, r]) => `<span class="mono">${id}</span> → ${r.user}, ${left(r.exp)}`).join("<br>") || "비어 있다";
+    const res = i => last ? `<div class="res ${TEXT[last[i]][0]}">${who === "thief" ? "공격자의 요청 → " : "내 요청 → "}${TEXT[last[i]][1]}</div>` : `<div class="res"></div>`;
+    $("c-session").innerHTML = `<h2>세션 방식</h2>${part("브라우저의 쿠키", S.browser === null ? "없음" : `<span class="mono">session=${S.browser}</span>`)}${part("서버가 기억하는 세션 표", rows)}${part("공격자가 복사한 것", S.thief === null ? "없음" : `<span class="mono">session=${S.thief}</span>`)}${res(0)}`;
+    $("c-jwt").innerHTML = `<h2>JWT 방식</h2>${part("브라우저의 토큰", tok(J.browser))}${part("서버가 기억하는 것", "서명 열쇠 하나 (사용자 표는 없다)")}${part("공격자가 복사한 것", tok(J.thief))}${res(1)}`;
+    $("clock").textContent = `지금: 처음부터 ${s.now}분`;
+    $("note").textContent = msg;
+  }
+  const NOTE = {
+    login: "세션 방식은 서버가 표에 한 줄을 적고 그 번호만 쿠키로 준다(실제 번호는 짐작할 수 없는 긴 무작위 값이다. 여기서는 s1, s2로 줄였다). JWT 방식은 누구인지와 만료 시각을 토큰 안에 적고 서명해서 준다. 서버는 아무것도 적지 않는다.",
+    logout: "세션은 서버의 표에서 지웠다. JWT는 브라우저가 토큰을 버렸을 뿐, 서버는 그 토큰을 모른다. 미리 복사해 둔 것이 있다면 어떻게 될지 공격자의 요청으로 본다.",
+    tamper: "실제 세션 번호는 짐작할 수 없는 긴 무작위 값이라, 바꾸면 표에 없는 번호가 된다(여기서는 끝에 x를 붙였다). JWT의 내용을 바꾸면 서명이 내용과 맞지 않는다. 서명 열쇠가 없는 사람은 바꾼 내용에 맞는 서명을 만들 수 없다.",
+    steal: "공격자가 쿠키와 토큰을 복사해 갔다(예: 공용 PC에 남긴 것, 악성 프로그램, 토큰을 localStorage에 둔 페이지의 악성 스크립트). 이제 로그아웃해 본다.",
+    restart: "서버를 다시 켜면 메모리에 든 세션 표가 사라진다. 그래서 실제 서비스는 세션을 데이터베이스나 Redis처럼 따로 두는 저장소에 둔다. JWT는 서명 열쇠만 같으면 된다.",
+    wait: "30분이 지났다. 둘 다 만료 시각이 지나 더는 받아 주지 않는다.",
+  };
+  function act(a) {
+    const r = L.act(s, a);
+    s = r.state;
+    if (r.result) {
+      last = r.result; who = a;
+      if (a === "thief" && r.result[0] !== "ok" && r.result[1] === "ok") msg = "같은 로그아웃 뒤인데, 세션 방식은 복사한 쿠키를 거절하고 JWT 방식은 복사한 토큰을 받아 준다. 서버에 그 토큰을 거절할 근거(세션 표 같은 기록)가 없기 때문이다. JWT는 만료 시간을 짧게 두고, 끊어야 할 토큰의 목록을 따로 두기도 한다.";
+      else if (r.result[0] === "ok" && r.result[1] === "ok") msg = "세션 방식은 쿠키의 번호로 표를 찾았고, JWT 방식은 토큰의 서명과 만료 시각만 확인했다. 둘 다 같은 사람으로 알아봤다.";
+      else msg = "요청 결과를 견준다. 401은 \"누구인지 밝혀라\"는 상태 코드다(43번 항목).";
+    } else { last = null; msg = NOTE[a]; }
+    render();
+  }
+  document.querySelectorAll("[data-a]").forEach(b => b.addEventListener("click", () => act(b.dataset.a)));
+  $("reset").addEventListener("click", () => { s = L.initial(); last = null; msg = "\"로그인\"부터 누른다."; render(); });
+  msg = "\"로그인\"부터 누른다.";
+  render();
+})();
+</script>
+</body>
+</html>

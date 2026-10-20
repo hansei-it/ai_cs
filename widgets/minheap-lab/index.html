@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>힙 실험실</title>
+<meta name="description" content="값을 넣고 가장 작은 값을 꺼내며, 배열 칸과 트리 모양에서 부모와 자식을 바꾸는 과정을 한 단계씩 넘겨 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3044;
+    --write: #ffa94d;
+    --write-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=text] { font: inherit; font-size: 14px; width: 4.5em; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .cells { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+  .cell { width: 46px; text-align: center; }
+  .cell .box { border: 1px solid var(--line); border-radius: 4px; height: 32px; line-height: 30px; background: var(--soft); font-size: 14px; }
+  .cell .box.empty { border-style: dashed; background: transparent; color: var(--muted); }
+  .cell .box.focus { border-color: var(--write); background: var(--write-bg); font-weight: 700; }
+  .cell .box.cmp { border-color: var(--read); background: var(--read-bg); }
+  .cell .idx { font-size: 11px; color: var(--muted); }
+  svg { display: block; width: 100%; height: auto; margin-top: 6px; }
+  svg .edge { stroke: var(--line); stroke-width: 2; }
+  svg circle { fill: var(--soft); stroke: var(--muted); stroke-width: 1.5; }
+  svg circle.focus { fill: var(--write-bg); stroke: var(--write); stroke-width: 2.5; }
+  svg circle.cmp { fill: var(--read-bg); stroke: var(--read); stroke-width: 2.5; }
+  svg text { fill: var(--fg); font-size: 13px; text-anchor: middle; font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; }
+  svg text.ix { fill: var(--muted); font-size: 10px; }
+  .out { font-size: 14px; margin-top: 4px; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .cell { width: 36px; } }
+</style>
+</head>
+<body>
+<h1>힙 실험실</h1>
+<p class="lead">최소 힙: 모든 부모가 두 자식보다 작거나 같다. 배열 한 줄에 담고, i번 칸의 자식은 2i+1번과 2i+2번, 부모는 (i−1)/2번이다.</p>
+
+<div class="row">
+  <span class="label">넣기</span>
+  <button class="btn mono" id="next">다음 값 넣기</button>
+  <input type="text" id="val" inputmode="numeric" aria-label="넣을 값">
+  <button class="btn" id="push">이 값 넣기</button>
+  <button class="btn" id="pop">가장 작은 값 꺼내기</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+<div class="row">
+  <span class="label">단계</span>
+  <button class="btn go" id="step">다음 단계</button>
+  <button class="btn" id="finish">끝까지</button>
+  <span class="mono" id="stepinfo"></span>
+</div>
+<div class="cells mono" id="cells"></div>
+<svg id="tree" viewBox="0 0 600 160" role="img" aria-label="힙의 트리 모양"></svg>
+<div class="out" id="out"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const MinHeapLogic = (() => {
+  const NEXT = [50, 30, 70, 10, 40, 20, 60, 5, 45, 15];
+  const CAP = 15;
+  const parent = i => Math.floor((i - 1) / 2);
+
+  // 넣기: 맨 끝에 놓고, 부모보다 작으면 바꾸며 올라간다. frames[k] = 그 단계의 배열과 강조할 칸
+  function push(arr, v) {
+    const a = [...arr, v];
+    const frames = [{ a: [...a], focus: a.length - 1, cmp: null, msg: "place" }];
+    let i = a.length - 1;
+    while (i > 0) {
+      const p = parent(i);
+      if (a[p] <= a[i]) { frames.push({ a: [...a], focus: i, cmp: p, msg: "stop" }); break; }
+      [a[p], a[i]] = [a[i], a[p]];
+      frames.push({ a: [...a], focus: p, cmp: i, msg: "swap" });
+      i = p;
+    }
+    if (i === 0) frames.push({ a: [...a], focus: 0, cmp: null, msg: "root" });
+    return { a, frames, swaps: frames.filter(f => f.msg === "swap").length };
+  }
+
+  // 꺼내기: 뿌리를 꺼내고 맨 끝 값을 뿌리에 옮긴 뒤, 더 작은 자식과 바꾸며 내려간다
+  function pop(arr) {
+    if (!arr.length) return null;
+    const top = arr[0];
+    const a = [...arr];
+    const last = a.pop();
+    const frames = [];
+    if (!a.length) return { a, top, frames: [{ a: [], focus: null, cmp: null, msg: "empty" }], swaps: 0 };
+    a[0] = last;
+    frames.push({ a: [...a], focus: 0, cmp: null, msg: "moved" });
+    let i = 0;
+    for (;;) {
+      const l = 2 * i + 1, r = l + 1;
+      let m = i;
+      if (l < a.length && a[l] < a[m]) m = l;
+      if (r < a.length && a[r] < a[m]) m = r;
+      if (m === i) { frames.push({ a: [...a], focus: i, cmp: l < a.length ? (r < a.length && a[r] < a[l] ? r : l) : null, msg: "stop", kids: (l < a.length) + (r < a.length) }); break; }
+      [a[m], a[i]] = [a[i], a[m]];
+      frames.push({ a: [...a], focus: m, cmp: i, msg: "swap" });
+      i = m;
+    }
+    return { a, top, frames, swaps: frames.filter(f => f.msg === "swap").length };
+  }
+
+  const isHeap = a => a.every((v, i) => i === 0 || a[parent(i)] <= v);
+  const build = vals => vals.reduce((a, v) => push(a, v).a, []);
+
+  return { NEXT, CAP, parent, push, pop, isHeap, build };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = MinHeapLogic;
+  const $ = id => document.getElementById(id);
+  const NS = "http://www.w3.org/2000/svg";
+  // 조사: 숫자를 읽은 끝소리로 고른다 (2 이, 4 사, 5 오, 9 구는 받침 없음). 음수도 끝 숫자로 본다
+  const eul = v => `${v}${"2459".includes(String(v).slice(-1)) ? "를" : "을"}`;
+  const iga = v => `${v}${"2459".includes(String(v).slice(-1)) ? "가" : "이"}`;
+  const ro = i => `[${i}]${"036".includes(String(i).slice(-1)) ? "으로" : "로"}`;   // [3]으로, [1]로
+  let heap = [], nextK = 0, op = null, k = 0, popped = [];
+
+  function frameMsg(f, kind, value) {
+    const a = f.a;
+    switch (f.msg) {
+      case "place": return `${eul(value)} 맨 끝 칸 [${f.focus}]에 놓았다. 이제 부모와 비교하며 올라간다.`;
+      case "swap": return kind === "push"
+        ? `부모였던 ${iga(a[f.cmp])} 더 커서 자리를 바꿨다. ${iga(a[f.focus])} ${ro(f.focus)} 올라갔다.`
+        : `더 작은 자식 ${iga(a[f.cmp])} 위로 오고, ${iga(a[f.focus])} ${ro(f.focus)} 내려갔다.`;
+      case "stop": return kind === "push"
+        ? `${iga(a[f.focus])} 부모 [${f.cmp}]의 ${a[f.cmp]}보다 크거나 같으니 여기서 멈춘다. 힙이 되었다.`
+        : `${["자식이 없으니", "자식보다 작거나 같으니", "두 자식보다 작거나 같으니"][f.kids]} 여기서 멈춘다. 힙이 되었다.`;
+      case "root": return `뿌리 [0]까지 올라왔다. ${iga(a[0])} 가장 작은 값이다.`;
+      case "moved": return `뿌리의 ${eul(value)} 꺼냈다. 맨 끝 값 ${eul(a[0])} 뿌리로 옮기고, 더 작은 자식과 바꾸며 내려간다.`;
+      case "empty": return `마지막 하나인 ${eul(value)} 꺼냈다. 힙이 비었다.`;
+    }
+    return "";
+  }
+
+  function render() {
+    const f = op ? op.frames[k] : { a: heap, focus: null, cmp: null };
+    const a = f.a;
+    let html = "";
+    for (let i = 0; i < Math.max(a.length, 7); i++) {
+      const v = a[i];
+      const cls = v === undefined ? "box empty" : `box${i === f.focus ? " focus" : i === f.cmp ? " cmp" : ""}`;
+      html += `<div class="cell"><div class="${cls}">${v === undefined ? "·" : v}</div><div class="idx">[${i}]</div></div>`;
+    }
+    $("cells").innerHTML = html;
+    // 트리: d층의 칸은 그 층을 같은 폭으로 나눈 자리에 놓는다
+    const svg = $("tree");
+    svg.textContent = "";
+    const depth = a.length ? Math.floor(Math.log2(a.length)) + 1 : 1;
+    svg.setAttribute("viewBox", `0 0 600 ${Math.max(60, depth * 52 + 10)}`);
+    const pos = i => { const d = Math.floor(Math.log2(i + 1)), first = 2 ** d - 1, slots = 2 ** d; return [600 * ((i - first) + 0.5) / slots, 26 + d * 52]; };
+    for (let i = 1; i < a.length; i++) {
+      const [x1, y1] = pos(L.parent(i)), [x2, y2] = pos(i);
+      const e = document.createElementNS(NS, "line");
+      e.setAttribute("class", "edge"); e.setAttribute("x1", x1); e.setAttribute("y1", y1); e.setAttribute("x2", x2); e.setAttribute("y2", y2);
+      svg.append(e);
+    }
+    a.forEach((v, i) => {
+      const [x, y] = pos(i);
+      const c = document.createElementNS(NS, "circle");
+      c.setAttribute("class", i === f.focus ? "focus" : i === f.cmp ? "cmp" : "");
+      c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 17);
+      const t = document.createElementNS(NS, "text");
+      t.setAttribute("x", x); t.setAttribute("y", y + 4.5); t.textContent = v;
+      const ix = document.createElementNS(NS, "text");
+      ix.setAttribute("class", "ix"); ix.setAttribute("x", x + 24); ix.setAttribute("y", y - 10); ix.textContent = `[${i}]`;
+      svg.append(c, t, ix);
+    });
+    const inOp = op && k < op.frames.length - 1;
+    $("step").disabled = !inOp; $("finish").disabled = !inOp;
+    ["next", "push", "pop"].forEach(id => { $(id).disabled = !!inOp; });
+    if (!inOp) {
+      $("next").disabled = nextK >= L.NEXT.length || heap.length >= L.CAP;
+      $("push").disabled = heap.length >= L.CAP;
+      $("pop").disabled = !heap.length;
+    }
+    $("next").textContent = nextK < L.NEXT.length ? `다음 값 넣기 (${L.NEXT[nextK]})` : "다음 값 넣기";
+    $("stepinfo").textContent = op ? `${k + 1} / ${op.frames.length}` : "";
+    $("out").innerHTML = `꺼낸 차례: <b class="mono">${popped.join(" ") || "-"}</b>`;
+    $("note").textContent = op ? frameMsg(f, op.kind, op.value) : "\"다음 값 넣기\"를 눌러 하나씩 넣어 본다. 넣거나 꺼낸 뒤에는 \"다음 단계\"로 바꾸는 과정을 하나씩 넘긴다.";
+  }
+
+  function start(kind, value) {
+    if (kind === "push") {
+      const r = L.push(heap, value);
+      op = { kind, value, frames: r.frames }; heap = r.a;
+    } else {
+      const r = L.pop(heap);
+      if (!r) return;
+      op = { kind, value: r.top, frames: r.frames }; heap = r.a; popped.push(r.top);
+    }
+    k = 0;
+    render();
+  }
+
+  $("next").addEventListener("click", () => { if (nextK < L.NEXT.length) start("push", L.NEXT[nextK++]); });
+  $("push").addEventListener("click", () => {
+    const v = Number($("val").value.trim());
+    if ($("val").value.trim() === "" || !Number.isInteger(v) || Math.abs(v) > 999) { $("note").textContent = "넣을 값을 -999~999 사이의 정수로 쓴다."; return; }
+    start("push", v);
+  });
+  $("pop").addEventListener("click", () => start("pop"));
+  $("step").addEventListener("click", () => { if (op && k < op.frames.length - 1) { k++; render(); } });
+  $("finish").addEventListener("click", () => { if (op) { k = op.frames.length - 1; render(); } });
+  $("reset").addEventListener("click", () => { heap = []; nextK = 0; op = null; k = 0; popped = []; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

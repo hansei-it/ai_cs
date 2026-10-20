@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>토이 CPU</title>
+<meta name="description" content="‘한 단계’를 눌러 CPU가 명령어를 가져오고, 해석하고, 실행하는 모습을 본다. 메모리 칸도 고칠 수 있다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-fg: #ffffff;
+    --pc: #e8ebfa;
+    --read: #1864ab;
+    --read-bg: #e7f1fb;
+    --write: #a14a00;
+    --write-bg: #fdf0e3;
+    --warn: #a14a00;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-fg: #11131a;
+    --pc: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3044;
+    --write: #ffb057;
+    --write-bg: #3d2c18;
+    --warn: #ffb057;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono, code, input.mono, td.mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 10px; }
+  .row > .label { color: var(--muted); font-size: 14px; }
+  .btn {
+    font: inherit; font-size: 14px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 700; }
+  .btn.small { font-size: 13px; padding: 2px 8px; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible, tr:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  /* 좁은 화면: 한 단계씩 누르면서 레지스터와 설명을 보도록 CPU 쪽을 메모리 표 위로 */
+  @media (max-width: 640px) { .layout { grid-template-columns: 1fr; } .layout .cpu { order: -1; } }
+
+  .editor { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 14px; }
+  .editor input {
+    font: inherit; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 8px; width: 10.5em; max-width: 100%;
+  }
+  .editor .err { color: var(--warn); font-size: 13px; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  td.addr { color: var(--muted); text-align: right; width: 3.2em; }
+  td.dec { color: var(--muted); text-align: right; width: 3em; }
+  tbody tr { cursor: pointer; }
+  tbody tr.sel td { box-shadow: inset 0 0 0 9999px rgba(127, 127, 127, 0.12); }
+  tbody tr.pc td.addr::before { content: "▶ "; color: var(--accent); }
+  tbody tr.pc td { background: var(--pc); }
+  tbody tr.read td { background: var(--read-bg); }
+  tbody tr.read td.hex { color: var(--read); font-weight: 700; }
+  tbody tr.write td { background: var(--write-bg); }
+  tbody tr.write td.hex { color: var(--write); font-weight: 700; }
+  td.asm.unknown { color: var(--warn); }
+
+  /* 부품 그림: 이번 단계에서 쓰인 부품과 버스에 불이 켜진다 */
+  .diagram { display: block; width: 100%; max-width: 340px; height: auto; margin: 0 0 10px; }
+  .diagram text { fill: var(--fg); font: 11px "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; }
+  .diagram text.small { fill: var(--muted); font-size: 9px; }
+  .diagram .frame { fill: none; stroke: var(--line); stroke-width: 1.2; }
+  .diagram .unit rect { fill: var(--soft); stroke: var(--line); stroke-width: 1.2; }
+  .diagram .unit.on rect { fill: var(--pc); stroke: var(--accent); stroke-width: 2; }
+  .diagram .unit.on text { font-weight: 700; }
+  .diagram .bus { stroke: var(--line); stroke-width: 2; }
+  .diagram .bus.read { stroke: var(--read); stroke-width: 3.5; }
+  .diagram .bus.write { stroke: var(--write); stroke-width: 3.5; }
+  .phases { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+  .phase { font-size: 13px; padding: 2px 10px; border-radius: 1em; border: 1px solid var(--line); color: var(--muted); }
+  .phase.next { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .phase.done { background: var(--soft); }
+  dl.regs { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0 0 10px; }
+  dl.regs dt { color: var(--muted); font-size: 14px; }
+  dl.regs dd { margin: 0; overflow-wrap: anywhere; }
+  .big { font-size: 17px; font-weight: 700; }
+  .note { margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .note.warn { border-left-color: var(--warn); }
+  .out { font-size: 14px; margin: 0 0 10px; }
+  .out .vals { font-weight: 700; }
+  details { font-size: 14px; }
+  details table { margin-top: 6px; font-size: 13px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<h1>토이 CPU</h1>
+
+<div class="row" id="presets" role="group" aria-label="예제 프로그램">
+  <span class="label">예제</span>
+  <button class="btn small" data-preset="add">덧셈</button>
+  <button class="btn small" data-preset="countdown">카운트다운</button>
+  <button class="btn small" data-preset="nohalt">HALT를 빼먹으면</button>
+  <button class="btn small" data-preset="selfmod">자기 수정</button>
+  <button class="btn small" data-preset="empty">빈 메모리</button>
+</div>
+<div class="row">
+  <button class="btn primary" id="tick">한 단계: 가져오기</button>
+  <button class="btn" id="step">명령어 하나</button>
+  <button class="btn" id="run">끝까지 실행</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+
+<div class="layout">
+  <section aria-label="메모리">
+    <div class="editor">
+      <label for="cell-in"><span id="sel-label">0번 칸</span>에 넣기</label>
+      <input id="cell-in" class="mono" placeholder="LOAD 13, OUT, 42, 0x2A" autocomplete="off">
+      <button class="btn small" id="cell-apply">넣기</button>
+      <span class="err" id="cell-err" aria-live="polite"></span>
+    </div>
+    <table>
+      <thead><tr><th>주소</th><th>값</th><th>10진</th><th>명령어로 읽으면</th></tr></thead>
+      <tbody id="mem"></tbody>
+    </table>
+  </section>
+
+  <section class="cpu" aria-label="CPU">
+    <svg class="diagram" viewBox="0 0 330 140" role="img" aria-labelledby="diagram-desc">
+      <desc id="diagram-desc">CPU(제어장치, ALU, PC, IR, ACC)가 버스로 메모리, 입출력장치와 이어진 그림. 이번 단계에서 쓰인 부품과 버스가 강조된다.</desc>
+      <rect class="frame" x="2" y="2" width="178" height="136" rx="8"/>
+      <text x="12" y="17">CPU</text>
+      <g class="unit" data-unit="제어장치"><rect x="10" y="26" width="78" height="28" rx="4"/><text x="49" y="44" text-anchor="middle">제어장치</text></g>
+      <g class="unit" data-unit="ALU"><rect x="94" y="26" width="78" height="28" rx="4"/><text x="133" y="44" text-anchor="middle">ALU</text></g>
+      <g class="unit" data-unit="PC"><rect x="10" y="70" width="50" height="28" rx="4"/><text x="35" y="88" text-anchor="middle">PC</text></g>
+      <g class="unit" data-unit="IR"><rect x="66" y="70" width="50" height="28" rx="4"/><text x="91" y="88" text-anchor="middle">IR</text></g>
+      <g class="unit" data-unit="ACC"><rect x="122" y="70" width="50" height="28" rx="4"/><text x="147" y="88" text-anchor="middle">ACC</text></g>
+      <text class="small" x="10" y="116">레지스터: PC · IR · ACC</text>
+      <line class="bus" id="bus-addr" x1="180" y1="36" x2="240" y2="36"/>
+      <line class="bus" id="bus-data" x1="180" y1="56" x2="240" y2="56"/>
+      <line class="bus" id="bus-ctrl" x1="180" y1="76" x2="240" y2="76"/>
+      <line class="bus" id="bus-io" x1="180" y1="120" x2="240" y2="120"/>
+      <text class="small" x="184" y="31">주소 버스</text>
+      <text class="small" x="184" y="51">데이터 버스</text>
+      <text class="small" x="184" y="71">제어 신호</text>
+      <text class="small" x="184" y="115">입출력</text>
+      <g class="unit" data-unit="메모리"><rect x="240" y="22" width="86" height="66" rx="4"/><text x="283" y="52" text-anchor="middle">메모리</text><text class="small" x="283" y="68" text-anchor="middle">명령어와 데이터</text></g>
+      <g class="unit" data-unit="입출력장치"><rect x="240" y="104" width="86" height="32" rx="4"/><text x="283" y="124" text-anchor="middle">입출력장치</text></g>
+    </svg>
+    <div class="phases" id="phases">
+      <span class="phase" data-phase="fetch">① 가져오기</span>
+      <span class="phase" data-phase="decode">② 해석</span>
+      <span class="phase" data-phase="execute">③ 실행</span>
+    </div>
+    <dl class="regs">
+      <dt>PC</dt><dd class="mono big" id="r-pc"></dd>
+      <dt>IR</dt><dd class="mono" id="r-ir"></dd>
+      <dt>ACC</dt><dd class="mono big" id="r-acc"></dd>
+      <dt>실행한 명령어</dt><dd class="mono" id="r-steps"></dd>
+      <dt>버스</dt><dd id="r-bus"></dd>
+      <dt>메모리 접근</dt><dd id="r-mem"></dd>
+    </dl>
+    <p class="note" id="explain" aria-live="polite"></p>
+    <p class="out">출력: <span class="vals mono" id="out"></span></p>
+    <details>
+      <summary>명령어 표</summary>
+      <table>
+        <thead><tr><th>값</th><th>명령어</th><th>하는 일</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">0_</td><td class="mono">HALT</td><td>멈춘다</td></tr>
+          <tr><td class="mono">1a</td><td class="mono">LOAD a</td><td>ACC ← a번 칸</td></tr>
+          <tr><td class="mono">2a</td><td class="mono">STORE a</td><td>a번 칸 ← ACC</td></tr>
+          <tr><td class="mono">3a</td><td class="mono">ADD a</td><td>ACC ← ACC + a번 칸</td></tr>
+          <tr><td class="mono">4a</td><td class="mono">SUB a</td><td>ACC ← ACC − a번 칸</td></tr>
+          <tr><td class="mono">5a</td><td class="mono">JMP a</td><td>PC ← a</td></tr>
+          <tr><td class="mono">6a</td><td class="mono">JZ a</td><td>ACC가 0이면 PC ← a</td></tr>
+          <tr><td class="mono">7_</td><td class="mono">OUT</td><td>ACC를 출력한다</td></tr>
+          <tr><td class="mono">8_~F_</td><td>(없음)</td><td>알 수 없는 명령어: CPU가 멈춘다</td></tr>
+        </tbody>
+      </table>
+    </details>
+  </section>
+</div>
+<p class="hint">값은 0~255이고, 위 4비트가 명령, 아래 4비트가 주소(a)다. 칸을 누르고 LOAD 13처럼 명령어나 42 같은 숫자를 넣을 수 있다. 덧셈과 뺄셈은 8비트라 255를 넘거나 0보다 작아지면 한 바퀴 돈다.</p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ToyLogic = (() => {
+  const SIZE = 16;
+  const LIMIT = 10000; // 끝까지 실행할 때 최대 명령어 수 (무한 반복 대비)
+  const OPS = ["HALT", "LOAD", "STORE", "ADD", "SUB", "JMP", "JZ", "OUT"];
+  const HAS_ADDR = { LOAD: 1, STORE: 1, ADD: 1, SUB: 1, JMP: 1, JZ: 1 };
+
+  const hex = v => v.toString(16).toUpperCase().padStart(2, "0");
+
+  function decode(byte) {
+    const op = byte >> 4, addr = byte & 15;
+    const name = OPS[op] ?? null;
+    return { op, addr, name, valid: name !== null };
+  }
+
+  // 명령어로 읽었을 때의 모습: "LOAD 13", "OUT", 알 수 없으면 null
+  function disasm(byte) {
+    const d = decode(byte);
+    if (!d.valid) return null;
+    return HAS_ADDR[d.name] ? `${d.name} ${d.addr}` : d.name;
+  }
+
+  // "LOAD 13", "out", "42", "0x2A" 를 0~255 값으로. 알 수 없으면 null
+  function parseCell(text) {
+    const t = String(text).trim().toUpperCase().replace(/\s+/g, " ");
+    if (!t) return null;
+    let m = /^0X([0-9A-F]{1,2})$/.exec(t);
+    if (m) return parseInt(m[1], 16);
+    if (/^\d{1,3}$/.test(t)) { const v = Number(t); return v <= 255 ? v : null; }
+    m = /^([A-Z]+)(?: (\d{1,2}))?$/.exec(t);
+    if (!m) return null;
+    const op = OPS.indexOf(m[1]);
+    if (op < 0) return null;
+    if (HAS_ADDR[m[1]]) {
+      if (m[2] === undefined) return null;
+      const a = Number(m[2]);
+      return a < SIZE ? (op << 4) | a : null;
+    }
+    return m[2] === undefined ? op << 4 : null;
+  }
+
+  function program(cells) {
+    const mem = new Array(SIZE).fill(0);
+    for (const [addr, cell] of Object.entries(cells)) {
+      const v = typeof cell === "number" ? cell : parseCell(cell);
+      if (v === null) throw new Error(`잘못된 칸 ${addr}: ${cell}`);
+      mem[Number(addr)] = v;
+    }
+    return mem;
+  }
+
+  const PRESETS = {
+    add: program({ 0: "LOAD 13", 1: "ADD 14", 2: "STORE 15", 3: "OUT", 4: "HALT", 13: 5, 14: 7, 15: 0 }),
+    countdown: program({ 0: "LOAD 13", 1: "JZ 5", 2: "OUT", 3: "SUB 14", 4: "JMP 1", 5: "HALT", 13: 3, 14: 1 }),
+    nohalt: program({ 0: "LOAD 3", 1: "ADD 4", 2: "OUT", 3: 52, 4: 112 }),
+    selfmod: program({ 0: "LOAD 14", 1: "STORE 3", 2: "LOAD 15", 3: "HALT", 4: "HALT", 14: 112, 15: 42 }),
+    empty: program({}),
+  };
+
+  function machine(mem) {
+    return { mem: mem.slice(), pc: 0, ir: null, acc: 0, phase: "fetch", decoded: null, halted: false, error: null, out: [], steps: 0, reads: 0, writes: 0 };
+  }
+
+  // 한 단계(가져오기 → 해석 → 실행 중 하나)를 진행한다. 새 상태와 무슨 일이 있었는지를 돌려준다.
+  // event.units: 이 단계에서 쓰인 부품, event.bus: 메모리 버스 사용 { addr, data, kind: "read" | "write" }
+  function tick(s) {
+    if (s.halted) return { state: s, event: null };
+    const n = { ...s, mem: s.mem.slice(), out: s.out.slice() };
+    let event;
+    if (s.phase === "fetch") {
+      n.ir = s.mem[s.pc];
+      n.pc = (s.pc + 1) % SIZE;
+      n.decoded = null;
+      n.phase = "decode";
+      n.reads = s.reads + 1;
+      event = { phase: "fetch", from: s.pc, value: n.ir, pc: n.pc, units: ["PC", "메모리", "IR"], bus: { addr: s.pc, data: n.ir, kind: "read" } };
+    } else if (s.phase === "decode") {
+      const d = decode(s.ir);
+      n.decoded = d;
+      if (!d.valid) {
+        n.halted = true;
+        n.error = `알 수 없는 명령어 ${hex(s.ir)}`;
+        event = { phase: "decode", decoded: d, value: s.ir, error: true, units: ["IR", "제어장치"] };
+      } else {
+        n.phase = "execute";
+        event = { phase: "decode", decoded: d, value: s.ir, units: ["IR", "제어장치"] };
+      }
+    } else {
+      const { name, addr } = s.decoded;
+      event = { phase: "execute", name, addr, before: s.acc, units: ["제어장치"] };
+      const readMem = () => { n.reads = s.reads + 1; event.read = addr; event.bus = { addr, data: s.mem[addr], kind: "read" }; };
+      if (name === "HALT") n.halted = true;
+      else if (name === "LOAD") { n.acc = s.mem[addr]; readMem(); event.units = ["메모리", "ACC"]; }
+      else if (name === "STORE") {
+        n.mem[addr] = s.acc; n.writes = s.writes + 1; event.write = addr;
+        event.bus = { addr, data: s.acc, kind: "write" }; event.units = ["ACC", "메모리"];
+      }
+      else if (name === "ADD") { n.acc = (s.acc + s.mem[addr]) % 256; readMem(); event.operand = s.mem[addr]; event.wrapped = s.acc + s.mem[addr] > 255; event.units = ["메모리", "ALU", "ACC"]; }
+      else if (name === "SUB") { n.acc = (s.acc - s.mem[addr] + 256) % 256; readMem(); event.operand = s.mem[addr]; event.wrapped = s.acc - s.mem[addr] < 0; event.units = ["메모리", "ALU", "ACC"]; }
+      else if (name === "JMP") { n.pc = addr; event.units = ["제어장치", "PC"]; }
+      else if (name === "JZ") { event.jumped = s.acc === 0; if (s.acc === 0) n.pc = addr; event.units = event.jumped ? ["ACC", "제어장치", "PC"] : ["ACC", "제어장치"]; }
+      else if (name === "OUT") { n.out.push(s.acc); event.io = s.acc; event.units = ["ACC", "입출력장치"]; }
+      event.acc = n.acc;
+      event.pc = n.pc;
+      n.steps = s.steps + 1;
+      n.phase = "fetch";
+    }
+    return { state: n, event };
+  }
+
+  // 명령어 하나(남은 단계를 모두) 진행한다
+  function step(s) {
+    let r = { state: s, event: null };
+    do { r = tick(r.state); } while (!r.state.halted && r.state.phase !== "fetch");
+    return r;
+  }
+
+  // 멈출 때까지 실행한다. 명령어를 limit개 실행해도 안 멈추면 그만둔다.
+  function run(s, limit = LIMIT) {
+    let r = { state: s, event: null };
+    while (!r.state.halted && r.state.steps < limit) r = step(r.state);
+    return { state: r.state, event: r.event, limited: !r.state.halted };
+  }
+
+  return { SIZE, LIMIT, OPS, hex, decode, disasm, parseCell, program, PRESETS, machine, tick, step, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ToyLogic;
+  const $ = id => document.getElementById(id);
+  const PHASE_NAME = { fetch: "가져오기", decode: "해석", execute: "실행" };
+  let program = L.PRESETS.add.slice();
+  let s = L.machine(program);
+  let last = null;      // 마지막 단계에서 일어난 일
+  let selected = 0;
+  let message = "";
+  let warn = false;
+
+  function describe(e) {
+    if (!e) return "";
+    if (e.phase === "fetch") return `① 가져오기: IR ← ${e.from}번 칸의 값 ${L.hex(e.value)}, PC ← ${e.pc} (다음 칸)`;
+    if (e.phase === "decode") {
+      const d = e.decoded;
+      if (!d.valid) return `② 해석: ${L.hex(e.value)}의 위 4비트(${d.op})에 해당하는 명령이 없다. 알 수 없는 명령어라 CPU가 멈춘다.`;
+      return `② 해석: ${L.hex(e.value)} = 위 4비트 ${d.op}(${d.name}) + 아래 4비트 ${d.addr} → ${L.disasm(e.value)}`;
+    }
+    const a = e.addr;
+    switch (e.name) {
+      case "HALT": return "③ 실행: HALT. CPU가 멈춘다.";
+      case "LOAD": return `③ 실행: ACC ← ${a}번 칸. ACC = ${e.acc}`;
+      case "STORE": return `③ 실행: ${a}번 칸 ← ACC. ${a}번 칸 = ${e.acc}`;
+      case "ADD": return `③ 실행: ACC ← ${e.before} + ${e.operand} = ${e.acc}` + (e.wrapped ? " (255를 넘어 256을 뺐다)" : "");
+      case "SUB": return `③ 실행: ACC ← ${e.before} − ${e.operand} = ${e.acc}` + (e.wrapped ? " (0보다 작아 256을 더했다)" : "");
+      case "JMP": return `③ 실행: PC ← ${a}. 다음에는 ${a}번 칸을 가져온다.`;
+      case "JZ": return e.jumped ? `③ 실행: ACC가 0이라 PC ← ${a}.` : "③ 실행: ACC가 0이 아니라 건너뛰지 않는다.";
+      case "OUT": return `③ 실행: 출력 ← ACC (${e.acc})`;
+    }
+    return "";
+  }
+
+  function render() {
+    const tbody = $("mem");
+    tbody.replaceChildren();
+    for (let i = 0; i < L.SIZE; i++) {
+      const v = s.mem[i];
+      const tr = document.createElement("tr");
+      tr.tabIndex = 0;
+      tr.dataset.addr = i;
+      const asm = L.disasm(v);
+      tr.innerHTML = `<td class="addr mono">${i}</td><td class="hex mono">${L.hex(v)}</td><td class="dec mono">${v}</td>` +
+        `<td class="asm mono${asm ? "" : " unknown"}">${asm ?? "알 수 없음"}</td>`;
+      if (i === s.pc && !s.halted) tr.classList.add("pc");
+      if (last && ((last.phase === "fetch" && last.from === i) || last.read === i)) tr.classList.add("read");
+      if (last && last.write === i) tr.classList.add("write");
+      if (i === selected) tr.classList.add("sel");
+      tr.setAttribute("aria-label", `${i}번 칸, 값 ${v}, 명령어로 읽으면 ${asm ?? "알 수 없음"}` + (i === s.pc ? ", PC가 가리키는 칸" : ""));
+      tbody.append(tr);
+    }
+
+    $("r-pc").textContent = String(s.pc);
+    if (s.ir === null) $("r-ir").textContent = "—";
+    else $("r-ir").textContent = s.decoded ? `${L.hex(s.ir)} = ${L.disasm(s.ir) ?? "알 수 없음"}` : `${L.hex(s.ir)} (아직 해석 전)`;
+    $("r-acc").textContent = `${s.acc}  (${L.hex(s.acc)})`;
+    $("r-steps").textContent = String(s.steps);
+    $("out").textContent = s.out.length ? s.out.join(", ") : "—";
+
+    // 부품 그림과 버스
+    const units = new Set(last?.units ?? []);
+    document.querySelectorAll(".diagram .unit").forEach(g => g.classList.toggle("on", units.has(g.dataset.unit)));
+    const kind = last?.bus?.kind ?? "";
+    for (const id of ["bus-addr", "bus-data", "bus-ctrl"]) {
+      $(id).classList.toggle("read", kind === "read");
+      $(id).classList.toggle("write", kind === "write");
+    }
+    $("bus-io").classList.toggle("write", last?.io !== undefined);
+    if (last?.bus) {
+      const b = last.bus;
+      $("r-bus").textContent = `주소 ${b.addr} · 데이터 ${L.hex(b.data)} · 메모리 ${b.kind === "read" ? "읽기" : "쓰기"}`;
+    } else if (last?.io !== undefined) {
+      $("r-bus").textContent = `입출력장치로 ${last.io} 보내기`;
+    } else {
+      $("r-bus").textContent = last ? "쓰지 않음 (CPU 안에서만 처리)" : "—";
+    }
+    $("r-mem").textContent = `읽기 ${s.reads}번 · 쓰기 ${s.writes}번`;
+
+    const order = ["fetch", "decode", "execute"];
+    const at = order.indexOf(s.phase);
+    document.querySelectorAll(".phase").forEach((el, i) => {
+      el.classList.toggle("next", !s.halted && i === at);
+      el.classList.toggle("done", !s.halted && i < at);
+    });
+
+    $("tick").textContent = s.halted ? "멈춤" : `한 단계: ${PHASE_NAME[s.phase]}`;
+    for (const id of ["tick", "step", "run"]) $(id).disabled = s.halted;
+    $("sel-label").textContent = `${selected}번 칸`;
+
+    const note = $("explain");
+    note.textContent = message || "‘한 단계’를 누르면 가져오기 → 해석 → 실행을 하나씩 진행한다.";
+    note.classList.toggle("warn", warn);
+  }
+
+  function apply(r, extra = "") {
+    s = r.state;
+    last = r.event;
+    message = describe(r.event) + extra;
+    warn = !!s.error;
+    render();
+  }
+
+  function load(mem) {
+    program = mem.slice();
+    s = L.machine(program);
+    last = null; message = ""; warn = false;
+    render();
+  }
+
+  function putCell() {
+    const v = L.parseCell($("cell-in").value);
+    if (v === null) { $("cell-err").textContent = "LOAD 13, OUT, 0~255 숫자, 0x2A 형식으로 넣는다."; return; }
+    $("cell-err").textContent = "";
+    program[selected] = v;
+    s.mem[selected] = v;
+    message = `${selected}번 칸 ← ${L.hex(v)} (${L.disasm(v) ?? "명령어로는 알 수 없음"})`;
+    // 멈춘 뒤에 고쳤으면 고친 프로그램을 바로 다시 실행할 수 있게 처음으로 되돌린다
+    if (s.halted) {
+      s = L.machine(program);
+      last = null;
+      message += ". 멈춘 상태라 처음으로 되돌렸다.";
+    }
+    warn = false;
+    selected = (selected + 1) % L.SIZE;
+    $("cell-in").value = "";
+    render();
+    $("cell-in").focus();
+  }
+
+  $("tick").addEventListener("click", () => apply(L.tick(s)));
+  $("step").addEventListener("click", () => apply(L.step(s)));
+  $("run").addEventListener("click", () => {
+    const r = L.run(s);
+    apply(r);
+    if (r.limited) {
+      message = `명령어를 ${L.LIMIT}개 실행해도 멈추지 않아 중단했다. 끝나지 않는 반복일 수 있다.`;
+      warn = true;
+    } else if (!s.error) {
+      message = `끝까지 실행했다: 명령어 ${s.steps}개를 실행하고 HALT에서 멈췄다.`;
+    }
+    render();
+  });
+  $("reset").addEventListener("click", () => load(program));
+  document.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-preset]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    selected = 0;
+    load(L.PRESETS[b.dataset.preset]);
+  }));
+  $("mem").addEventListener("click", e => {
+    const tr = e.target.closest("tr");
+    if (!tr) return;
+    selected = Number(tr.dataset.addr);
+    $("cell-in").value = String(s.mem[selected]);
+    render();
+    $("cell-in").focus();
+    $("cell-in").select();
+  });
+  $("mem").addEventListener("keydown", e => {
+    if (e.key === "Enter" && e.target.closest("tr")) e.target.closest("tr").click();
+  });
+  $("cell-apply").addEventListener("click", putCell);
+  $("cell-in").addEventListener("keydown", e => { if (e.key === "Enter") putCell(); });
+
+  // 페이지가 ?preset=nohalt 처럼 처음 보여 줄 예제를 정할 수 있다
+  const first = new URLSearchParams(location.search).get("preset");
+  const start = first && L.PRESETS[first] ? first : "add";
+  document.querySelector(`[data-preset="${start}"]`).setAttribute("aria-pressed", "true");
+  if (start !== "add") load(L.PRESETS[start]);
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>열쇠 정하기와 중간자</title>
+<meta name="description" content="브라우저와 서버의 비밀 수를 바꿔 가며 작은 수로 열쇠를 정해 보고, 도청자가 열쇠를 찾는 일과 중간자가 끼어드는 일, 인증서 서명이 그것을 막는 모습을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 7.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type="range"] { width: 180px; accent-color: var(--accent); }
+  label.chk { font-size: 14px; display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+  .cols { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 8px; margin-top: 4px; }
+  @media (max-width: 560px) { .cols { grid-template-columns: 1fr; } }
+  .box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--soft); min-width: 0; font-size: 13.5px; }
+  .box h2 { font-size: 13px; margin: 0 0 6px; }
+  .box.side { border-color: var(--accent); background: var(--accent-bg); }
+  .box.wire h2 { color: var(--muted); }
+  .box.mal { border-color: var(--write); background: var(--write-bg); }
+  .kv { display: flex; justify-content: space-between; gap: 6px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+  .kv:last-child { border-bottom: 0; }
+  .kv .k { color: var(--muted); }
+  .kv .v { font-weight: 700; text-align: right; }
+  .kv .v.plain { font-family: inherit; font-weight: 400; }
+  .secret { color: var(--write); }
+  .key { color: var(--good); }
+  .bad { color: var(--write); }
+  .verdict { margin-top: 8px; padding: 6px 10px; border-radius: 6px; font-size: 14px; font-weight: 700; }
+  .verdict.ok { background: var(--good-bg); color: var(--good); }
+  .verdict.no { background: var(--write-bg); color: var(--write); }
+  .eve { margin-top: 8px; font-size: 14px; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>열쇠 정하기와 중간자</h1>
+<p class="lead">공개된 수 <span class="mono">p = 467</span>, <span class="mono">g = 2</span>. 브라우저와 서버가 저마다 비밀 수를 고르고, <span class="mono">g</span>를 그 수만큼 거듭제곱해 <span class="mono">p</span>로 나눈 나머지만 주고받는다. 실제 TLS의 X25519는 수가 2<sup>255</sup> 가까이로 크다.</p>
+
+<div class="row">
+  <span class="label">브라우저의 비밀 a</span>
+  <input type="range" id="a" min="2" max="465" value="97" aria-label="브라우저의 비밀 수">
+  <span class="mono secret" id="av"></span>
+</div>
+<div class="row">
+  <span class="label">서버의 비밀 b</span>
+  <input type="range" id="b" min="2" max="465" value="158" aria-label="서버의 비밀 수">
+  <span class="mono secret" id="bv"></span>
+  <button class="btn" id="rand">무작위로</button>
+</div>
+<div class="row" role="group" aria-label="중간자">
+  <span class="label">가운데에</span>
+  <button class="btn" data-mitm="0">아무도 없다</button>
+  <button class="btn" data-mitm="1">중간자가 끼어든다</button>
+  <label class="chk"><input type="checkbox" id="sign"> 서버가 인증서의 개인 열쇠로 자기 조각에 서명</label>
+</div>
+
+<div class="cols">
+  <div class="box side" id="browser"></div>
+  <div class="box wire" id="wire"></div>
+  <div class="box side" id="server"></div>
+</div>
+<div class="verdict" id="verdict"></div>
+<div class="row eve"><button class="btn" id="eve">도청자가 1부터 하나씩 해 본다</button><span id="everes"></span></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const DhLogic = (() => {
+  const P = 467, G = 2, M_SECRET = 300;   // 공개된 수와, 중간자가 고른 비밀 수
+  // g^e mod p (곱할 때마다 나머지를 구해 수가 커지지 않게 한다)
+  const pow = (g, e, p) => { let r = 1, x = g % p; while (e > 0) { if (e & 1) r = (r * x) % p; x = (x * x) % p; e >>= 1; } return r; };
+  function exchange(a, b, mitm) {
+    const A = pow(G, a, P), B = pow(G, b, P);
+    if (!mitm) return { A, B, toServer: A, toBrowser: B, browserKey: pow(B, a, P), serverKey: pow(A, b, P) };
+    const M = pow(G, M_SECRET, P);        // 중간자는 양쪽에 자기 조각 M을 대신 보낸다
+    return { A, B, M, toServer: M, toBrowser: M, browserKey: pow(M, a, P), serverKey: pow(M, b, P),
+      malWithBrowser: pow(A, M_SECRET, P), malWithServer: pow(B, M_SECRET, P) };
+  }
+  // 도청자는 p, g, A, B를 안다. g^x = A인 x를 1부터 찾아 열쇠를 계산한다
+  function eve(A, B) {
+    for (let x = 1; x < P; x++) if (pow(G, x, P) === A) return { x, tries: x, key: pow(B, x, P) };
+    return null;
+  }
+  // 서명을 확인하면, 서버가 서명하지 않은 조각(중간자의 M)은 걸러진다
+  const verified = (mitm, signed) => !(mitm && signed);
+  return { P, G, M_SECRET, pow, exchange, eve, verified };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = DhLogic;
+  const $ = id => document.getElementById(id);
+  // 조사: 수를 읽은 끝소리로 고른다 (2 이, 4 사, 5 오, 9 구만 받침이 없다)
+  const has = n => !"2459".includes(String(n).slice(-1));
+  const eul = n => (has(n) ? "을" : "를"), wa = n => (has(n) ? "과" : "와"), iga = n => (has(n) ? "이" : "가");
+  const kv = (k, v, cls = "") => `<div class="kv"><span class="k">${k}</span><span class="v mono ${cls}">${v}</span></div>`;
+  let mitm = false, eveShown = false;
+  function render() {
+    const a = Number($("a").value), b = Number($("b").value), signed = $("sign").checked;
+    $("av").textContent = a; $("bv").textContent = b;
+    const r = L.exchange(a, b, mitm), ok = L.verified(mitm, signed);
+    $("browser").innerHTML = `<h2>브라우저</h2>${kv("비밀 a", a, "secret")}${kv("보내는 조각 2^a mod 467", r.A)}${kv("받은 조각", r.toBrowser)}${kv("정한 열쇠", ok ? r.browserKey : "끊음", ok ? "key" : "bad")}`;
+    $("server").innerHTML = `<h2>서버</h2>${kv("비밀 b", b, "secret")}${kv("보내는 조각 2^b mod 467", r.B)}${kv("받은 조각", r.toServer)}${kv("정한 열쇠", r.serverKey, mitm ? "bad" : "key")}`;
+    $("wire").className = "box wire" + (mitm ? " mal" : "");
+    $("wire").innerHTML = mitm
+      ? `<h2 class="bad">가운데: 중간자 (비밀 ${L.M_SECRET})</h2>${kv("브라우저 → 서버", `${r.A} → 바꿔서 ${r.M}`)}${kv("서버 → 브라우저", `${r.B} → 바꿔서 ${r.M}`)}${kv("브라우저와의 열쇠", r.malWithBrowser, "bad")}${kv("서버와의 열쇠", r.malWithServer, "bad")}`
+      : `<h2>선 위 (도청자도 본다)</h2>${kv("공개된 수", "p = 467, g = 2")}${kv("브라우저 → 서버", r.A)}${kv("서버 → 브라우저", r.B)}${kv("비밀 a, b", "선에 나오지 않는다", "plain")}`;
+    let verdict, cls;
+    if (!mitm) { verdict = r.browserKey === r.serverKey ? `두 쪽이 같은 열쇠 ${r.browserKey}${eul(r.browserKey)} 정했다. 열쇠 자체는 한 번도 선에 나가지 않았다.` : "열쇠가 다르다"; cls = "ok"; }
+    else if (!ok) { verdict = `브라우저가 서명을 확인하니, 받은 조각 ${r.M}에 맞는 서버의 서명이 없었다. 연결을 끊는다.`; cls = "ok"; }
+    else { verdict = `브라우저는 열쇠 ${r.browserKey}${eul(r.browserKey)}, 서버는 열쇠 ${r.serverKey}${eul(r.serverKey)} 정했지만, 둘 다 상대가 아니라 중간자와 정한 것이다. 중간자는 두 열쇠를 다 알아 가운데서 풀어 읽고 다시 잠가 넘긴다. 양쪽은 눈치채지 못한다.`; cls = "no"; }
+    $("verdict").className = `verdict ${cls}`;
+    $("verdict").textContent = verdict;
+    $("eve").disabled = mitm;
+    if (eveShown && !mitm) {
+      const e = L.eve(r.A, r.B);
+      $("everes").innerHTML = `${e.tries}번째에 <span class="mono">2^${e.x} mod 467 = ${r.A}</span>${eul(r.A)} 찾아, 열쇠 <b class="mono bad">${e.key}</b>${eul(e.key)} 알아냈다.`;
+    } else $("everes").textContent = "";
+    document.querySelectorAll("[data-mitm]").forEach(btn => btn.setAttribute("aria-pressed", String((btn.dataset.mitm === "1") === mitm)));
+    $("note").textContent = mitm
+      ? (signed ? "서버는 인증서의 개인 열쇠로 자기 조각에 서명하고, 브라우저는 인증서 안의 공개 열쇠로 그 서명을 확인한다. 중간자는 서버의 개인 열쇠가 없어 자기 조각에 서명을 꾸밀 수 없다. 그래서 TLS는 인증서가 꼭 필요하다."
+        : "열쇠 정하기만으로는 상대가 진짜 서버인지 모른다. 중간자가 양쪽과 따로 열쇠를 정하면 모든 내용을 읽고 바꿀 수 있다. 서명 상자를 켜 본다.")
+      : (eveShown ? "467은 작아서 많아야 465번만 해 보면 된다. X25519의 수는 2^255 가까이라, 1초에 1조 번씩 해 봐도 우주의 나이로도 모자란다. 비밀 수를 바꿔 다시 해 본다."
+        : "브라우저와 서버는 상대의 조각에 자기 비밀만큼 거듭제곱해 같은 열쇠를 얻는다. 선 위에는 조각만 지나간다. 도청자가 열쇠를 찾을 수 있을지 눌러 본다.");
+  }
+  $("a").addEventListener("input", render);
+  $("b").addEventListener("input", render);
+  $("sign").addEventListener("change", render);
+  $("rand").addEventListener("click", () => {
+    $("a").value = 2 + Math.floor(Math.random() * 464);
+    $("b").value = 2 + Math.floor(Math.random() * 464);
+    render();
+  });
+  document.querySelectorAll("[data-mitm]").forEach(btn => btn.addEventListener("click", () => { mitm = btn.dataset.mitm === "1"; render(); }));
+  $("eve").addEventListener("click", () => { eveShown = true; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

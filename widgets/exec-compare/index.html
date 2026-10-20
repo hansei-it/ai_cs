@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>반복 횟수와 실행 시간</title>
+<meta name="description" content="반복 횟수를 고르고 ‘빌드 시간 포함’을 켜고 끄며, C·Python·C# 중 어느 쪽이 먼저 끝나는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --build: #b8bfca;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --build: #545b68;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+  label.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+  .bars { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; margin-top: 12px; max-width: 640px; }
+  .bars .name { font-weight: 700; white-space: nowrap; }
+  .bars .name small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .track { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .bar { display: flex; height: 26px; border-radius: 4px; overflow: hidden; flex: none; min-width: 3px; transition: width .25s; }
+  .bar .b { background: var(--build); }
+  .bar .r { background: var(--accent); }
+  .val { font-size: 14px; white-space: nowrap; }
+  .val.first { color: var(--accent); font-weight: 700; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .legend .l-run::before { background: var(--accent); }
+  .legend .l-build::before { background: var(--build); }
+  .note { margin: 12px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  @media (max-width: 480px) {
+    body { padding: 10px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+<h1>반복 횟수와 실행 시간</h1>
+<p class="lead">0부터 N−1까지 i % 7을 더하는 같은 프로그램을 세 언어로 실행해, 시작부터 끝까지 걸린 시간이다 (이 PC에서 7번 잰 중앙값, Python 1억 번은 3번).</p>
+
+<div class="row" role="group" aria-label="반복 횟수">
+  <span class="label">반복 N</span>
+  <button class="btn" data-k="0">1번</button>
+  <button class="btn" data-k="1">1만 번</button>
+  <button class="btn" data-k="2">100만 번</button>
+  <button class="btn" data-k="3">1000만 번</button>
+  <button class="btn" data-k="4">1억 번</button>
+</div>
+<div class="row">
+  <span class="label">빌드</span>
+  <label class="check"><input type="checkbox" id="build"> 빌드 시간 포함 (소스를 고친 뒤 처음 실행)</label>
+</div>
+
+<div class="bars" id="bars" aria-live="polite"></div>
+<div class="legend"><span class="l-run">실행 (시작부터 끝까지)</span><span class="l-build">빌드</span></div>
+<p class="note" id="note"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ExecLogic = (() => {
+  // 이 PC(Core i9-14900KF)에서 잰 값, 단위 ms. 프로그램마다 7번 실행한 중앙값(Python 1억 번은 3번).
+  // C: VS 2026 cl /O2, Python 3.14, C#: .NET 10 Release. 빌드는 소스를 고친 뒤 cl / dotnet build.
+  const LANGS = ["C", "Python", "C#"];
+  const HOW = { C: "네이티브 컴파일", Python: "인터프리터", "C#": "가상 머신 + JIT" };
+  const NS = [1, 1e4, 1e6, 1e7, 1e8];
+  const RUN = { C: [4, 4, 5, 11, 67], Python: [18, 19, 58, 430, 3900], "C#": [31, 35, 35, 42, 107] };
+  const BUILD = { C: 94, Python: 0, "C#": 910 };
+
+  const total = (lang, k, withBuild) => RUN[lang][k] + (withBuild ? BUILD[lang] : 0);
+
+  // 먼저 끝나는 순서
+  const order = (k, withBuild) => LANGS.slice().sort((a, b) => total(a, k, withBuild) - total(b, k, withBuild));
+
+  // 몇 배인지: 1자리로 반올림 (10배 이상은 정수)
+  function times(slow, fast) {
+    const r = slow / fast;
+    return r >= 10 ? String(Math.round(r)) : String(Math.round(r * 10) / 10);
+  }
+
+  // 사람이 읽기 좋은 시간
+  const ms = v => (v >= 1000 ? `${(v / 1000).toFixed(1)}초` : `${v}ms`);
+
+  // 조사: 씨가, 파이썬이, 씨샵이
+  const GA = { C: "C가", Python: "Python이", "C#": "C#이" };
+  const NEUN = { C: "C는", Python: "Python은", "C#": "C#은" };
+
+  return { LANGS, HOW, NS, RUN, BUILD, total, order, times, ms, GA, NEUN };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ExecLogic;
+  const $ = id => document.getElementById(id);
+  let k = 2;
+  const NAMES = ["1번", "1만 번", "100만 번", "1000만 번", "1억 번"];
+
+  // 막대 영역 폭을 재서 가장 긴 막대가 그 폭의 대부분을 쓰게 한다
+  const rows = {};
+  for (const lang of L.LANGS) {
+    const name = document.createElement("div");
+    name.className = "name";
+    name.innerHTML = `${lang}<small>${L.HOW[lang]}</small>`;
+    const track = document.createElement("div");
+    track.className = "track";
+    track.innerHTML = `<div class="bar"><div class="b"></div><div class="r"></div></div><span class="val mono"></span>`;
+    $("bars").append(name, track);
+    rows[lang] = track;
+  }
+
+  function render() {
+    const withBuild = $("build").checked;
+    const max = Math.max(...L.LANGS.map(l => L.total(l, k, withBuild)));
+    const order = L.order(k, withBuild);
+    // 글자를 먼저 넣고, 가장 긴 글자 폭을 뺀 나머지를 막대에 쓴다 (좁은 화면에서 글자가 잘리지 않게)
+    for (const lang of L.LANGS) {
+      const build = withBuild ? L.BUILD[lang] : 0, sum = L.RUN[lang][k] + build;
+      const val = rows[lang].querySelector(".val");
+      val.textContent = build ? `${L.ms(sum)} (빌드 ${L.ms(build)})` : L.ms(sum);
+      val.classList.toggle("first", lang === order[0]);
+    }
+    const label = Math.max(...L.LANGS.map(l => rows[l].querySelector(".val").getBoundingClientRect().width));
+    const width = Math.max(40, rows.C.getBoundingClientRect().width - label - 12);
+    for (const lang of L.LANGS) {
+      const run = L.RUN[lang][k], build = withBuild ? L.BUILD[lang] : 0, sum = run + build;
+      const bar = rows[lang].querySelector(".bar");
+      bar.style.width = `${Math.max(3, (sum / max) * width)}px`;
+      bar.querySelector(".b").style.width = `${(build / sum) * 100}%`;
+      bar.querySelector(".r").style.width = `${(run / sum) * 100}%`;
+    }
+    const first = order[0], last = order[2];
+    $("note").textContent = `반복 ${NAMES[k]}: ${L.GA[first]} 가장 먼저 끝나고, ${L.NEUN[last]} ${first}의 약 ${L.times(L.total(last, k, withBuild), L.total(first, k, withBuild))}배 걸린다.` +
+      (k <= 1 && !withBuild ? " 반복이 짧으면 계산보다 프로그램을 시작하는 시간이 대부분이다." : "") +
+      (k >= 3 && !withBuild ? " 반복이 길면 반복 한 번에 드는 시간이 차이를 만든다." : "") +
+      (withBuild && k <= 2 ? " 한 번 돌리고 마는 짧은 일이면 빌드가 없는 쪽이 유리하다." : "");
+    document.querySelectorAll("[data-k]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.k) === k)));
+  }
+
+  document.querySelectorAll("[data-k]").forEach(b => b.addEventListener("click", () => { k = Number(b.dataset.k); render(); }));
+  $("build").addEventListener("change", render);
+  new ResizeObserver(render).observe($("bars"));
+  render();
+})();
+</script>
+</body>
+</html>

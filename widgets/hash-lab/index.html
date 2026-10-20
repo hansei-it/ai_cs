@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>해시 테이블 실험실</title>
+<meta name="description" content="키 단추를 눌러 해시 테이블에 넣고 찾아보며, 해시값이 칸 번호가 되는 계산과 충돌이 났을 때 체이닝과 선형 탐사가 각각 어떻게 처리하는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3044;
+    --write: #ffa94d;
+    --write-bg: #3d2c18;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.used { opacity: .45; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=text] { font: inherit; font-size: 14px; width: 9em; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .table { margin-top: 10px; display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; }
+  .idx { font-size: 13px; color: var(--muted); text-align: right; }
+  .slot { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-height: 30px; border: 1px dashed var(--line); border-radius: 4px; padding: 2px 4px; }
+  .slot.on { border-style: solid; }
+  .slot.path { border-color: var(--read); background: var(--read-bg); }
+  .slot.hit { border-color: var(--accent); background: var(--accent-bg); }
+  .key { border: 1px solid var(--line); border-radius: 4px; padding: 0 7px; font-size: 14px; background: var(--soft); }
+  .key.new { border-color: var(--write); background: var(--write-bg); font-weight: 700; }
+  .key.found { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .key.seen { border-color: var(--read); }
+  .arrow { color: var(--muted); font-size: 12px; }
+  .calc { margin-top: 10px; font-size: 14px; }
+  .stats { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .note.bad { border-left-color: var(--write); background: var(--write-bg); }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>해시 테이블 실험실</h1>
+<p class="lead">해시 함수는 <span class="mono">h = h × 31 + 글자 코드</span>를 끝까지 되풀이한다(32비트 부호 없는 정수). 칸 번호는 <span class="mono">h % m</span>이다.</p>
+
+<div class="row" role="group" aria-label="충돌 처리">
+  <span class="label">충돌</span>
+  <button class="btn" data-method="chain">체이닝</button>
+  <button class="btn" data-method="probe">선형 탐사</button>
+  <span class="label" style="margin-left:8px">칸 수</span>
+  <button class="btn mono" data-m="7">m = 7</button>
+  <button class="btn mono" data-m="11">m = 11</button>
+</div>
+<div class="row" id="keys" role="group" aria-label="넣을 키"><span class="label">넣기</span></div>
+<div class="row">
+  <span class="label">직접</span>
+  <input type="text" id="key" maxlength="12" placeholder="영문, 숫자" aria-label="키">
+  <button class="btn" id="ins">넣기</button>
+  <button class="btn" id="find">찾기</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+
+<div class="calc mono" id="calc"></div>
+<div class="table mono" id="table"></div>
+<div class="stats" id="stats"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const HashLogic = (() => {
+  const PRESET = ["kim", "lee", "park", "choi", "jung", "kang", "cho", "yoon"];
+
+  // C의 unsigned int h = h * 31 + c 와 같은 계산 (2^32로 나눈 나머지)
+  function hash(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0;
+    return h;
+  }
+  const valid = s => /^[A-Za-z0-9_]{1,12}$/.test(s);
+
+  const initial = (method, m) => ({ method, m, chains: Array.from({ length: m }, () => []), slots: Array(m).fill(null), n: 0 });
+  const clone = s => ({ ...s, chains: s.chains.map(c => [...c]), slots: [...s.slots] });
+
+  // 넣기. 체이닝은 그 칸 목록의 맨 앞에 넣는다 (C 코드의 push_front와 같다)
+  function insert(state, key) {
+    const s = clone(state), h = hash(key), idx = h % s.m;
+    if (s.method === "chain") {
+      if (s.chains[idx].includes(key)) return { state, ok: false, existed: true, h, idx, path: [idx] };
+      const collided = s.chains[idx].length > 0;
+      s.chains[idx].unshift(key); s.n++;
+      return { state: s, ok: true, h, idx, path: [idx], collided };
+    }
+    const path = [idx];
+    let j = idx;
+    while (s.slots[j] !== null && s.slots[j] !== key) {
+      if (path.length === s.m) return { state, ok: false, full: true, h, idx, path };
+      j = (j + 1) % s.m; path.push(j);
+    }
+    if (s.slots[j] === key) return { state, ok: false, existed: true, h, idx, path };
+    s.slots[j] = key; s.n++;
+    return { state: s, ok: true, h, idx, path, at: j, collided: path.length > 1 };
+  }
+
+  // 찾기. compared = 키를 몇 개와 비교했는가
+  function find(state, key) {
+    const h = hash(key), idx = h % state.m;
+    if (state.method === "chain") {
+      const chain = state.chains[idx], p = chain.indexOf(key);
+      return { found: p >= 0, h, idx, path: [idx], compared: p >= 0 ? p + 1 : chain.length };
+    }
+    const path = [idx];
+    let j = idx, compared = 0;
+    while (state.slots[j] !== null) {
+      compared++;
+      if (state.slots[j] === key) return { found: true, h, idx, path, at: j, compared };
+      if (path.length === state.m) break;
+      j = (j + 1) % state.m; path.push(j);
+    }
+    return { found: false, h, idx, path, compared };
+  }
+
+  return { PRESET, hash, valid, initial, insert, find };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = HashLogic;
+  const $ = id => document.getElementById(id);
+  let method = "chain", m = 7, state = L.initial(method, m), last = null;
+
+  for (const k of L.PRESET) {
+    const b = document.createElement("button");
+    b.className = "btn mono"; b.textContent = k; b.dataset.key = k;
+    b.addEventListener("click", () => doInsert(k));
+    $("keys").append(b);
+  }
+
+  function render(msg, bad) {
+    const t = $("table");
+    t.innerHTML = "";
+    for (let i = 0; i < m; i++) {
+      const idx = document.createElement("div");
+      idx.className = "idx"; idx.textContent = `[${i}]`;
+      const slot = document.createElement("div");
+      const onPath = last && last.path.includes(i);
+      const isHit = last && last.kind === "find" && last.found && (method === "chain" ? last.idx === i : last.at === i);
+      let cls = "slot";
+      let html = "";
+      if (method === "chain") {
+        const chain = state.chains[i];
+        if (chain.length) cls += " on";
+        html = chain.map((k, p) => {
+          let kc = "key";
+          if (last && last.kind === "insert" && last.ok && last.key === k) kc += " new";
+          if (last && last.kind === "find" && last.idx === i && last.key === k && last.found) kc += " found";
+          else if (last && last.kind === "find" && last.idx === i && p < last.compared) kc += " seen";
+          return `<span class="${kc}">${k}</span>`;
+        }).join(`<span class="arrow">→</span>`) + (chain.length ? `<span class="arrow">→ NULL</span>` : "");
+      } else {
+        const k = state.slots[i];
+        if (k !== null) {
+          cls += " on";
+          let kc = "key";
+          if (last && last.kind === "insert" && last.ok && last.at === i) kc += " new";
+          if (isHit) kc += " found";
+          html = `<span class="${kc}">${k}</span>`;
+        }
+      }
+      if (onPath && !isHit) cls += " path";
+      if (isHit) cls += " hit";
+      slot.className = cls; slot.innerHTML = html;
+      t.append(idx, slot);
+    }
+    const a = state.n / m;
+    $("stats").textContent = `들어 있는 키 ${state.n}개 / 칸 ${m}개 → 적재율 α = ${state.n}/${m} = ${a.toFixed(2)}`;
+    $("calc").textContent = last ? `hash("${last.key}") = ${last.h},  ${last.h} % ${m} = ${last.idx}` + (method === "probe" && last.path.length > 1 ? `,  본 칸: ${last.path.join(" → ")}` : "") : "";
+    $("note").textContent = msg;
+    $("note").className = "note" + (bad ? " bad" : "");
+    document.querySelectorAll("[data-key]").forEach(b => b.classList.toggle("used", method === "chain" ? state.chains.some(c => c.includes(b.dataset.key)) : state.slots.includes(b.dataset.key)));
+  }
+
+  function doInsert(key) {
+    if (!L.valid(key)) { last = null; render("키는 영문과 숫자로 12글자까지 쓴다. 한글은 C에서 인코딩에 따라 바이트가 달라져 여기서는 받지 않는다.", true); return; }
+    const r = L.insert(state, key);
+    last = { kind: "insert", key, ...r };
+    if (r.existed) { render(`${key}: 이미 들어 있는 키라 넣지 않았다.`); return; }
+    if (r.full) { render(`${key}: ${m}칸을 모두 봤는데 빈칸이 없다. 선형 탐사는 칸이 다 차면 더 넣을 수 없다. 실제로는 그 전에 표를 키운다.`, true); return; }
+    state = r.state;
+    if (method === "chain") render(`${key} → ${r.idx}번 칸.` + (r.collided ? ` 이미 다른 키가 있는 칸이다(충돌). 체이닝은 그 칸의 연결 리스트 맨 앞에 붙인다.` : " 빈칸이라 그대로 넣었다."));
+    else render(`${key} → ${r.at}번 칸.` + (r.collided ? ` ${r.idx}번 칸이 차 있어서(충돌) 다음 칸으로 ${r.path.length - 1}번 옮겨 갔다. 선형 탐사는 빈칸이 나올 때까지 한 칸씩 간다.` : " 빈칸이라 그대로 넣었다."));
+  }
+
+  function doFind(key) {
+    if (!L.valid(key)) { last = null; render("키는 영문과 숫자로 12글자까지 쓴다.", true); return; }
+    const r = L.find(state, key);
+    last = { kind: "find", key, ...r };
+    if (method === "chain") render(`찾기 ${key}: ${r.idx}번 칸의 목록에서 ` + (r.compared ? `키 ${r.compared}개와 비교해 ` + (r.found ? "찾았다." : "끝까지 없었다. 없는 키다.") : "목록이 비어 있다. 비교할 것도 없이 없는 키다."));
+    else render(`찾기 ${key}: 본 칸 ${r.path.join(" → ")}, ` + (r.compared ? `키 ${r.compared}개와 비교해 ` : "비교한 키 없이 ") + (r.found ? "찾았다." : r.path.length === m && r.compared === m ? "모든 칸을 봤다. 없는 키다." : "빈칸에 닿았다. 빈칸 뒤에는 있을 수 없으니 없는 키다."));
+  }
+
+  function setup(newMethod, newM) {
+    method = newMethod; m = newM; state = L.initial(method, m); last = null;
+    document.querySelectorAll("[data-method]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.method === method)));
+    document.querySelectorAll("[data-m]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.m) === m)));
+    render(method === "chain" ? "키 단추를 차례로 눌러 넣는다. kim, choi, jung은 m = 7에서 모두 1번 칸이다." : "키 단추를 차례로 눌러 넣는다. 충돌이 나면 빈칸을 찾아 오른쪽으로 옮겨 간다(끝 다음은 0번).");
+  }
+
+  document.querySelectorAll("[data-method]").forEach(b => b.addEventListener("click", () => setup(b.dataset.method, m)));
+  document.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => setup(method, Number(b.dataset.m))));
+  $("ins").addEventListener("click", () => doInsert($("key").value.trim()));
+  $("find").addEventListener("click", () => doFind($("key").value.trim()));
+  $("key").addEventListener("keydown", e => { if (e.key === "Enter") doFind($("key").value.trim()); });
+  $("reset").addEventListener("click", () => setup(method, m));
+  const q = new URLSearchParams(location.search).get("method");
+  setup(q === "probe" ? "probe" : "chain", 7);
+})();
+</script>
+</body>
+</html>

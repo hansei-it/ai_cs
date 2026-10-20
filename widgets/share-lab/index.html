@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스레드 둘, 프로세스 둘</title>
+<meta name="description" content="스레드 둘과 프로세스 둘을 바꿔 가며 각자 전역 변수 g와 지역 변수 x를 늘려 보고, 무엇을 함께 쓰고 무엇이 따로인지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .procs { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  .proc { flex: 1 1 260px; border: 2px solid var(--accent); border-radius: 8px; padding: 8px 10px; background: var(--accent-bg); min-width: 0; }
+  .proc h2 { font-size: 13px; margin: 0 0 6px; color: var(--accent); }
+  .cells { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cell { flex: 1 1 110px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--bg); min-width: 0; }
+  .cell .k { font-size: 12px; color: var(--muted); }
+  .cell .v { font-size: 18px; font-weight: 700; }
+  .cell.shared { border-color: var(--write); }
+  .cell.shared .k { color: var(--write); }
+  .cell.stack { border-color: var(--read); }
+  .cell.stack .k { color: var(--read); }
+  .cell.flash { box-shadow: 0 0 0 3px var(--accent); }
+  .tag { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>스레드 둘, 프로세스 둘</h1>
+<p class="lead">일꾼 A와 B가 같은 코드를 돈다. 코드에는 전역 변수 <span class="mono">g</span>와, 함수 안의 지역 변수 <span class="mono">x</span>가 있다. 각자 늘려 보고 상대에게 무엇이 보이는지 본다.</p>
+
+<div class="row" role="group" aria-label="일꾼의 종류">
+  <span class="label">일꾼</span>
+  <button class="btn" data-mode="thread">한 프로세스의 스레드 둘</button>
+  <button class="btn" data-mode="process">프로세스 둘</button>
+</div>
+<div class="row">
+  <span class="label">A가</span>
+  <button class="btn mono" data-act="0 g">g++</button>
+  <button class="btn mono" data-act="0 x">x++</button>
+  <button class="btn" data-act="0 poke" id="poke">포인터로 B의 x를 99로</button>
+</div>
+<div class="row">
+  <span class="label">B가</span>
+  <button class="btn mono" data-act="1 g">g++</button>
+  <button class="btn mono" data-act="1 x">x++</button>
+  <button class="btn" id="reset">처음으로</button>
+</div>
+
+<div class="procs" id="procs" aria-live="polite"></div>
+<p class="note" id="note"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const ShareLogic = (() => {
+  // 스레드 둘: 전역 변수 g는 하나를 함께 쓴다. 프로세스 둘: g도 따로다. 지역 변수 x는 어느 쪽이든 일꾼마다 따로(자기 스택)
+  const initial = mode => ({ mode, g: mode === "thread" ? [0] : [0, 0], x: [0, 0] });
+  const slot = (s, who) => (s.mode === "thread" ? 0 : who);
+  const gOf = (s, who) => s.g[slot(s, who)];
+  // who: 0(A) 또는 1(B). what: "g"(g++), "x"(x++), "poke"(A가 B의 x 주소로 99를 쓴다)
+  function act(s, who, what) {
+    const n = { mode: s.mode, g: [...s.g], x: [...s.x] };
+    if (what === "g") n.g[slot(s, who)] += 1;
+    else if (what === "x") n.x[who] += 1;
+    else if (what === "poke") {
+      if (s.mode !== "thread") return { state: s, ok: false };   // 다른 프로세스의 메모리는 A의 주소 공간에 없다
+      n.x[1 - who] = 99;
+    }
+    return { state: n, ok: true };
+  }
+  return { initial, act, gOf };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = ShareLogic;
+  const $ = id => document.getElementById(id);
+  const NAME = ["A", "B"];
+  // 조사: 숫자를 읽은 끝소리로 고른다 (2 이, 4 사, 5 오, 9 구는 받침 없음)
+  const iga = v => `${v}${"2459".includes(String(v).slice(-1)) ? "가" : "이"}`;
+  let s, flash = null;
+
+  const cell = (cls, key, label, v) => `<div class="cell ${cls}${flash === key ? " flash" : ""}"><div class="k">${label}</div><div class="v mono">${v}</div></div>`;
+  function render(msg) {
+    let html;
+    if (s.mode === "thread") {
+      html = `<div class="proc"><h2>프로세스 하나 (주소 공간 하나)</h2><div class="cells">
+        ${cell("shared", "g", "전역 g: A와 B가 함께 쓴다", s.g[0])}
+        ${cell("stack", "x0", "A의 스택: 지역 x", s.x[0])}
+        ${cell("stack", "x1", "B의 스택: 지역 x", s.x[1])}</div>
+        <div class="tag">A와 B의 &amp;g는 같은 주소, 같은 메모리다. 두 스택은 1MiB쯤 떨어져 있다.</div></div>`;
+    } else {
+      html = [0, 1].map(i => `<div class="proc"><h2>프로세스 ${NAME[i]} (주소 공간 따로)</h2><div class="cells">
+        ${cell("shared", "g" + i, `${NAME[i]}의 전역 g`, s.g[i])}
+        ${cell("stack", "x" + i, `${NAME[i]}의 스택: 지역 x`, s.x[i])}</div>
+        <div class="tag">&amp;g는 다른 프로세스의 &amp;g와 주소가 같지만 다른 메모리다.</div></div>`).join("");
+    }
+    $("procs").innerHTML = html;
+    $("note").textContent = msg;
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === s.mode)));
+  }
+  function start(mode) {
+    s = L.initial(mode); flash = null;
+    render(mode === "thread" ? "스레드 둘은 한 프로세스 안에 있다. A가 g++를 누르고 B가 본 g를 확인한다."
+      : "같은 프로그램을 두 번 실행해 프로세스가 둘이 되었다. A가 g++를 누르고 B의 g를 본다.");
+  }
+  document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => start(b.dataset.mode)));
+  $("reset").addEventListener("click", () => start(s.mode));
+  document.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => {
+    const [w, what] = b.dataset.act.split(" "), who = Number(w);
+    const r = L.act(s, who, what);
+    s = r.state;
+    const me = NAME[who], other = NAME[1 - who];
+    let msg;
+    if (what === "g") {
+      flash = s.mode === "thread" ? "g" : "g" + who;
+      msg = s.mode === "thread" ? `${me}가 g를 늘리자 ${other}가 보는 g도 ${iga(L.gOf(s, 1 - who))} 되었다. 스레드는 전역 변수를 함께 쓴다.`
+        : `${me}의 g만 ${iga(L.gOf(s, who))} 되고 ${other}의 g는 ${L.gOf(s, 1 - who)} 그대로다. 프로세스는 주소 공간이 따로라 같은 이름, 같은 주소의 변수도 따로 있다.`;
+    } else if (what === "x") {
+      flash = "x" + who;
+      msg = `${me}의 지역 변수 x만 늘었다. 지역 변수는 일꾼마다 자기 스택에 있다.`;
+    } else {
+      flash = r.ok ? "x1" : null;
+      msg = r.ok ? "A가 B의 x 주소를 알면 99를 써 넣을 수 있다. 스택이 따로여도 같은 주소 공간이라 막혀 있지 않다. 그래서 스레드 사이에 지역 변수 주소를 넘길 때는 그 함수가 아직 살아 있는지 조심해야 한다."
+        : "프로세스 B의 메모리는 A의 주소 공간에 없다. 다른 프로세스와 데이터를 주고받으려면 운영체제를 거쳐야 한다(31번 항목).";
+    }
+    render(msg);
+  }));
+  const q = new URLSearchParams(location.search).get("mode");
+  start(q === "process" ? "process" : "thread");
+})();
+</script>
+</body>
+</html>

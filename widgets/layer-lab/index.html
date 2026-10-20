@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>바뀐 층부터 다시 만든다</title>
+<meta name="description" content="Dockerfile의 두 차례(A, B) 가운데 하나를 고르고 app.py나 make_db.py를 고친 뒤 다시 빌드해, 어느 층을 캐시에서 가져오고 어느 층을 다시 만드는지와 걸린 시간을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .layers { list-style: none; padding: 0; margin: 6px 0 8px; display: grid; gap: 4px; }
+  .layers li { display: grid; grid-template-columns: minmax(0, 1fr) 6.8em; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+  .layers code { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", monospace; font-size: 13px; overflow-wrap: anywhere; }
+  .layers small { display: block; color: var(--muted); font-size: 12px; }
+  .layers .st { text-align: center; font-size: 12px; font-weight: 700; border-radius: 4px; padding: 1px 4px; }
+  .layers .cached .st { background: var(--good-bg); color: var(--good); }
+  .layers .rebuilt { border-color: var(--write); }
+  .layers .rebuilt .st { background: var(--write-bg); color: var(--write); }
+  .layers .meta .st { background: var(--soft); color: var(--muted); }
+  .res { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; font-size: 14px; min-height: 2.6em; }
+  .res b { font-size: 18px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .res { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>바뀐 층부터 다시 만든다</h1>
+<p class="lead">91번의 이미지(python:3.14-slim 위에 상품 100만 개의 SQLite DB와 app.py)를 이 PC에서 docker build로 잰 값이다. DB 만들기는 무거운 준비 단계로, 실제 프로젝트에서는 흔히 의존성 설치가 이 자리에 온다.</p>
+<div class="row" role="group" aria-label="Dockerfile">
+  <span class="label">Dockerfile</span>
+  <button class="btn" data-df="A">A: 전부 복사한 뒤 DB</button>
+  <button class="btn" data-df="B">B: DB 먼저, 코드는 나중</button>
+</div>
+<div class="row" role="group" aria-label="고칠 파일">
+  <span class="label">고치고 빌드</span>
+  <button class="btn go" data-ch="app.py">app.py 고치기</button>
+  <button class="btn go" data-ch="make_db.py">make_db.py 고치기</button>
+  <button class="btn" data-ch="">고치지 않고 빌드</button>
+</div>
+<ol class="layers" id="layers"></ol>
+<div class="res" id="res"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const LayerLogic = (() => {
+  // 파일을 바꾸는 줄 하나가 층 하나다(ENTRYPOINT는 설정만 바꾸고 파일 층을 만들지 않는다). inputs: 그 줄이 읽는 파일.
+  // 한 줄의 입력이 바뀌면 그 줄과 그 아래 줄을 모두 다시 만든다. 위의 줄은 캐시에서 가져온다.
+  const FILES = {
+    A: [
+      { line: "FROM python:3.14-slim", inputs: [] },
+      { line: "WORKDIR /app", inputs: [] },
+      { line: "COPY . .", inputs: ["app.py", "make_db.py"] },
+      { line: "RUN python make_db.py", inputs: [], heavy: true, why: "상품 100만 개의 DB를 만들고, 그 결과를 새 층으로 저장한다" },
+      { line: "ENTRYPOINT [\"python\", \"app.py\"]", inputs: [], meta: true },
+    ],
+    B: [
+      { line: "FROM python:3.14-slim", inputs: [] },
+      { line: "WORKDIR /app", inputs: [] },
+      { line: "COPY make_db.py .", inputs: ["make_db.py"] },
+      { line: "RUN python make_db.py", inputs: [], heavy: true, why: "상품 100만 개의 DB를 만들고, 그 결과를 새 층으로 저장한다" },
+      { line: "COPY app.py .", inputs: ["app.py"] },
+      { line: "ENTRYPOINT [\"python\", \"app.py\"]", inputs: [], meta: true },
+    ],
+  };
+  // 이 PC에서 잰 전체 빌드 시간(초, 경우마다 10번): DB 층을 다시 만들면 2.9~3.2, 가벼운 층만 다시 만들면 0.4~0.5, 모두 캐시면 0.3~0.5(0.34~0.51, 세 차례)
+  const TIME = { heavy: [2.9, 3.2], light: [0.4, 0.5], none: [0.3, 0.5] };
+  function rebuild(df, changed) {                // 다시 만드는 줄의 번호들
+    const layers = FILES[df];
+    const first = layers.findIndex(l => l.inputs.some(f => changed.includes(f)));
+    return first < 0 ? [] : layers.map((_, i) => i).filter(i => i >= first && !layers[i].meta);
+  }
+  function time(df, changed) {
+    const r = rebuild(df, changed);
+    return r.some(i => FILES[df][i].heavy) ? TIME.heavy : r.length ? TIME.light : TIME.none;
+  }
+  return { FILES, TIME, rebuild, time };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = LayerLogic;
+  const $ = id => document.getElementById(id);
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let df = "A", changed = null;                    // changed: null이면 아직 다시 빌드하지 않음
+  const range = ([a, b]) => `${a.toFixed(1)}~${b.toFixed(1)}초`;
+  function render() {
+    const layers = L.FILES[df];
+    const r = changed === null ? null : L.rebuild(df, changed);
+    $("layers").innerHTML = layers.map((l, i) => {
+      const state = l.meta ? ["meta", "설정"] : r === null ? ["", "처음 빌드"] : r.includes(i) ? ["rebuilt", "다시 만듦"] : ["cached", "캐시"];
+      const reads = l.inputs.length ? `<small>읽는 파일: ${l.inputs.join(", ")}</small>` : l.why ? `<small>${l.why}</small>` : "";
+      return `<li class="${state[0]}"><span><code>${esc(l.line)}</code>${reads}</span><span class="st">${state[1]}</span></li>`;
+    }).join("");
+    if (changed === null) {
+      $("res").innerHTML = `<span>처음 빌드(캐시 없이)<br><b class="mono">${range(L.TIME.heavy)}</b></span>`;
+      $("note").textContent = "처음에는 모든 층을 만든다. 이제 파일 하나를 고치고 다시 빌드하면 어느 층부터 다시 만들지 짐작해 본다.";
+    } else {
+      const t = L.time(df, changed);
+      $("res").innerHTML = `<span>고친 파일<br><b class="mono">${changed.length ? changed.join(", ") : "없음"}</b></span><span>다시 빌드한 시간<br><b class="mono">${range(t)}</b></span>`;
+      const heavy = L.rebuild(df, changed).some(i => layers[i].heavy);
+      let note;
+      if (!changed.length) note = "입력이 그대로라 모든 층을 캐시에서 가져왔다.";
+      else if (heavy && changed.includes("app.py")) note = "app.py만 고쳤는데 DB까지 다시 만들었다. COPY . .가 app.py도 읽으므로 그 층이 바뀌고, 그 아래는 모두 다시 만든다. B로 바꿔 같은 일을 해 본다.";
+      else if (heavy) note = "DB를 만드는 make_db.py를 고쳤으니, 그 파일을 복사하는 층부터 DB 층까지 다시 만드는 것이 맞다. 무거운 층은 잘 바뀌지 않는 것만 읽게 둔다.";
+      else note = "바뀐 것은 app.py를 복사하는 마지막 층뿐이라, 무거운 DB 층은 캐시에서 가져왔다. 자주 바뀌는 것을 아래에 두면 빌드가 빠르다.";
+      $("note").textContent = note;
+    }
+    document.querySelectorAll("[data-df]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.df === df)));
+  }
+  document.querySelectorAll("[data-df]").forEach(b => b.addEventListener("click", () => { df = b.dataset.df; changed = null; render(); }));
+  document.querySelectorAll("[data-ch]").forEach(b => b.addEventListener("click", () => { changed = b.dataset.ch ? [b.dataset.ch] : []; render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

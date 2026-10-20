@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실수는 언제 잡히나</title>
+<meta name="description" content="표의 칸을 눌러, 같은 실수를 C# 컴파일러, Python 실행, Python의 정적 검사(mypy)가 각각 언제 어떤 메시지로 잡는지 본다 (모두 이 PC에서 실행한 결과)">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --warn: #8a6100;
+    --warn-bg: #fff3bf;
+    --late: #c2410c;
+    --late-bg: #fdf0e3;
+    --miss: #5f6670;
+    --miss-bg: #eceef2;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --warn: #ffd43b;
+    --warn-bg: #4a4220;
+    --late: #ffa94d;
+    --late-bg: #3d2c18;
+    --miss: #9aa0aa;
+    --miss-bg: #30343d;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; font-size: 14px; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: separate; border-spacing: 4px; width: 100%; min-width: 520px; }
+  th { font-size: 13px; font-weight: 700; text-align: left; padding: 2px 6px; color: var(--muted); }
+  th.bug { font-weight: 400; color: var(--fg); font-size: 14px; width: 30%; }
+  td { padding: 0; }
+  .cell { width: 100%; text-align: left; font: inherit; font-size: 13px; border-radius: 6px; padding: 6px 8px; cursor: pointer; border: 1.5px solid transparent; }
+  .cell.sel { border-color: var(--fg); }
+  .cell.before { background: var(--accent-bg); color: var(--accent); }
+  .cell.warn { background: var(--warn-bg); color: var(--warn); }
+  .cell.late { background: var(--late-bg); color: var(--late); }
+  .cell.miss { background: var(--miss-bg); color: var(--miss); }
+  .detail { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .detail .code { font-size: 13px; background: var(--soft); border-radius: 4px; padding: 6px 8px; white-space: pre; overflow-x: auto; margin: 6px 0; }
+  .detail .msg { font-size: 13px; overflow-wrap: anywhere; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .legend .l-before::before { background: var(--accent-bg); border: 1px solid var(--accent); }
+  .legend .l-warn::before { background: var(--warn-bg); border: 1px solid var(--warn); }
+  .legend .l-late::before { background: var(--late-bg); border: 1px solid var(--late); }
+  .legend .l-miss::before { background: var(--miss-bg); border: 1px solid var(--miss); }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>실수는 언제 잡히나</h1>
+<div class="row" role="group" aria-label="등급을 받는 방식">
+  <span>등급 오타 줄:</span>
+  <button class="btn" data-g="str">등급을 문자열로 받을 때</button>
+  <button class="btn" data-g="enum">등급을 enum으로 받을 때</button>
+</div>
+<div class="wrap"><table id="grid"></table></div>
+<div class="legend"><span class="l-before">실행 전에 잡는다</span><span class="l-warn">경고만 하고 빌드된다</span><span class="l-late">실행하다 그 줄에서 멈춘다</span><span class="l-miss">잡지 못한다 (조용히 틀린다)</span></div>
+<div class="detail" id="detail" aria-live="polite"></div>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const CatchLogic = (() => {
+  const TOOLS = ["C# (.NET 10)", "Python 3.14 실행", "Python + mypy"];
+  // 16번 항목 작성 때 이 PC에서 실제로 빌드·실행·검사해 받은 메시지
+  const BUGS = [
+    {
+      id: "branch", title: "드문 분기에서 다른 타입을 돌려준다",
+      code: ["static int ShippingFee(int total, bool isIsland)\n{\n    if (isIsland)\n        return \"5000\";   // 문자열\n    return total >= 30000 ? 0 : 3000;\n}",
+        "def shipping_fee(total: int, is_island: bool) -> int:\n    if is_island:\n        return \"5000\"   # 문자열\n    return 0 if total >= 30000 else 3000\n\nprint(shipping_fee(40000, False) + 1000)   # 1000\nprint(shipping_fee(10000, True) + 1000)"],
+      res: [
+        { kind: "before", text: "컴파일 오류", msg: "error CS0029: 암시적으로 'string' 형식을 'int' 형식으로 변환할 수 없습니다." },
+        { kind: "late", text: "섬 배송을 처음 계산할 때", msg: "첫 줄은 1000을 정상 출력하고, 둘째 줄에서 TypeError: can only concatenate str (not \"int\") to str" },
+        { kind: "before", text: "검사 오류", msg: "error: Incompatible return value type (got \"str\", expected \"int\")  [return-value]" },
+      ],
+    },
+    {
+      id: "null", title: "없을 수도 있는 값을 그대로 쓴다",
+      code: ["string? name = FindUser(3);\nConsole.WriteLine(name.Length);\n\nstatic string? FindUser(int id) => id == 1 ? \"kim\" : null;",
+        "def find_user(user_id: int) -> str | None:\n    return \"kim\" if user_id == 1 else None\n\nname = find_user(3)\nprint(len(name))"],
+      res: [
+        { kind: "warn", text: "경고 뒤 실행 중 예외", msg: "빌드: warning CS8602: null 가능 참조에 대한 역참조입니다. 실행: System.NullReferenceException: Object reference not set to an instance of an object." },
+        { kind: "late", text: "그 줄에서", msg: "TypeError: object of type 'NoneType' has no len()" },
+        { kind: "before", text: "검사 오류", msg: "error: Argument 1 to \"len\" has incompatible type \"str | None\"; expected \"Sized\"  [arg-type]" },
+      ],
+    },
+    {
+      id: "typo", title: "등급 이름의 오타",
+      variants: {
+        str: {
+          code: ["Console.WriteLine(Discount(\"vip\", 30000));   // \"VIP\"를 잘못 씀\n\nstatic int Discount(string grade, int price) =>\n    grade == \"VIP\" ? price * 10 / 100 : 0;",
+            "def discount_str(grade: str, price: int) -> int:\n    return price * 10 // 100 if grade == \"VIP\" else 0\n\nprint(discount_str(\"vip\", 30000))"],
+          res: [
+            { kind: "miss", text: "못 잡는다", msg: "오류 없이 0을 출력한다. \"vip\"도 올바른 문자열이다." },
+            { kind: "miss", text: "못 잡는다", msg: "오류 없이 0을 출력한다." },
+            { kind: "miss", text: "못 잡는다", msg: "검사 통과. str 자리에 str을 넣었을 뿐이다." },
+          ],
+        },
+        enum: {
+          code: ["Console.WriteLine(Discount(Grade.Vipp, 30000));\n\nstatic int Discount(Grade grade, int price) =>\n    grade == Grade.Vip ? price * 10 / 100 : 0;\n\nenum Grade { Vip, Gold }",
+            "from enum import Enum\n\nclass Grade(Enum):\n    VIP = 1\n    GOLD = 2\n\ndef discount(grade: Grade, price: int) -> int:\n    return price * 10 // 100 if grade == Grade.VIP else 0\n\nprint(discount(Grade.VIPP, 30000))"],
+          res: [
+            { kind: "before", text: "컴파일 오류", msg: "error CS0117: 'Grade'에는 'Vipp'에 대한 정의가 포함되어 있지 않습니다." },
+            { kind: "late", text: "그 줄에서", msg: "AttributeError: type object 'Grade' has no attribute 'VIPP'. Did you mean: 'VIP'?" },
+            { kind: "before", text: "검사 오류", msg: "error: \"type[Grade]\" has no attribute \"VIPP\"  [attr-defined]" },
+          ],
+        },
+      },
+    },
+    {
+      id: "order", title: "같은 타입 인자의 순서가 바뀐다",
+      code: ["int w = 5, h = 2;\nConsole.WriteLine(Describe(h, w));   // 2x5\n\nstatic string Describe(int width, int height) => $\"{width}x{height}\";",
+        "def describe(width: int, height: int) -> str:\n    return f\"{width}x{height}\"\n\nw, h = 5, 2\nprint(describe(h, w))   # 2x5"],
+      res: [
+        { kind: "miss", text: "못 잡는다", msg: "2x5를 출력한다. 둘 다 int라 타입으로는 구별할 수 없다." },
+        { kind: "miss", text: "못 잡는다", msg: "2x5를 출력한다." },
+        { kind: "miss", text: "못 잡는다", msg: "Success: no issues found" },
+      ],
+    },
+  ];
+
+  const view = (bug, g) => (bug.variants ? bug.variants[g] : bug);
+  // 도구마다 실행 전에 잡는 실수의 수
+  const caughtBefore = (tool, g) => BUGS.filter(b => view(b, g).res[tool].kind === "before").length;
+
+  return { TOOLS, BUGS, view, caughtBefore };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = CatchLogic;
+  const $ = id => document.getElementById(id);
+  let g = "str", sel = [0, 1];
+
+  function render() {
+    document.querySelectorAll("[data-g]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.g === g)));
+    const grid = $("grid");
+    grid.innerHTML = `<tr><th></th>${L.TOOLS.map(t => `<th>${t}</th>`).join("")}</tr>`;
+    L.BUGS.forEach((bug, r) => {
+      const v = L.view(bug, g);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<th class="bug">${bug.title}</th>`;
+      v.res.forEach((res, c) => {
+        const td = document.createElement("td");
+        const b = document.createElement("button");
+        b.className = `cell ${res.kind}` + (sel[0] === r && sel[1] === c ? " sel" : "");
+        b.textContent = res.text;
+        b.addEventListener("click", () => { sel = [r, c]; render(); });
+        td.append(b);
+        tr.append(td);
+      });
+      grid.append(tr);
+    });
+    const bug = L.BUGS[sel[0]], v = L.view(bug, g), res = v.res[sel[1]];
+    const lang = sel[1] === 0 ? 0 : 1;
+    const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    $("detail").innerHTML = `<strong>${bug.title} · ${L.TOOLS[sel[1]]}</strong><div class="code mono">${esc(v.code[lang])}</div><div class="msg mono">${esc(res.msg)}</div>`;
+  }
+  document.querySelectorAll("[data-g]").forEach(b => b.addEventListener("click", () => { g = b.dataset.g; render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사례가 적으면 점수가 흔들린다</title>
+<meta name="description" content="평가셋의 사례 수와 B의 실제 실력을 바꾸고 평가를 여러 번 돌려, 잰 통과율이 얼마나 흔들리는지, 나아지지 않은 판이 나아 보이거나 나아진 판이 못해 보일 확률이 얼마인지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .chartwrap { overflow-x: auto; }
+  .chartwrap .chart { min-width: 520px; }   /* 휴대폰에서 글자가 너무 작아지지 않게, 줄이지 않고 옆으로 밀어 본다 */
+  .chart { width: 100%; height: auto; display: block; margin: 6px 0 2px; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .chart .axis { fill: var(--muted); font-size: 11px; }
+  .chart .fa { fill: var(--read-bg); fill-opacity: .7; }
+  .chart .fb { fill: var(--write-bg); fill-opacity: .7; }
+  .chart .ca { fill: none; stroke: var(--read); stroke-width: 2; }
+  .chart .cb { fill: none; stroke: var(--write); stroke-width: 2; }
+  .chart .ma { stroke: var(--read); stroke-width: 2.5; }
+  .chart .mb { stroke: var(--write); stroke-width: 2.5; stroke-dasharray: 5 3; }
+  .chart .la { fill: var(--read); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+  .chart .lb { fill: var(--write); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .sw { display: inline-block; width: 14px; height: 10px; border-radius: 2px; vertical-align: middle; margin: 0 4px 0 8px; }
+  .sw.a { background: var(--read); }
+  .sw.b { background: var(--write); }
+  .probs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; font-size: 13px; margin-bottom: 8px; }
+  .probs div { border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; }
+  .probs b { font-size: 17px; }
+  .tally { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .probs { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>사례가 적으면 점수가 흔들린다</h1>
+<p class="lead">AI 기능의 두 판 A와 B를 같은 수의 사례로 한 번씩 돌려 통과율을 잰다. 가정: A의 실력(사례 하나를 통과할 확률)은 80%이고, 사례와 실행마다 통과 여부가 따로 정해진다.</p>
+<div class="row" role="group" aria-label="평가셋의 사례 수">
+  <span class="label">사례 수</span>
+  <button class="btn" data-n="10">10개</button>
+  <button class="btn" data-n="30">30개</button>
+  <button class="btn" data-n="100">100개</button>
+  <button class="btn" data-n="300">300개</button>
+</div>
+<div class="row" role="group" aria-label="B의 실제 실력">
+  <span class="label">B의 실력</span>
+  <button class="btn" data-pb="0.8">80%(A와 같다)</button>
+  <button class="btn" data-pb="0.85">85%</button>
+  <button class="btn" data-pb="0.9">90%</button>
+</div>
+<div class="chartwrap"><svg class="chart" id="chart" viewBox="0 0 640 210" role="img" aria-label="잰 통과율이 어디에 나올지의 확률. A는 파랑, B는 주황"></svg></div>
+<div class="legend"><i class="sw a"></i>A(실력 80%) <i class="sw b"></i>B · 곡선: 잰 통과율이 그 값으로 나올 확률 · 세로선: 방금 돌린 평가</div>
+<div class="probs" id="probs"></div>
+<div class="row">
+  <button class="btn go" id="once">평가 한 번 돌리기</button>
+  <button class="btn" id="twenty">20번 돌리기</button>
+  <button class="btn" id="clear">지우기</button>
+</div>
+<div class="tally" id="tally"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const EvalLogic = (() => {
+  // 가정: 사례마다 통과할 확률이 그 판의 실력이고, 사례와 실행마다 따로 정해진다. A의 실력은 80%로 둔다.
+  const PA = 0.8;
+  const SIZES = [10, 30, 100, 300];
+  const PBS = [0.8, 0.85, 0.9];
+
+  // 사례 n개 가운데 k개를 통과할 확률(이항 분포). 앞의 값에서 다음 값을 곱해 구한다.
+  function pmf(n, p) {
+    const out = new Array(n + 1);
+    out[0] = Math.pow(1 - p, n);
+    for (let k = 0; k < n; k++) out[k + 1] = out[k] * (n - k) / (k + 1) * p / (1 - p);
+    return out;
+  }
+
+  // 같은 수의 사례로 두 판을 따로 잴 때 B의 통과 수가 더 많을, 같을, 더 적을 확률
+  function compare(n, pa, pb) {
+    const a = pmf(n, pa), b = pmf(n, pb);
+    let bHigh = 0, tie = 0, below = 0;               // below: A가 j보다 적을 확률(누적)
+    for (let j = 0; j <= n; j++) {
+      bHigh += b[j] * below;
+      tie += a[j] * b[j];
+      below += a[j];
+    }
+    return { b: bHigh, tie, a: 1 - bHigh - tie };
+  }
+
+  // 한 번 평가: 사례 n개를 돌려 통과한 수. u()는 0 이상 1 미만의 난수.
+  function sample(n, p, u) {
+    let c = 0;
+    for (let i = 0; i < n; i++) if (u() < p) c++;
+    return c;
+  }
+
+  // 그래프의 가로축: 잰 통과율 40%~100%를 x 40~625에 놓는다(40% 아래는 왼쪽 끝에 붙인다).
+  const CHART = { X0: 40, X1: 625, LO: 0.4 };
+  const xOf = r => CHART.X0 + (Math.max(r, CHART.LO) - CHART.LO) / (1 - CHART.LO) * (CHART.X1 - CHART.X0);
+
+  // 한 번 돌린 평가(A, B의 통과 수)를 세로선으로 그릴 때 글자를 선의 어느 쪽에 둘지와 글자.
+  // 사례가 100개를 넘으면 통과 수 하나가 1%p보다 작아, 소수 한 자리까지 써야 서로 다른 값이 같은 글자가 되지 않는다.
+  function marks(a, b, n) {
+    const ra = a / n, rb = b / n;
+    const text = c => `${n > 100 ? (c / n * 100).toFixed(1) : Math.round(c / n * 100)}%`;
+    const side = (r, right) => xOf(r) > CHART.X1 - 50 ? false : xOf(r) < CHART.X0 + 50 ? true : right;
+    const aRight = side(ra, rb < ra || a === b), bRight = side(rb, !(rb < ra));
+    return { a: { x: xOf(ra), right: aRight, text: text(a) },
+             b: { x: xOf(rb), right: bRight, text: text(b), lower: a === b || aRight === bRight } };
+  }
+
+  return { PA, SIZES, PBS, pmf, compare, sample, CHART, xOf, marks };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = EvalLogic;
+  const $ = id => document.getElementById(id);
+  const pct = (p, d = 1) => `${(p * 100).toFixed(p > 0.999 || p < 0.001 ? 2 : d)}%`;   // 아주 크거나 작으면 100.0%, 0.0%로 보이지 않게
+  let n = 10, pb = 0.9, last = null, runs = { all: 0, b: 0, tie: 0, a: 0 };
+
+  function render() {
+    const { X0, X1, LO } = L.CHART, Y0 = 180, Y1 = 14;
+    const x = L.xOf;
+    const a = L.pmf(n, L.PA), b = L.pmf(n, pb);
+    const top = Math.max(...a, ...b);
+    const y = v => Y0 - v / top * (Y0 - Y1);
+    const curve = ps => {
+      const pts = [];
+      ps.forEach((v, k) => { if (k / n >= LO) pts.push(`${x(k / n).toFixed(1)},${y(v).toFixed(1)}`); });
+      return `M${x(Math.max(LO, Math.ceil(LO * n) / n)).toFixed(1)},${Y0} L${pts.join(" L")} L${x(1).toFixed(1)},${Y0} Z`;
+    };
+    let svg = "";
+    for (let r = 0.4; r <= 1.0001; r += 0.1) svg += `<line class="grid" x1="${x(r)}" x2="${x(r)}" y1="${Y1}" y2="${Y0}"/><text class="axis" x="${x(r)}" y="${Y0 + 16}" text-anchor="middle">${Math.round(r * 100)}%</text>`;
+    svg += `<path class="fa" d="${curve(a)}"/><path class="fb" d="${curve(b)}"/><path class="ca" d="${curve(a)}"/><path class="cb" d="${curve(b)}"/>`;   // 면을 먼저, 선을 나중에
+    svg += `<line class="grid" x1="${X0}" x2="${X1}" y1="${Y0}" y2="${Y0}"/>`;
+    svg += `<text class="axis" x="${X0}" y="${Y1 - 2}">잰 통과율이 그 값으로 나올 확률(사례 ${n}개)</text>`;
+    if (last) {
+      const m = L.marks(last.a, last.b, n);
+      svg += `<line class="ma" x1="${m.a.x}" x2="${m.a.x}" y1="${Y1 + 14}" y2="${Y0}"/><line class="mb" x1="${m.b.x}" x2="${m.b.x}" y1="${Y1 + 14}" y2="${Y0}"/>`;
+      svg += `<text class="la" x="${m.a.x + (m.a.right ? 4 : -4)}" y="${Y1 + 30}" text-anchor="${m.a.right ? "start" : "end"}">A ${m.a.text}</text>`;
+      svg += `<text class="lb" x="${m.b.x + (m.b.right ? 4 : -4)}" y="${Y1 + (m.b.lower ? 48 : 30)}" text-anchor="${m.b.right ? "start" : "end"}">B ${m.b.text}</text>`;
+    }
+    $("chart").innerHTML = svg;
+
+    const c = L.compare(n, L.PA, pb);
+    $("probs").innerHTML = `<div>B가 높게 나온다<br><b class="mono">${pct(c.b)}</b></div><div>같게 나온다<br><b class="mono">${pct(c.tie)}</b></div><div>A가 높게 나온다<br><b class="mono">${pct(c.a)}</b></div>`;
+    $("tally").textContent = runs.all ? `돌린 평가 ${runs.all}번: B가 높았다 ${runs.b}번, 같았다 ${runs.tie}번, A가 높았다 ${runs.a}번` : "";
+
+    let note;
+    if (pb === L.PA) note = `A와 B의 실력은 같아 두 곡선이 겹친다. 그런데도 사례 ${n}개로 재면 B가 더 높게 나올 확률이 ${pct(c.b)}다. 이때 "B가 나아졌다"고 하면 우연을 개선으로 읽은 것이다.`;
+    else note = `B가 실제로 ${Math.round((pb - L.PA) * 100)}%p 낫다. 사례 ${n}개로 재면 B가 더 높게 나올 확률은 ${pct(c.b)}이고, 같거나 A가 더 높게 나올 확률이 ${pct(c.tie + c.a)}다.`
+      + (n < 300 ? " 사례 수를 늘려 곡선이 어떻게 바뀌는지 본다." : " 사례가 많을수록 곡선이 좁아져 두 판이 갈린다.");
+    $("note").textContent = note;
+    document.querySelectorAll("[data-n]").forEach(btn => btn.setAttribute("aria-pressed", String(Number(btn.dataset.n) === n)));
+    document.querySelectorAll("[data-pb]").forEach(btn => btn.setAttribute("aria-pressed", String(Number(btn.dataset.pb) === pb)));
+  }
+  function run() {
+    const a = L.sample(n, L.PA, Math.random), b = L.sample(n, pb, Math.random);
+    last = { a, b };
+    runs.all++;
+    if (b > a) runs.b++; else if (b === a) runs.tie++; else runs.a++;
+  }
+  const reset = () => { last = null; runs = { all: 0, b: 0, tie: 0, a: 0 }; };
+  document.querySelectorAll("[data-n]").forEach(btn => btn.addEventListener("click", () => { n = Number(btn.dataset.n); reset(); render(); }));
+  document.querySelectorAll("[data-pb]").forEach(btn => btn.addEventListener("click", () => { pb = Number(btn.dataset.pb); reset(); render(); }));
+  $("once").addEventListener("click", () => { run(); render(); });
+  $("twenty").addEventListener("click", () => { for (let i = 0; i < 20; i++) run(); render(); });
+  $("clear").addEventListener("click", () => { reset(); render(); });
+  render();
+  const wrap = $("chart").parentElement;   // 휴대폰에서 그래프가 옆으로 밀릴 때, 곡선이 있는 오른쪽을 먼저 보인다
+  wrap.scrollLeft = wrap.scrollWidth;
+})();
+</script>
+</body>
+</html>

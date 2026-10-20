@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>장애가 난 날, 무엇으로 되살릴까</title>
+<meta name="description" content="증분 백업과 차등 백업, 로그 보관을 골라 장애가 난 요일을 바꿔 보며, 되살리는 데 필요한 백업 파일과 읽을 양, 잃는 데이터를 견준다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --ok: #2b8a3e;
+    --ok-bg: #e6f4ea;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --ok: #69db7c;
+    --ok-bg: #1f3a27;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 4px 0 8px; }
+  .day { border: 1px solid var(--line); border-radius: 6px; padding: 4px 3px; text-align: center; font-size: 12px; background: var(--soft); min-height: 78px; }
+  .day .d { font-weight: 700; font-size: 13px; }
+  .day .kind { color: var(--muted); }
+  .day .gb { font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; font-weight: 700; }
+  .day.use { border-color: var(--read); background: var(--read-bg); }
+  .day.fail { border-color: var(--write); background: var(--write-bg); }
+  .day.after { opacity: .45; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; font-size: 13px; }
+  .stats div { border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  .stats b { font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; font-size: 15px; }
+  .stats .lost b { color: var(--write); }
+  .stats .safe b { color: var(--ok); }
+  .steps { font-size: 13px; margin: 8px 0 0; padding-left: 1.3em; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .day { font-size: 11px; } }
+</style>
+</head>
+<body>
+<h1>장애가 난 날, 무엇으로 되살릴까</h1>
+<p class="lead">모형: DB는 100GB이고 하루에 4GB씩 새로 바뀐다(날마다 다른 곳이 바뀐다고 하자). 백업은 매일 밤 11시에 한다. 장애는 고른 요일의 오후 3시에 DB가 든 디스크가 망가지는 것이다. 그 디스크에 있던 DB와 WAL을 함께 잃는다. 로그를 따로 보관하면 다른 곳에 둔다.</p>
+<div class="row" role="group" aria-label="월~토 백업">
+  <span class="label">월~토 백업</span>
+  <button class="btn" data-m="inc">증분 (어제 백업 뒤 바뀐 것)</button>
+  <button class="btn" data-m="diff">차등 (일요일 전체 백업 뒤 바뀐 것)</button>
+</div>
+<div class="row" role="group" aria-label="로그">
+  <span class="label">로그</span>
+  <button class="btn" data-log="0">보관하지 않는다</button>
+  <button class="btn" data-log="1">따로 보관한다</button>
+</div>
+<div class="row" role="group" aria-label="장애가 난 날">
+  <span class="label">장애</span>
+  <button class="btn" data-f="1">월</button>
+  <button class="btn" data-f="2">화</button>
+  <button class="btn" data-f="3">수</button>
+  <button class="btn" data-f="4">목</button>
+  <button class="btn" data-f="5">금</button>
+  <button class="btn" data-f="6">토</button>
+</div>
+<div class="week" id="week"></div>
+<div class="stats" id="stats"></div>
+<ol class="steps" id="steps"></ol>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const BackupLogic = (() => {
+  const FULL = 100, DAILY = 4, DAYS = ["일", "월", "화", "수", "목", "금", "토"];
+  // 그날 밤 백업의 크기(GB). 0은 일요일(전체). k일째 차등은 일요일 뒤 k일치 변경을 모두 담는다
+  const size = (m, k) => (k === 0 ? FULL : m === "inc" ? DAILY : DAILY * k);
+  const weekTotal = m => DAYS.reduce((s, _, k) => s + size(m, k), 0);
+  // f요일 오후에 장애: 쓸 수 있는 백업은 그 전날 밤까지(일요일 = 0 … f-1)
+  function restore(m, f, log) {
+    const last = f - 1;
+    const files = m === "inc" ? Array.from({ length: last + 1 }, (_, k) => k) : last === 0 ? [0] : [0, last];
+    const read = files.reduce((s, k) => s + size(m, k), 0);
+    const lostHours = log ? 0 : 16;                    // 전날 밤 11시부터 오후 3시까지. 로그를 보관하면 장애 직전까지 다시 적용한다
+    return { files, read, lostHours, replayHours: log ? 16 : 0 };
+  }
+  return { FULL, DAILY, DAYS, size, weekTotal, restore };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = BackupLogic;
+  const $ = id => document.getElementById(id);
+  let m = "inc", f = 6, log = false;
+  function render() {
+    const r = L.restore(m, f, log);
+    $("week").innerHTML = L.DAYS.map((d, k) => {
+      const cls = k === f ? "fail" : k > f ? "after" : r.files.includes(k) ? "use" : "";
+      const kind = k === 0 ? "전체" : m === "inc" ? "증분" : "차등";
+      const body = k === f ? `<div class="kind">오후 3시</div><div class="gb">장애</div>` : k > f ? `<div class="kind">${kind}</div><div class="gb">—</div>`
+        : `<div class="kind">${kind}</div><div class="gb">${L.size(m, k)}GB</div>`;
+      return `<div class="day ${cls}"><div class="d">${d}</div>${body}</div>`;
+    }).join("");
+    $("stats").innerHTML = `<div>한 주 백업에 드는 공간<br><b>${L.weekTotal(m)}GB</b></div>`
+      + `<div>되살릴 때 쓰는 백업<br><b>${r.files.length}</b>개, <b>${r.read}GB</b></div>`
+      + `<div class="${r.lostHours ? "lost" : "safe"}">잃는 데이터<br><b>${r.lostHours ? `${r.lostHours}시간치` : "거의 없다"}</b></div>`;
+    const steps = r.files.map((k, i) => `<li>${L.DAYS[k]}요일 밤의 ${k === 0 ? "전체" : m === "inc" ? "증분" : "차등"} 백업(${L.size(m, k)}GB)을 ${i ? "그 위에 덮어 적용한다" : "되살린다"}</li>`);
+    if (log) steps.push(`<li>보관해 둔 로그로 ${L.DAYS[f - 1]}요일 밤 11시부터 ${L.DAYS[f]}요일 오후 3시 직전까지(16시간치)의 변경을 차례로 다시 적용한다</li>`);
+    $("steps").innerHTML = steps.join("");
+    $("note").textContent = !log
+      ? `${m === "inc" ? "증분은 백업이 작아 공간을 덜 쓰지만, 되살릴 때 전체 백업 위에 그 뒤의 증분을 하나도 빠짐없이 차례로 적용해야 한다. 하나라도 깨지면 그 뒤를 쓸 수 없다." : "차등은 날이 갈수록 커져 공간을 더 쓰지만, 되살릴 때는 전체 백업과 가장 최근의 차등 하나만 있으면 된다."} 어느 쪽이든 마지막 백업 뒤의 16시간치는 잃는다.`
+      : "백업과 함께 로그를 따로 보관하면, 백업을 되살린 뒤 로그를 다시 적용해 장애 직전까지(원하면 그 사이의 어느 시점으로든) 되돌릴 수 있다.";
+    document.querySelectorAll("[data-m]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === m)));
+    document.querySelectorAll("[data-log]").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.log === "1") === log)));
+    document.querySelectorAll("[data-f]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.f) === f)));
+  }
+  document.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => { m = b.dataset.m; render(); }));
+  document.querySelectorAll("[data-log]").forEach(b => b.addEventListener("click", () => { log = b.dataset.log === "1"; render(); }));
+  document.querySelectorAll("[data-f]").forEach(b => b.addEventListener("click", () => { f = Number(b.dataset.f); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

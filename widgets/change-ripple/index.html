@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>바꿀 때 고칠 파일</title>
+<meta name="description" content="바꿀 일을 고르면, 쓸 객체를 직접 만드는 설계와 약속(인터페이스)에 의존하는 설계에서 각각 어느 파일을 고쳐야 하는지 비교해 보여 준다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #9aa3af;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --edit: #c2410c;
+    --edit-bg: #fdf0e3;
+    --new: #237032;
+    --new-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #6b7280;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --edit: #ffa94d;
+    --edit-bg: #3d2c18;
+    --new: #69db7c;
+    --new-bg: #1e3524;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 10px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 3.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .designs { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+  .design { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .design h2 { font-size: 14px; margin: 0 0 2px; }
+  .design .sub { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  svg { display: block; width: 100%; height: auto; }
+  .box rect { fill: var(--soft); stroke: var(--line); stroke-width: 1.5; }
+  .box.iface rect { fill: var(--accent-bg); stroke: var(--accent); stroke-dasharray: 5 3; }
+  .box.edit rect { fill: var(--edit-bg); stroke: var(--edit); stroke-width: 2.5; stroke-dasharray: none; }
+  .box.new rect { fill: var(--new-bg); stroke: var(--new); stroke-width: 2.5; stroke-dasharray: none; }
+  .box text { fill: var(--fg); font-size: 12px; text-anchor: middle; font-family: "JetBrains Mono", Consolas, "Malgun Gothic", monospace; }
+  .box.edit text { fill: var(--edit); font-weight: 700; }
+  .box.new text { fill: var(--new); font-weight: 700; }
+  .dep { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .head { fill: var(--line); }
+  .count { font-weight: 700; margin-top: 4px; font-size: 14px; }
+  .count .n { color: var(--edit); }
+  .why { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1.5px solid var(--line); background: var(--soft); }
+  .legend .l-edit::before { background: var(--edit-bg); border-color: var(--edit); }
+  .legend .l-new::before { background: var(--new-bg); border-color: var(--new); }
+  .legend .l-if::before { background: var(--accent-bg); border-color: var(--accent); border-style: dashed; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>바꿀 때 고칠 파일</h1>
+<div class="row" role="group" aria-label="바꿀 일"><span class="label">바꿀 일</span></div>
+<div class="designs" id="designs"></div>
+<div class="legend"><span class="l-edit">고쳐야 하는 파일</span><span class="l-new">새로 만드는 파일</span><span class="l-if">인터페이스(약속)</span><span>화살표: 이 파일이 저 파일의 이름을 쓴다</span></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const RippleLogic = (() => {
+  // 15번 항목의 두 설계. 화살표(uses)는 그 파일의 코드가 다른 파일의 이름(클래스, 인터페이스)을 쓴다는 뜻이다.
+  const DESIGNS = {
+    direct: {
+      title: "쓸 객체를 직접 만든다",
+      sub: "OrderService 안에서 new SqlOrderRepository(), new EmailSender()",
+      files: [
+        { id: "Program", x: 150, y: 30 },
+        { id: "OrderService", x: 150, y: 110 },
+        { id: "SqlOrderRepository", x: 75, y: 190 }, { id: "EmailSender", x: 225, y: 190 },
+      ],
+      uses: [["Program", "OrderService"], ["OrderService", "SqlOrderRepository"], ["OrderService", "EmailSender"]],
+      defines: { SqlOrderRepository: ["Save"], EmailSender: ["Send"] },
+      calls: { OrderService: ["Save", "Send"] },
+    },
+    inject: {
+      title: "약속(인터페이스)에 의존한다",
+      sub: "OrderService는 IOrderRepository, IMessageSender만 알고 Program이 만들어 넘긴다",
+      files: [
+        { id: "Program", x: 150, y: 30 },
+        { id: "OrderService", x: 150, y: 110 },
+        { id: "IOrderRepository", iface: true, x: 75, y: 190 }, { id: "IMessageSender", iface: true, x: 225, y: 190 },
+        { id: "SqlOrderRepository", x: 75, y: 270 }, { id: "EmailSender", x: 225, y: 270 },
+      ],
+      uses: [["Program", "OrderService"], ["Program", "SqlOrderRepository"], ["Program", "EmailSender"],
+        ["OrderService", "IOrderRepository"], ["OrderService", "IMessageSender"],
+        ["SqlOrderRepository", "IOrderRepository"], ["EmailSender", "IMessageSender"]],
+      defines: { IOrderRepository: ["Save"], SqlOrderRepository: ["Save"], IMessageSender: ["Send"], EmailSender: ["Send"] },
+      calls: { OrderService: ["Save", "Send"] },
+    },
+  };
+
+  const SCENARIOS = {
+    sms: { label: "알림을 메일에서 문자로", newFile: "SmsSender" },
+    test: { label: "DB 없이 OrderService 시험", newFile: "FakeRepository" },
+    rename: { label: "Save 메서드 이름 바꾸기", newFile: null },
+  };
+
+  // 바꿀 일마다 고칠 파일을 의존 관계에서 계산한다
+  function plan(designKey, scenarioKey) {
+    const d = DESIGNS[designKey];
+    const users = target => d.uses.filter(([, t]) => t === target).map(([f]) => f);
+    let edit = [], why = "";
+    if (scenarioKey === "sms") {
+      // EmailSender라는 이름을 쓰는 파일을 SmsSender로 바꿔야 한다
+      edit = users("EmailSender").filter(f => f !== "EmailSender");
+      why = `EmailSender라는 이름을 쓰는 곳(${edit.join(", ")})을 SmsSender로 바꾼다.`;
+    } else if (scenarioKey === "test") {
+      // OrderService가 진짜 저장소 이름을 직접 쓰면, 가짜를 넣을 틈이 없어 OrderService를 고쳐야 한다
+      edit = d.uses.some(([f, t]) => f === "OrderService" && t === "SqlOrderRepository") ? ["OrderService"] : [];
+      why = edit.length ? "OrderService가 SqlOrderRepository를 직접 만들어서 가짜 저장소를 넣을 틈이 없다. 시험하려면 OrderService부터 고쳐야 한다."
+        : "시험 코드에서 FakeRepository를 만들어 OrderService에 넘기면 된다. 고칠 파일이 없다.";
+    } else {
+      // 메서드를 정의한 곳과 부르는 곳을 모두 고친다
+      edit = [...Object.keys(d.defines).filter(f => d.defines[f].includes("Save")), ...Object.keys(d.calls).filter(f => d.calls[f].includes("Save"))];
+      why = `Save를 정의하거나 부르는 곳(${edit.join(", ")})을 모두 고친다.` + (designKey === "inject" ? " 약속(인터페이스) 자체를 바꾸면 오히려 고칠 곳이 늘어난다. 약속은 신중하게 정한다." : "");
+    }
+    return { edit, add: SCENARIOS[scenarioKey].newFile, why };
+  }
+
+  return { DESIGNS, SCENARIOS, plan };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = RippleLogic;
+  const $ = id => document.getElementById(id);
+  const NS = "http://www.w3.org/2000/svg";
+  let scenario = "sms";
+  const row = document.querySelector(".row");
+  for (const [k, s] of Object.entries(L.SCENARIOS)) {
+    const b = document.createElement("button");
+    b.className = "btn"; b.textContent = s.label; b.dataset.s = k;
+    b.addEventListener("click", () => { scenario = k; render(); });
+    row.append(b);
+  }
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.append(e); return e; };
+  const BW = 128, BH = 30;
+
+  function diagram(key, p) {
+    const d = L.DESIGNS[key];
+    const h = Math.max(...d.files.map(f => f.y)) + 60;
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `0 0 300 ${h}`);
+    const defs = el("defs", {}, svg);
+    const m = el("marker", { id: `a-${key}`, viewBox: "0 0 8 8", refX: 7, refY: 4, markerWidth: 6, markerHeight: 6, orient: "auto" }, defs);
+    el("path", { d: "M0 0 L8 4 L0 8 z", class: "head" }, m);
+    const pos = Object.fromEntries(d.files.map(f => [f.id, f]));
+    for (const [f, t] of d.uses) {
+      const a = pos[f], b = pos[t];
+      let path;
+      if (Math.abs(b.y - a.y) > 120) {
+        // 사이의 상자를 가로지르지 않게 바깥으로 돌아간다
+        const left = b.x < 150, side = left ? 6 : 294, ax = a.x + (left ? -BW / 2 : BW / 2), bx = b.x + (left ? -BW / 2 - 2 : BW / 2 + 2);
+        path = `M${ax} ${a.y} C ${side} ${a.y} ${side} ${b.y} ${bx} ${b.y}`;
+      } else {
+        const y1 = a.y + (b.y > a.y ? BH / 2 : -BH / 2), y2 = b.y + (b.y > a.y ? -BH / 2 - 2 : BH / 2 + 2);
+        path = `M${a.x} ${y1} L${b.x} ${y2}`;
+      }
+      el("path", { d: path, class: "dep", "marker-end": `url(#a-${key})` }, svg);
+    }
+    const all = [...d.files];
+    if (p.add) {
+      const near = scenario === "sms" ? pos.EmailSender : pos.SqlOrderRepository;
+      all.push({ id: p.add, x: near.x + (key === "direct" ? 0 : 0), y: near.y + 46, added: true });
+    }
+    for (const f of all) {
+      const cls = "box" + (f.iface ? " iface" : "") + (p.edit.includes(f.id) ? " edit" : "") + (f.added ? " new" : "");
+      const g = el("g", { class: cls }, svg);
+      el("rect", { x: f.x - BW / 2, y: f.y - BH / 2, width: BW, height: BH, rx: 6 }, g);
+      const t = el("text", { x: f.x, y: f.y + 4 }, g); t.textContent = f.id;
+    }
+    const maxY = Math.max(...all.map(f => f.y)) + 26;
+    svg.setAttribute("viewBox", `0 0 300 ${maxY}`);
+    return svg;
+  }
+
+  function render() {
+    document.querySelectorAll("[data-s]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === scenario)));
+    const box = $("designs");
+    box.textContent = "";
+    const counts = {};
+    for (const key of Object.keys(L.DESIGNS)) {
+      const p = L.plan(key, scenario);
+      counts[key] = p.edit.length;
+      const div = document.createElement("div");
+      div.className = "design";
+      div.innerHTML = `<h2>${L.DESIGNS[key].title}</h2><div class="sub">${L.DESIGNS[key].sub}</div>`;
+      div.append(diagram(key, p));
+      div.insertAdjacentHTML("beforeend", `<div class="count">고칠 파일 <span class="n">${p.edit.length}개</span>${p.add ? ` · 새 파일 ${p.add}` : ""}</div><div class="why">${p.why}</div>`);
+      box.append(div);
+    }
+    $("note").textContent = scenario === "rename"
+      ? "약속에 의존하는 설계가 늘 고칠 곳이 적은 것은 아니다. 구현을 갈아 끼울 때는 적게, 약속 자체를 바꿀 때는 더 많이 고친다."
+      : scenario === "sms" ? "고칠 파일 수는 같지만 고치는 곳이 다르다. 직접 만드는 설계는 주문을 처리하는 OrderService를 고치고, 약속에 의존하는 설계는 객체를 만들어 넘기는 Program만 고친다. 주문 처리 코드는 손대지 않는다."
+      : "가짜 저장소로 시험할 때, 약속에 의존하는 설계는 아무것도 고치지 않는다. 이것이 의존성 역전 원칙(D)이 노리는 효과다.";
+  }
+  render();
+})();
+</script>
+</body>
+</html>

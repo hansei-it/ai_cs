@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스크립트가 첫 화면을 막을 때</title>
+<meta name="description" content="script 태그를 머리에 그냥 두기, defer, async, 본문 끝에 두기로 바꿔 가며, 이 PC에서 잰 첫 화면, DOMContentLoaded, load 시각이 어떻게 달라지는지 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  pre { margin: 0 0 8px; padding: 6px 10px; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+  pre .s { color: var(--write); font-weight: 700; }
+  .chart { overflow-x: auto; }
+  .chart svg { display: block; width: 100%; min-width: 520px; height: auto; }
+  svg text { fill: var(--muted); font-size: 11px; font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif; }
+  svg .lab { fill: var(--fg); font-size: 12px; }
+  svg .grid { stroke: var(--line); stroke-width: 1; }
+  svg .css { fill: var(--read-bg); stroke: var(--read); }
+  svg .js { fill: var(--write-bg); stroke: var(--write); }
+  svg .parse { fill: var(--accent-bg); stroke: var(--accent); }
+  svg .wait { fill: none; stroke: var(--accent); stroke-dasharray: 4 3; }
+  svg .mk { stroke-width: 2; }
+  svg .mk.fcp { stroke: var(--good); }
+  svg .mk.dcl { stroke: var(--accent); stroke-dasharray: 5 3; }
+  svg text.fcp { fill: var(--good); font-weight: 700; }
+  svg text.dcl { fill: var(--accent); font-weight: 700; }
+  svg text.fcp, svg text.dcl, svg text.in { paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }   /* 선이 글자를 가로지르지 않게 */
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .stat { flex: 1 1 150px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; background: var(--soft); font-size: 13px; }
+  .stat b { font-size: 15px; }
+  .stat.fcp b { color: var(--good); }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } }
+</style>
+</head>
+<body>
+<h1>스크립트가 첫 화면을 막을 때</h1>
+<p class="lead">같은 PC 안의 서버가 CSS는 100ms, JS는 500ms 늦게 준다. <span class="mono">&lt;script&gt;</span>를 둔 자리만 바꿔 헤드리스 Chrome으로 5번씩 연 결과다. 시각은 주소를 넣은 때부터 잰 ms다.</p>
+
+<div class="row" role="group" aria-label="스크립트를 둔 자리">
+  <span class="label">스크립트</span>
+  <button class="btn" data-mode="block">머리에 그냥</button>
+  <button class="btn mono" data-mode="defer">defer</button>
+  <button class="btn mono" data-mode="async">async</button>
+  <button class="btn" data-mode="end">본문 끝에</button>
+</div>
+<pre class="mono" id="html"></pre>
+<div class="chart"><svg id="chart" viewBox="0 0 600 176" role="img" aria-label="CSS와 JS를 받는 동안 HTML 읽기와 첫 화면"></svg></div>
+<div class="stats" id="stats"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const RenderLogic = (() => {
+  // 44번 측정 2를 이 PC에서 5번씩 잰 값(ms): 첫 화면(FCP), DOMContentLoaded, load, 스크립트가 실행된 때
+  const RUNS = {
+    block: { fcp: [552, 544, 552, 556, 564], dcl: [513, 512, 513, 513, 512], load: [513, 512, 513, 513, 513], ran: [513, 512, 513, 513, 512] },
+    defer: { fcp: [192, 204, 196, 200, 196], dcl: [513, 513, 515, 512, 512], load: [513, 513, 515, 512, 512], ran: [513, 513, 515, 512, 512] },
+    async: { fcp: [204, 204, 232, 200, 260], dcl: [6, 6, 7, 7, 7], load: [513, 513, 514, 514, 515], ran: [513, 513, 514, 514, 515] },
+    end: { fcp: [192, 188, 192, 192, 200], dcl: [512, 512, 512, 513, 514], load: [512, 512, 512, 513, 514], ran: [512, 512, 512, 513, 514] },
+  };
+  const median = a => { const s = [...a].sort((x, y) => x - y); return s[(s.length - 1) / 2]; };
+  const range = a => [Math.min(...a), Math.max(...a)];
+  const summary = mode => Object.fromEntries(Object.entries(RUNS[mode]).map(([k, a]) => [k, { med: median(a), range: range(a) }]));
+  return { RUNS, median, range, summary };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = RenderLogic;
+  const $ = id => document.getElementById(id);
+  const X0 = 110, XW = 470, TMAX = 600;
+  const x = ms => X0 + (XW * ms) / TMAX;
+  const S = '<span class="s">';
+  const HTML = {
+    block: `&lt;head&gt;\n  &lt;link rel="stylesheet" href="/style.css"&gt;\n  ${S}&lt;script src="/slow.js"&gt;&lt;/script&gt;</span>\n&lt;/head&gt;\n&lt;body&gt;&lt;h1&gt;…&lt;/h1&gt;&lt;p&gt;본문&lt;/p&gt;&lt;/body&gt;`,
+    defer: `&lt;head&gt;\n  &lt;link rel="stylesheet" href="/style.css"&gt;\n  ${S}&lt;script src="/slow.js" defer&gt;&lt;/script&gt;</span>\n&lt;/head&gt;\n&lt;body&gt;&lt;h1&gt;…&lt;/h1&gt;&lt;p&gt;본문&lt;/p&gt;&lt;/body&gt;`,
+    async: `&lt;head&gt;\n  &lt;link rel="stylesheet" href="/style.css"&gt;\n  ${S}&lt;script src="/slow.js" async&gt;&lt;/script&gt;</span>\n&lt;/head&gt;\n&lt;body&gt;&lt;h1&gt;…&lt;/h1&gt;&lt;p&gt;본문&lt;/p&gt;&lt;/body&gt;`,
+    end: `&lt;head&gt;\n  &lt;link rel="stylesheet" href="/style.css"&gt;\n&lt;/head&gt;\n&lt;body&gt;&lt;h1&gt;…&lt;/h1&gt;&lt;p&gt;본문&lt;/p&gt;\n  ${S}&lt;script src="/slow.js"&gt;&lt;/script&gt;</span>\n&lt;/body&gt;`,
+  };
+  const NOTE = {
+    block: "HTML을 읽다가 머리의 <script>를 만나면, 그 JS를 받아 실행할 때까지 읽기를 멈춘다. 본문을 아직 읽지 않았으니 그릴 것이 없다. 그래서 CSS는 100ms에 왔는데도 첫 화면은 JS(500ms)가 끝난 뒤였다.",
+    defer: "defer는 \"읽기를 멈추지 말고, 다 읽은 뒤에 실행하라\"는 뜻이다. 본문을 바로 읽어 CSS가 오자 그렸다. JS는 다 읽은 뒤 실행되고 그다음에 DOMContentLoaded가 온다.",
+    async: "async는 \"받는 대로 실행하라\"다. 읽기를 멈추지 않아 DOMContentLoaded가 7ms 만에 왔고, 첫 화면은 CSS를 기다려 그렸다. 실행 차례는 받은 차례라 다른 스크립트와의 순서를 장담할 수 없다.",
+    end: "본문 끝에 둔 <script>도 읽기를 멈추게 하지만, 그때는 본문을 이미 다 읽었다. 그래서 CSS가 오자 그렸다. defer가 생기기 전부터 쓰던 방법이다.",
+  };
+  let mode = "block";
+  function render() {
+    const s = L.summary(mode);
+    $("html").innerHTML = HTML[mode];
+    let g = "";
+    for (let v = 0; v <= TMAX; v += 100) g += `<line class="grid" x1="${x(v)}" y1="8" x2="${x(v)}" y2="132"/><text x="${x(v)}" y="148" text-anchor="middle">${v}</text>`;
+    g += `<text x="${X0 + XW}" y="164" text-anchor="end">ms</text>`;
+    const row = (y, label) => `<text class="lab" x="8" y="${y + 13}">${label}</text>`;
+    // CSS와 JS: 서버가 100ms, 500ms 늦게 준다
+    g += row(10, "CSS 받기") + `<rect class="css" x="${x(0)}" y="12" width="${x(100) - x(0)}" height="12" rx="2"/>`;
+    g += row(36, "JS 받기·실행") + `<rect class="js" x="${x(0)}" y="38" width="${x(s.ran.med) - x(0)}" height="12" rx="2"/>`;
+    // HTML 읽기: 그냥 둔 <script>에서 멈춘다
+    g += row(62, "HTML 읽기");
+    if (mode === "block") g += `<rect class="parse" x="${x(0)}" y="64" width="6" height="12" rx="2"/><rect class="wait" x="${x(0) + 6}" y="64" width="${x(s.ran.med) - x(0) - 6}" height="12" rx="2"/><text class="in" x="${(x(0) + x(s.ran.med)) / 2}" y="74" text-anchor="middle">머리의 script에서 멈춤</text><rect class="parse" x="${x(s.ran.med)}" y="64" width="5" height="12" rx="2"/>`;
+    else if (mode === "end") g += `<rect class="parse" x="${x(0)}" y="64" width="8" height="12" rx="2"/><rect class="wait" x="${x(0) + 8}" y="64" width="${x(s.ran.med) - x(0) - 8}" height="12" rx="2"/><text class="in" x="${(x(0) + x(s.ran.med)) / 2}" y="74" text-anchor="middle">본문은 다 읽고, 끝의 script에서 멈춤</text>`;
+    else g += `<rect class="parse" x="${x(0)}" y="64" width="${Math.max(6, x(s.dcl.med) - x(0))}" height="12" rx="2"/><text class="in" x="${x(0) + 14}" y="74">본문까지 바로 읽음</text>`;
+    // 표시: 첫 화면, DOMContentLoaded
+    g += row(88, "화면");
+    // 선을 모두 먼저 그리고 글자를 나중에 쓴다(다른 선이 글자 위를 지나지 않게). 오른쪽 끝에 가까우면 글자를 선 왼쪽에 둔다
+    const line = (cls, t) => `<line class="mk ${cls}" x1="${x(t)}" y1="86" x2="${x(t)}" y2="132"/>`;
+    const label = (cls, t, y, text) => x(t) > 400 ? `<text class="${cls}" x="${x(t) - 4}" y="${y}" text-anchor="end">${text}</text>` : `<text class="${cls}" x="${x(t) + 4}" y="${y}">${text}</text>`;
+    g += line("fcp", s.fcp.med) + line("dcl", s.dcl.med);
+    g += label("fcp", s.fcp.med, 100, `첫 화면 ${s.fcp.med}`) + label("dcl", s.dcl.med, 124, `DOMContentLoaded ${s.dcl.med}`);
+    $("chart").innerHTML = g;
+    const r = k => `${s[k].range[0]}~${s[k].range[1]}ms`;
+    $("stats").innerHTML = `<div class="stat fcp">첫 화면(FCP) <b class="mono">${r("fcp")}</b></div><div class="stat">DOMContentLoaded <b class="mono">${r("dcl")}</b></div><div class="stat">load <b class="mono">${r("load")}</b></div>`;
+    $("note").textContent = NOTE[mode];
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  }
+  document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { mode = b.dataset.mode; render(); }));
+  const q = new URLSearchParams(location.search).get("mode");
+  if (q in L.RUNS) mode = q;
+  render();
+})();
+</script>
+</body>
+</html>

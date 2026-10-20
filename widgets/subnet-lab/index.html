@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IP 주소와 서브넷</title>
+<meta name="description" content="IP 주소와 프리픽스(/24 등)를 바꿔 가며 네트워크 부분과 호스트 부분, 네트워크 주소와 브로드캐스트 주소, 다른 주소와 같은 네트워크인지, 잘게 나눈 서브넷을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 5.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type="text"] {
+    font: inherit; font-size: 14px; width: 10.5em; padding: 2px 8px; color: var(--fg); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  input[type="text"].bad { border-color: var(--write); }
+  input[type="range"] { width: 180px; accent-color: var(--accent); }
+  .bits { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+  .octet { text-align: center; }
+  .octet .b { display: flex; gap: 1px; }
+  .octet .b span { width: 15px; height: 22px; line-height: 22px; font-size: 13px; border-radius: 3px; }
+  .octet .b .n { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+  .octet .b .h { background: var(--write-bg); color: var(--write); }
+  .octet .d { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .key { font-size: 12px; color: var(--muted); margin: -4px 0 8px; }
+  .key .n { color: var(--accent); font-weight: 700; }
+  .key .h { color: var(--write); font-weight: 700; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+  .cell { border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; background: var(--soft); min-width: 0; }
+  .cell .k { font-size: 12px; color: var(--muted); }
+  .cell .v { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+  .same { margin-top: 10px; }
+  .yes { color: var(--good); font-weight: 700; }
+  .no { color: var(--write); font-weight: 700; }
+  table { border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  th, td { text-align: left; padding: 3px 10px 3px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 400; }
+  tr.mine td { color: var(--accent); font-weight: 700; }
+  .tablewrap { overflow-x: auto; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .octet .b span { width: 12px; font-size: 12px; } }
+</style>
+</head>
+<body>
+<h1>IP 주소와 서브넷</h1>
+<p class="lead">IPv4 주소 32비트의 앞쪽(네트워크 부분)이 같으면 같은 네트워크다. 프리픽스 <span class="mono">/24</span>는 "앞 24비트가 네트워크 부분"이라는 뜻이다.</p>
+
+<div class="row">
+  <span class="label">IP 주소</span>
+  <input type="text" id="ip" class="mono" value="192.168.0.23" aria-label="IP 주소" spellcheck="false">
+  <button class="btn mono" data-ip="10.20.30.40">10.20.30.40</button>
+  <button class="btn mono" data-ip="172.20.13.77">172.20.13.77</button>
+  <button class="btn mono" data-ip="8.8.8.8">8.8.8.8</button>
+</div>
+<div class="row">
+  <span class="label">프리픽스</span>
+  <input type="range" id="prefix" min="8" max="30" value="24" aria-label="프리픽스 길이">
+  <span class="mono" id="pv">/24</span>
+  <button class="btn mono" data-p="8">/8</button>
+  <button class="btn mono" data-p="16">/16</button>
+  <button class="btn mono" data-p="24">/24</button>
+  <button class="btn mono" data-p="26">/26</button>
+  <button class="btn mono" data-p="30">/30</button>
+</div>
+
+<div class="bits mono" id="bits" aria-hidden="true"></div>
+<div class="key"><span class="n">네트워크 부분</span>은 같은 네트워크의 모든 장치가 같고, <span class="h">호스트 부분</span>이 장치마다 다르다.</div>
+<div class="grid" id="grid"></div>
+
+<div class="row same">
+  <span class="label">이 주소는?</span>
+  <input type="text" id="other" class="mono" value="192.168.1.5" aria-label="같은 네트워크인지 볼 주소" spellcheck="false">
+  <span id="sameres"></span>
+</div>
+<div class="row">
+  <span class="label">나눠 보기</span>
+  <button class="btn" data-k="1">나누지 않음</button>
+  <button class="btn" data-k="2">2개로</button>
+  <button class="btn" data-k="4">4개로</button>
+  <button class="btn" data-k="8">8개로</button>
+</div>
+<div class="tablewrap" id="split"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const SubnetLogic = (() => {
+  // 주소는 0 ~ 2^32-1의 정수로 다룬다. >>> 0으로 늘 부호 없는 32비트로 맞춘다
+  function parse(s) {
+    const m = String(s).trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m) return null;
+    const o = m.slice(1).map(Number);
+    if (o.some(x => x > 255)) return null;
+    return ((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]) >>> 0;
+  }
+  const str = n => [24, 16, 8, 0].map(k => (n >>> k) & 255).join(".");
+  const mask = p => (p === 0 ? 0 : (0xFFFFFFFF << (32 - p)) >>> 0);
+  const bits = n => n.toString(2).padStart(32, "0");
+  // p는 1~30. 네트워크 주소(호스트 부분이 모두 0), 브로드캐스트(모두 1), 그 사이가 장치에 줄 수 있는 주소
+  function info(n, p) {
+    const m = mask(p), network = (n & m) >>> 0, broadcast = (network | ~m) >>> 0;
+    return { prefix: p, mask: m, network, broadcast, first: network + 1, last: broadcast - 1, count: 2 ** (32 - p) - 2 };
+  }
+  const same = (a, b, p) => ((a & mask(p)) >>> 0) === ((b & mask(p)) >>> 0);
+  // 주소의 종류: 사설(RFC 1918) 세 범위와 특별한 범위, 나머지는 공인. 앞에서부터 찾으므로 좁은 범위를 먼저 둔다
+  const RANGES = [
+    ["10.0.0.0", 8, "사설 (10.0.0.0/8)"], ["172.16.0.0", 12, "사설 (172.16.0.0/12)"], ["192.168.0.0", 16, "사설 (192.168.0.0/16)"],
+    ["127.0.0.0", 8, "루프백 (127.0.0.0/8)"], ["169.254.0.0", 16, "링크 로컬 (169.254.0.0/16)"], ["100.64.0.0", 10, "통신사 NAT용 (100.64.0.0/10)"],
+    ["0.0.0.0", 8, "이 네트워크 (0.0.0.0/8, 장치에 주지 않는다)"], ["224.0.0.0", 4, "멀티캐스트 (224.0.0.0/4, 무리에게 보내는 주소)"],
+    ["255.255.255.255", 32, "브로드캐스트 (255.255.255.255)"], ["240.0.0.0", 4, "예약 (240.0.0.0/4, 쓰지 않는다)"],
+  ];
+  const kind = n => { const r = RANGES.find(([a, p]) => same(n, parse(a), p)); return r ? r[2] : "공인"; };
+  // 네트워크 n/p를 k개(2의 거듭제곱)로 똑같이 나눈다
+  function split(n, p, k) {
+    const q = p + Math.log2(k), base = info(n, p).network, size = 2 ** (32 - q);
+    return Array.from({ length: k }, (_, i) => info(base + i * size, q));
+  }
+  return { parse, str, mask, bits, info, same, kind, split };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = SubnetLogic;
+  const $ = id => document.getElementById(id);
+  const num = n => n.toLocaleString("en-US");
+  let k = 1;
+
+  function render() {
+    const n = L.parse($("ip").value), p = Number($("prefix").value);
+    $("ip").classList.toggle("bad", n === null);
+    $("pv").textContent = `/${p}`;
+    document.querySelectorAll("[data-p]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.p) === p)));
+    document.querySelectorAll("[data-k]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.k) === k)));
+    if (n === null) {               // 잘못된 주소면 앞의 결과를 남기지 않는다
+      ["bits", "grid", "sameres", "split"].forEach(id => { $(id).innerHTML = ""; });
+      $("note").textContent = "IP 주소는 0~255인 수 넷을 점으로 이어 쓴다(예: 192.168.0.23).";
+      return;
+    }
+    const b = L.bits(n);
+    $("bits").innerHTML = [0, 1, 2, 3].map(o => `<div class="octet"><div class="b">${[...b.slice(o * 8, o * 8 + 8)].map((c, i) =>
+      `<span class="${o * 8 + i < p ? "n" : "h"}">${c}</span>`).join("")}</div><div class="d">${(n >>> (24 - o * 8)) & 255}</div></div>`).join("");
+    const f = L.info(n, p);
+    const cells = [
+      ["서브넷 마스크", L.str(f.mask)], ["네트워크 주소", `${L.str(f.network)}/${p}`], ["브로드캐스트 주소", L.str(f.broadcast)],
+      ["장치에 줄 수 있는 주소", `${L.str(f.first)} ~ ${L.str(f.last)}`], ["줄 수 있는 개수", `${num(f.count)}개`], ["주소의 종류", L.kind(n)],
+    ];
+    $("grid").innerHTML = cells.map(([key, v]) => `<div class="cell"><div class="k">${key}</div><div class="v${key === "주소의 종류" ? "" : " mono"}">${v}</div></div>`).join("");
+
+    const o = L.parse($("other").value);
+    $("other").classList.toggle("bad", o === null);
+    $("sameres").innerHTML = o === null ? "" : L.same(n, o, p)
+      ? `<span class="yes">같은 네트워크</span>: 앞 ${p}비트가 같다. MAC을 알아내 바로 보낸다.`
+      : `<span class="no">다른 네트워크</span>: 앞 ${p}비트가 다르다. 게이트웨이(라우터)에게 보낸다.`;
+
+    if (k === 1) $("split").innerHTML = "";
+    else {
+      const subs = L.split(n, p, k);
+      $("split").innerHTML = `<table><thead><tr><th>네트워크</th><th>장치에 줄 수 있는 주소</th><th>개수</th></tr></thead><tbody>${subs.map(s =>
+        `<tr class="${L.same(n, s.network, s.prefix) ? "mine" : ""}"><td class="mono">${L.str(s.network)}/${s.prefix}</td><td class="mono">${L.str(s.first)} ~ ${L.str(s.last)}</td><td>${num(s.count)}</td></tr>`).join("")}</tbody></table>`;
+    }
+    const hostBits = 32 - p;
+    let note = `호스트 부분이 ${hostBits}비트라 주소는 2^${hostBits} = ${num(2 ** hostBits)}개다. 호스트 부분이 모두 0인 네트워크 주소와 모두 1인 브로드캐스트 주소를 빼면 장치에 줄 수 있는 것은 ${num(f.count)}개다.`;
+    if (k > 1) note += ` 프리픽스를 /${p + Math.log2(k)}까지 ${Math.log2(k)}비트 늘려 ${k}개로 나눴다. 나눌 때마다 네트워크 주소와 브로드캐스트 주소를 하나씩 더 쓰므로 줄 수 있는 개수의 합이 줄어든다. 굵은 줄이 지금 주소가 속한 곳이다.`;
+    $("note").textContent = note;
+    document.querySelectorAll("[data-k]").forEach(btn => { btn.disabled = p + Math.log2(Number(btn.dataset.k)) > 30; });
+  }
+  $("ip").addEventListener("input", render);
+  $("other").addEventListener("input", render);
+  $("prefix").addEventListener("input", () => { if (Number($("prefix").value) + Math.log2(k) > 30) k = 1; render(); });
+  document.querySelectorAll("[data-ip]").forEach(b => b.addEventListener("click", () => { $("ip").value = b.dataset.ip; render(); }));
+  document.querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => {
+    $("prefix").value = b.dataset.p;
+    if (Number(b.dataset.p) + Math.log2(k) > 30) k = 1;
+    render();
+  }));
+  document.querySelectorAll("[data-k]").forEach(b => b.addEventListener("click", () => { k = Number(b.dataset.k); render(); }));
+  const q = new URLSearchParams(location.search);
+  if (q.get("ip") && L.parse(q.get("ip")) !== null) $("ip").value = q.get("ip");
+  if (q.get("p") && Number(q.get("p")) >= 8 && Number(q.get("p")) <= 30) $("prefix").value = q.get("p");
+  render();
+})();
+</script>
+</body>
+</html>

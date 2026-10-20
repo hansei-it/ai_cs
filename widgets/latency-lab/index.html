@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>평균이 숨기는 느린 요청</title>
+<meta name="description" content="느린 요청의 비율과 걸리는 시간, 화면 하나가 보내는 요청 수를 골라, 요청 1,000개의 평균과 p50, p95, p99, 그리고 손님이 화면을 열 때 느린 요청을 만날 확률을 본다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .chartwrap { overflow-x: auto; }
+  .chartwrap .chart { min-width: 520px; }   /* 휴대폰에서 글자가 너무 작아지지 않게, 줄이지 않고 옆으로 밀어 본다 */
+  .chart { width: 100%; height: auto; display: block; margin: 6px 0 2px; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .chart .axis { fill: var(--muted); font-size: 11px; }
+  .chart .curve { fill: none; stroke: var(--read); stroke-width: 2.5; }
+  .chart .mean { stroke: var(--write); stroke-width: 2; stroke-dasharray: 6 4; }
+  .chart .mean-label { fill: var(--write); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+  .chart .mark { fill: var(--accent); }
+  .chart .mark-label { fill: var(--accent); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 6px; }
+  .stat { border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; text-align: center; font-size: 12px; color: var(--muted); }
+  .stat b { display: block; font-size: 17px; color: var(--fg); }
+  .stat.mean b { color: var(--write); }
+  .screen { margin-top: 8px; font-size: 14px; }
+  .screen b { font-size: 18px; }
+  @media (max-width: 480px) { body { padding: 10px; font-size: 14px; } .stats { grid-template-columns: repeat(3, 1fr); } }
+</style>
+</head>
+<body>
+<h1>평균이 숨기는 느린 요청</h1>
+<p class="lead">요청 1,000개 가운데 대부분은 50~70ms에 끝나고, 일부가 느리다. 걸린 시간을 작은 것부터 늘어놓은 줄(가로)에서 p50은 가운데, p99는 99% 자리의 값이다. 세로는 로그 눈금이라 눈금 두 칸마다 10배다.</p>
+<div class="row" role="group" aria-label="느린 요청의 비율">
+  <span class="label">느린 요청</span>
+  <button class="btn" data-f="0.005">0.5%</button>
+  <button class="btn" data-f="0.02">2%</button>
+  <button class="btn" data-f="0.05">5%</button>
+  <button class="btn" data-f="0.1">10%</button>
+</div>
+<div class="row" role="group" aria-label="느린 요청이 걸리는 시간">
+  <span class="label">느릴 때</span>
+  <button class="btn" data-s="400">400ms</button>
+  <button class="btn" data-s="2000">2초</button>
+</div>
+<div class="row" role="group" aria-label="화면 하나가 보내는 요청 수">
+  <span class="label">화면 하나</span>
+  <button class="btn" data-k="1">요청 1개</button>
+  <button class="btn" data-k="5">5개</button>
+  <button class="btn" data-k="20">20개</button>
+  <button class="btn" data-k="50">50개</button>
+</div>
+
+<div class="chartwrap"><svg class="chart" id="chart" viewBox="0 0 640 220" role="img" aria-label="걸린 시간을 작은 것부터 늘어놓은 줄"></svg></div>
+<div class="stats" id="stats"></div>
+<div class="screen" id="screen"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const LatencyLogic = (() => {
+  // 요청 1,000개: 느린 요청 round(1000 × f)개는 S ms, 나머지는 50~70ms에 고르게 흩어진다(작은 것부터 늘어놓는다)
+  // 분위수는 가까운 순위 방식: p% 값 = 작은 것부터 ceil(1000 × p / 100)번째 값
+  // 화면 하나가 요청 k개를 보낼 때 느린 요청을 하나라도 만날 확률 = 1 − (1 − f)^k
+  const N = 1000;
+  function times(f, S) {
+    const slow = Math.round(N * f), fast = N - slow;
+    const xs = Array.from({ length: fast }, (_, k) => 50 + 20 * k / (fast - 1)).concat(Array(slow).fill(S));
+    return xs.sort((a, b) => a - b);
+  }
+  const r1 = v => Math.round(v * 10) / 10;
+  function run(f, S, k) {
+    const xs = times(f, S);
+    const pct = p => xs[Math.ceil(N * p / 100) - 1];
+    return {
+      xs, mean: r1(xs.reduce((a, b) => a + b, 0) / N), p50: r1(pct(50)), p95: r1(pct(95)), p99: r1(pct(99)), max: xs[N - 1],
+      screen: Math.round((1 - (1 - f) ** k) * 1000) / 1000,
+    };
+  }
+  return { N, run };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = LatencyLogic;
+  const $ = id => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  let f = Number(q.get("f")) || 0.02, S = Number(q.get("s")) || 2000, k = Number(q.get("k")) || 1;   // 처음에는 요청 1개(문제 2의 답을 먼저 보이지 않게)
+  const X0 = 50, X1 = 628, Y0 = 196, Y1 = 12, LO = Math.log10(30), HI = Math.log10(3000);
+  const x = i => X0 + (X1 - X0) * i / (L.N - 1), y = v => Y0 - (Y0 - Y1) * (Math.log10(v) - LO) / (HI - LO);
+  function render() {
+    const r = L.run(f, S, k);
+    let svg = "";
+    for (const v of [30, 100, 300, 1000, 3000]) svg += `<line class="grid" x1="${X0}" x2="${X1}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${X0 - 6}" y="${y(v) + 4}" text-anchor="end">${v >= 1000 ? v / 1000 + "초" : v + "ms"}</text>`;
+    for (const p of [0, 50, 90, 100]) svg += `<text class="axis" x="${x(Math.max(0, Math.ceil(L.N * p / 100) - 1))}" y="${Y0 + 16}" text-anchor="${p === 100 ? "end" : "middle"}">${p}%</text>`;
+    svg += `<path class="curve" d="${r.xs.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ")}"/>`;
+    svg += `<line class="mean" x1="${X0}" x2="${X1}" y1="${y(r.mean)}" y2="${y(r.mean)}"/><text class="mean-label" x="${X0 + 6}" y="${y(r.mean) - 5}">평균 ${r.mean}ms</text>`;
+    const marks = [[50, r.p50], [95, r.p95], [99, r.p99]].map(([p, v]) => ({ p, v, i: Math.ceil(L.N * p / 100) - 1 }));
+    marks.forEach((m, j) => {
+      const next = marks[j + 1];                       // 다음 표시와 높이가 같고 가까우면 이름을 점 아래에 둔다(p95와 p99가 겹치지 않게)
+      const crowded = next && Math.abs(y(next.v) - y(m.v)) < 16 && x(next.i) - x(m.i) < 40;
+      svg += `<circle class="mark" cx="${x(m.i)}" cy="${y(m.v)}" r="4"/><text class="mark-label" x="${x(m.i) - 6}" y="${crowded ? y(m.v) + 18 : y(m.v) - 8}" text-anchor="end">p${m.p}</text>`;
+    });
+    $("chart").innerHTML = svg;
+    const ms = v => (v >= 1000 ? `${v / 1000}초` : `${v}ms`);
+    $("stats").innerHTML = [["평균", r.mean, "mean"], ["p50", r.p50], ["p95", r.p95], ["p99", r.p99], ["가장 느린 것", r.max]]
+      .map(([n, v, c]) => `<div class="stat ${c || ""}">${n}<b class="mono">${ms(v)}</b></div>`).join("");
+    $("screen").innerHTML = `화면 하나가 요청 ${k}개를 보낼 때, 느린 요청을 하나라도 만날 확률 <b class="mono">${Math.round(r.screen * 1000) / 10}%</b>`;
+    let note;
+    if (r.p99 < S) note = `느린 요청이 ${f * 100}%뿐이라 p99에도 잡히지 않는다. 느린 요청은 '가장 느린 것' 칸(${ms(S)})에만 드러난다. 이렇게 드문 느림은 p99.9나 가장 느린 값, 또는 로그로 본다.`;
+    else note = `p50은 거의 그대로인데 평균은 ${r.mean}ms로 올랐다. 평균만 보면 모든 요청이 그만큼 걸리는 것처럼 보이지만, 실제로는 요청 ${f * 100}%가 ${ms(S)} 걸리고 나머지는 50~70ms다. p99가 그 꼬리를 보여 준다.`;
+    $("note").textContent = note;
+    document.querySelectorAll("[data-f]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.f) === f)));
+    document.querySelectorAll("[data-s]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.s) === S)));
+    document.querySelectorAll("[data-k]").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.k) === k)));
+  }
+  document.querySelectorAll("[data-f]").forEach(b => b.addEventListener("click", () => { f = Number(b.dataset.f); render(); }));
+  document.querySelectorAll("[data-s]").forEach(b => b.addEventListener("click", () => { S = Number(b.dataset.s); render(); }));
+  document.querySelectorAll("[data-k]").forEach(b => b.addEventListener("click", () => { k = Number(b.dataset.k); render(); }));
+  render();
+})();
+</script>
+</body>
+</html>

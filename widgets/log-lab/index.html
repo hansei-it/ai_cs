@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>장애 로그 읽기</title>
+<meta name="description" content="14:00~14:20 주문 서비스 로그를 수준, 서비스, 찾을 말, 분으로 걸러 읽으며, 언제 무엇이 바뀌었고 언제부터 경고와 오류가 났는지 시간표를 만든다">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2329;
+    --muted: #5f6670;
+    --line: #d9dde3;
+    --soft: #f3f5f8;
+    --accent: #3f51b5;
+    --accent-bg: #e8ebfa;
+    --read: #1971c2;
+    --read-bg: #e7f1fb;
+    --write: #c2410c;
+    --write-bg: #fdf0e3;
+    --good: #2b8a3e;
+    --good-bg: #e6f4ea;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e2129;
+    --fg: #e2e4e9;
+    --muted: #9aa0aa;
+    --line: #3a3f4b;
+    --soft: #262a33;
+    --accent: #8c9eff;
+    --accent-bg: #2b3156;
+    --read: #74c0fc;
+    --read-bg: #1d3247;
+    --write: #ffa94d;
+    --write-bg: #3d2a17;
+    --good: #69db7c;
+    --good-bg: #1f3326;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 14px 16px 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all;
+  }
+  .mono { font-family: "JetBrains Mono", Consolas, "D2Coding", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", monospace; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+  .row > .label { color: var(--muted); font-size: 14px; min-width: 4.5em; }
+  .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 2px 9px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .btn.go { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--accent); }
+  .warn { color: var(--write); font-weight: 700; }
+  .fine { color: var(--good); font-weight: 700; }
+  .note { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); font-size: 14px; min-height: 2.6em; }
+  .marks { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 2px; font-size: 11px; min-height: 30px; }
+  .marks span { color: var(--accent); font-weight: 700; text-align: center; line-height: 1.2; }
+  .marks span.alert { color: var(--write); }
+  .bars { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 2px; height: 90px; align-items: end; }
+  .bar { height: 100%; display: flex; flex-direction: column-reverse; border: 1px solid var(--line); border-radius: 3px; background: var(--soft); cursor: pointer; padding: 0; }
+  .bar.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .bar .e { background: var(--write); }
+  .bar .w { background: var(--write-bg); border-top: 1px solid var(--write); }
+  .ticks { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 2px; font-size: 10px; color: var(--muted); text-align: center; margin-bottom: 6px; }
+  .find { font: inherit; font-size: 13px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); width: 10em; }
+  .count { font-size: 13px; color: var(--muted); margin: 4px 0; }
+  .lines { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+  .line { display: grid; grid-template-columns: 5.5em 3.6em 3.6em 1fr; gap: 6px; padding: 2px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .line .m { white-space: normal; }
+  .line.WARN { background: var(--write-bg); }
+  .line.ERROR { background: var(--write-bg); color: var(--write); font-weight: 700; }
+  .line.deploy { background: var(--accent-bg); }
+  @media (max-width: 520px) { body { padding: 10px; font-size: 14px; } .ticks span:nth-child(even) { visibility: hidden; } .line { grid-template-columns: 5em 3em 1fr; } .line .lv { display: none; } }
+</style>
+</head>
+<body>
+<h1>장애 로그 읽기</h1>
+<p class="lead">주문 서비스의 20분 동안의 로그 630줄이다(73번 실습의 incident.py가 만드는 것과 같다). 막대는 1분마다 WARN과 ERROR 줄의 수이고, 위의 표시는 배포와 경보다. 막대를 누르면 그 1분의 줄만 본다.</p>
+<div class="marks" id="marks"></div>
+<div class="bars" id="bars" role="group" aria-label="1분마다 WARN과 ERROR 줄의 수"></div>
+<div class="ticks" id="ticks"></div>
+<div class="row" role="group" aria-label="수준">
+  <span class="label">수준</span>
+  <button class="btn" data-lv="all">전체</button>
+  <button class="btn" data-lv="warn">WARN 이상</button>
+  <button class="btn" data-lv="error">ERROR</button>
+</div>
+<div class="row" role="group" aria-label="서비스">
+  <span class="label">서비스</span>
+  <button class="btn" data-svc="all">전체</button>
+  <button class="btn" data-svc="주문">주문</button>
+  <button class="btn" data-svc="결제">결제</button>
+  <button class="btn" data-svc="배포">배포</button>
+  <button class="btn" data-svc="경보">경보</button>
+</div>
+<div class="row">
+  <span class="label">찾기</span>
+  <input class="find" id="find" type="search" placeholder="예: 거절, 풀" aria-label="찾을 말">
+  <button class="btn" id="clear">거르기 모두 풀기</button>
+</div>
+<div class="count" id="count"></div>
+<div class="lines mono" id="lines"></div>
+<p class="note" id="note" aria-live="polite"></p>
+
+<script>
+// ==== 계산 로직 (화면과 분리: tests에서 그대로 불러 검증한다) ====
+const LogLogic = (() => {
+  // 73번 실습의 incident.py와 같은 규칙으로 로그를 만든다(위젯과 따로 짠 Python과 같은 줄이 나오는지 tests에서 대조한다)
+  // 14:00:00부터 2초마다 주문이 하나 온다. 주문마다 DB 커넥션 풀(10개)에서 연결을 빌렸다 돌려준다. 스무 번째마다(번호 % 20 == 13) 카드가 거절된다.
+  // 14:02:00에 v2를 배포한다. v2는 카드가 거절될 때 연결을 돌려주지 않는다. 빌려 간 채인 연결이 10개면 주문이 실패한다(ERROR).
+  // 주문을 마친 뒤에도 빌려 간 채인 연결이 8개 이상이면 그 줄은 WARN이다. 14:09:40에 경보, 14:11:00에 v1으로 되돌리며 풀을 새로 만든다.
+  const EVENTS = { 120: ["배포", "INFO", "주문 서비스 v2 배포 끝"], 580: ["경보", "ERROR", "경보: 주문 오류율 5% 넘음(1분)"], 660: ["배포", "INFO", "주문 서비스 v1으로 되돌림"] };
+  const clock = sec => {
+    const m = 14 * 60 + Math.floor(sec / 60), s = sec % 60;
+    return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
+  function generate() {
+    const lines = [];
+    let version = "v1", inUse = 0;
+    const log = (sec, service, level, msg, extra = {}) => lines.push({ time: clock(sec), service, level, msg, ...extra });
+    for (let sec = 0; sec < 1200; sec += 2) {
+      if (EVENTS[sec]) {
+        const [service, level, msg] = EVENTS[sec];
+        log(sec, service, level, msg);
+        if (msg.includes("v2")) version = "v2";
+        if (msg.includes("되돌림")) { version = "v1"; inUse = 0; }
+      }
+      const order = sec / 2 + 1;
+      if (inUse >= 10) { log(sec, "주문", "ERROR", "DB 연결을 얻지 못함: 커넥션 풀이 비었다", { order, pool: `${inUse}/10` }); continue; }
+      inUse++;
+      if (order % 20 === 13) {
+        log(sec, "결제", "INFO", "카드 거절", { order });
+        if (version === "v1") inUse--;
+        log(sec, "주문", inUse >= 8 ? "WARN" : "INFO", "주문 실패: 카드 거절", { order, pool: `${inUse}/10` });
+        continue;
+      }
+      inUse--;
+      log(sec, "주문", inUse >= 8 ? "WARN" : "INFO", "주문 완료", { order, pool: `${inUse}/10` });
+    }
+    return lines;
+  }
+  const RANK = { INFO: 0, WARN: 1, ERROR: 2 };
+  // 화면에 보이는 한 줄: 시각, 서비스, 수준, 말, (주문 번호, 풀). 찾기는 이 글에서 한다
+  function shown(x) {
+    const extra = [x.order ? `주문 ${x.order}` : "", x.pool ? `풀 ${x.pool}` : ""].filter(Boolean).join(", ");
+    return `${x.time} ${x.service} ${x.level} ${x.msg}${extra ? ` (${extra})` : ""}`;
+  }
+  function filter(lines, { level = "all", service = "all", text = "", minute = null } = {}) {
+    const min = { all: 0, warn: 1, error: 2 }[level];
+    return lines.filter(x => RANK[x.level] >= min && (service === "all" || x.service === service)
+      && (!text || shown(x).includes(text)) && (minute === null || x.time.startsWith(minute)));
+  }
+  function perMinute(lines) {
+    const out = {};
+    for (let m = 0; m < 20; m++) out[`14:${String(m).padStart(2, "0")}`] = { WARN: 0, ERROR: 0 };
+    for (const x of lines) if (x.level !== "INFO") out[x.time.slice(0, 5)][x.level]++;
+    return out;
+  }
+  return { generate, shown, filter, perMinute };
+})();
+// ==== 계산 로직 끝 ====
+
+// ---- 강의 사이트 안에 들어갔을 때: 테마와 높이 맞추기 ----
+(() => {
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  let parentBody = null;
+  try { if (window.parent !== window) parentBody = window.parent.document.body; } catch { parentBody = null; }
+  const sync = () => {
+    let dark = media.matches;
+    const scheme = parentBody && parentBody.getAttribute("data-md-color-scheme");
+    if (scheme) dark = scheme === "slate";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  };
+  sync();
+  media.addEventListener("change", sync);
+  if (parentBody) new MutationObserver(sync).observe(parentBody, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+
+  // 문서 전체가 아니라 내용(body) 높이로 맞춘다. 그래야 내용이 줄 때 iframe도 줄어든다.
+  const fit = () => {
+    try {
+      if (window.frameElement) window.frameElement.style.height = `${Math.ceil(document.body.getBoundingClientRect().height)}px`;
+    } catch { /* 다른 출처에서 열린 경우 */ }
+  };
+  new ResizeObserver(fit).observe(document.body);
+})();
+
+// ---- 화면 ----
+(() => {
+  const L = LogLogic;
+  const $ = id => document.getElementById(id);
+  const ALL = L.generate();
+  const counts = L.perMinute(ALL);
+  const minutes = Object.keys(counts);
+  let level = "all", service = "all", minute = null;
+  const top = Math.max(...minutes.map(m => counts[m].WARN + counts[m].ERROR));
+  const marks = { "14:02": ["v2 배포", ""], "14:09": ["경보", "alert"], "14:11": ["되돌림", ""] };
+  $("marks").innerHTML = minutes.map(m => `<span class="${marks[m] ? marks[m][1] : ""}">${marks[m] ? marks[m][0] + "<br>▼" : ""}</span>`).join("");
+  $("ticks").innerHTML = minutes.map(m => `<span>${m.slice(3)}분</span>`).join("");
+  function render() {
+    $("bars").innerHTML = minutes.map(m => {
+      const c = counts[m];
+      return `<button class="bar ${minute === m ? "on" : ""}" data-m="${m}" title="${m}: WARN ${c.WARN}줄, ERROR ${c.ERROR}줄" aria-label="${m}">`
+        + `<div class="e" style="height:${c.ERROR / top * 100}%"></div><div class="w" style="height:${c.WARN / top * 100}%"></div></button>`;
+    }).join("");
+    const text = $("find").value.trim();
+    const shown = L.filter(ALL, { level, service, text, minute });
+    $("count").textContent = `${ALL.length}줄 가운데 ${shown.length}줄` + (shown.length > 60 ? " (앞의 60줄만 보인다)" : "") + (minute ? ` · ${minute}의 1분만` : "");
+    $("lines").innerHTML = shown.slice(0, 60).map(x => {
+      const extra = [x.order ? `주문 ${x.order}` : "", x.pool ? `풀 ${x.pool}` : ""].filter(Boolean).join(", ");
+      const cls = x.service === "배포" ? "deploy" : x.level;
+      return `<div class="line ${cls}"><span>${x.time}</span><span>${x.service}</span><span class="lv">${x.level}</span><span class="m">${x.msg}${extra ? ` (${extra})` : ""}</span></div>`;
+    }).join("");
+    let note = "막대가 처음 높아지는 곳과 그 직전의 배포 표시를 견준다. WARN 이상만 보면 오류보다 먼저 나온 조짐이 보인다.";
+    if (text.includes("거절")) note = "카드 거절은 배포 전에도 있었다. 배포 전과 뒤에, 거절 다음 줄의 '풀' 숫자가 어떻게 다른지 본다.";
+    else if (level === "error") note = "주문의 ERROR는 모두 같은 말이다. 언제 처음 나왔고 언제 멈췄는지 본다. 몇 개인지 셀 때는 서비스도 '주문'으로 거른다. 경보도 ERROR 줄을 남긴다.";
+    $("note").textContent = note;
+    document.querySelectorAll("[data-lv]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lv === level)));
+    document.querySelectorAll("[data-svc]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.svc === service)));
+  }
+  $("bars").addEventListener("click", e => { const b = e.target.closest("[data-m]"); if (b) { minute = minute === b.dataset.m ? null : b.dataset.m; render(); } });
+  document.querySelectorAll("[data-lv]").forEach(b => b.addEventListener("click", () => { level = b.dataset.lv; render(); }));
+  document.querySelectorAll("[data-svc]").forEach(b => b.addEventListener("click", () => { service = b.dataset.svc; render(); }));
+  $("find").addEventListener("input", render);
+  $("clear").addEventListener("click", () => { level = "all"; service = "all"; minute = null; $("find").value = ""; render(); });
+  render();
+})();
+</script>
+</body>
+</html>
